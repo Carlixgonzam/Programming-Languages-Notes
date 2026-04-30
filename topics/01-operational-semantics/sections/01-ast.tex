@@ -13,3 +13,37 @@ For an imperative language with mutable references, the relevant constructs are:
   \item $n$, $b$, integer and boolean literals
   \item $e_1\ \mathit{op}\ e_2$, arithmetic or boolean combination
 \end{itemize}
+
+\subsection{solved example}
+Build the AST of the following program:
+\[
+  \assign{y}{0}\;;\;
+  \ift{\deref{x} = \deref{y}}
+    {\assign{x}{\deref{x}+1}\;;\;\assign{y}{\deref{y}-1}}
+    {\assign{x}{\deref{x}-1}\;;\;\assign{y}{\deref{y}+1}}
+\]
+The top level operator is the semicolon that separates the two main components, so the root is a \textsc{Seq} node. Its left child is the assignment $\assign{y}{0}$, and its right child is the conditional. The conditional has three children: the guard $\deref{x}=\deref{y}$, the \emph{then}-branch $\seq{\assign{x}{\deref{x}+1}}{\assign{y}{\deref{y}-1}}$, and the \emph{else}-branch (symmetric).
+
+\[
+\begin{array}{c}
+\textsc{Seq} \\
+\swarrow \quad \searrow \\
+\textsc{Assign}(y,0) \qquad \textsc{If-then-else} \\
+\quad\quad\swarrow \quad \downarrow \quad \searrow \\
+\textsc{Eq}(\deref{x},\deref{y}) \quad \textsc{Seq}_1 \quad \textsc{Seq}_2
+\end{array}
+\]
+note that $\deref{x}$ is represented as a \textsc{Deref} node applied to the location $x$, which is distinct from $x$ as an identifier: the location names a cell in the store, and dereferencing reads its content.
+
+
+\subsection{Exercises}
+\begin{itemize}
+  \item Build the AST of:
+  $\assign{x}{\deref{x} \times 2}\;;\;\ift{\deref{x}>10}{\mathbf{skip}}{\assign{x}{\deref{x}+1}}$
+  \item Build the AST of:
+  $\whiledo{\deref{i}<\deref{n}}{\seq{\assign{s}{\deref{s}+\deref{i}}}{\assign{i}{\deref{i}+1}}}$
+  \item Reconstruct the source program corresponding to the following AST: root is \textsc{Seq} with left child $\textsc{Assign}(x, 5)$ and right child $\textsc{If-then-else}(\textsc{Eq}(\deref{x},5),\,\textsc{Assign}(y,1),\, \textsc{Assign}(y,0))$.
+\end{itemize}
+ 
+
+
