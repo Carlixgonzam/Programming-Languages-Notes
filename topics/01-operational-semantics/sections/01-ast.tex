@@ -1,0 +1,15 @@
+\section{Abstract syntax trees}
+An \textit{abstract syntax tree} (AST) is a tree representation of the hierarchical structure of a program. Unlike a concrete parse tree, an AST omits purely syntactic detail such as parenthesis, semicolons used as separators, keywords whose meaning is already captured by the node type; retaining only the information needed to define the program's meaning.
+
+Each \textit{internal node} of the AST corresponds to a language construct (sequence, assignment, conditional, etc.) and each \textit{leaf} corresponds to an atomic value or reference.
+
+For an imperative language with mutable references, the relevant constructs are:
+\begin{itemize}
+  \item $\seq{C_1}{C_2}$, sequential composition
+  \item $\assign{l}{e}$, assignment to location $l$
+  \item $\ift{B}{C_1}{C_2}$, conditional command
+  \item $\whiledo{B}{C}$, iteration
+  \item $\deref{l}$, dereferencing a location (read the value stored at $l$)
+  \item $n$, $b$, integer and boolean literals
+  \item $e_1\ \mathit{op}\ e_2$, arithmetic or boolean combination
+\end{itemize}

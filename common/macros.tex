@@ -1,0 +1,29 @@
+
+
+
+
+\newcommand{\reduces}{\rightarrow}
+\newcommand{\Reduces}{\Downarrow}
+\newcommand{\step}[3]{\langle #1,\, #2 \rangle \reduces \langle #3}
+\newcommand{\steppair}[4]{\langle #1,\, #2 \rangle \reduces \langle #3,\, #4 \rangle}
+\newcommand{\bigstep}[3]{\langle #1,\, #2 \rangle \Reduces #3}
+
+
+\newcommand{\deref}[1]{!#1}
+\newcommand{\assign}[2]{#1 := #2}
+\newcommand{\seq}[2]{#1 \,;\, #2}
+\newcommand{\ift}[3]{\mathbf{if}\ #1\ \mathbf{then}\ #2\ \mathbf{else}\ #3}
+\newcommand{\whiledo}[2]{\mathbf{while}\ #1\ \mathbf{do}\ #2}
+\newcommand{\fordoo}[4]{\mathbf{for}\ (#1;\ #2;\ #3)\ \{#4\}}
+
+
+\newcommand{\nil}{\mathbf{nil}}
+\newcommand{\cons}[2]{\mathbf{cons}(#1,#2)}
+\newcommand{\concat}[2]{\mathbf{concat}(#1,#2)}
+\newcommand{\append}[2]{\mathbf{append}(#1,#2)}
+\newcommand{\tref}[1]{\mathbf{ref}\ #1}
+
+
+\newcommand{\unit}{\mathbf{unit}}
+\newcommand{\tyint}{\mathbf{int}}
+\newcommand{\tybool}{\mathbf{bool}}
