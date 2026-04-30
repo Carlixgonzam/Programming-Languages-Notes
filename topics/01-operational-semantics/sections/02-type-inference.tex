@@ -1,6 +1,14 @@
 \section{Type inference}
-% Sugerencias de contenido:
 %   - Juicios de tipado $\Gamma \vdash e : \tau$
 %   - Reglas de inferencia para expresiones y comandos
 %   - Algoritmo W (Hindley-Milner) si aplica
 %   - Ejemplos sobre la gramática del capítulo anterior
+Type inference is the process by which a compiler deduces the type of an expression without explicit annotations from the programmer. the classical algorithm for the simply typed lambda calculus (and its extensions) is \emph{Hindley--Milner} (HM), which works by:
+
+\begin{enumerate}
+  \item Assigning a fresh type variable $\alpha_i$ to each sub-expression
+        whose type is unknown.
+  \item Generating \emph{constraints} of the form $\tau_1 = \tau_2$ from the
+        typing rules.
+  \item Solving the constraints by \emph{unification}.
+\end{enumerate}
