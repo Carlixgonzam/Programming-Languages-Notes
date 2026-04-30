@@ -3,7 +3,7 @@
 %   - Reglas de inferencia para expresiones y comandos
 %   - Algoritmo W (Hindley-Milner) si aplica
 %   - Ejemplos sobre la gramática del capítulo anterior
-Type inference is the process by which a compiler deduces the type of an expression without explicit annotations from the programmer. the classical algorithm for the simply typed lambda calculus (and its extensions) is \emph{Hindley--Milner} (HM), which works by:
+Type inference is the process by which a compiler deduces the type of an expression without explicit annotations from the programmer. the classical algorithm for the simply typed lambda calculus (and its extensions) is \emph{Hindley Milner} (HM), which works by:
 
 \begin{enumerate}
   \item Assigning a fresh type variable $\alpha_i$ to each sub-expression
@@ -12,3 +12,88 @@ Type inference is the process by which a compiler deduces the type of an express
         typing rules.
   \item Solving the constraints by \emph{unification}.
 \end{enumerate}
+
+if unification fails, the program contains a type error; if it succeeds, the resulting substitution gives the most general type.
+
+\subsection{Typing rules for references}
+\[
+\infer[\textsc{T-Deref}]
+  {\Gamma \vdash \deref{l} : T}
+  {\Gamma \vdash l : \tref{T}}
+\qquad
+\infer[\textsc{T-Assign}]
+  {\Gamma \vdash \assign{l}{e} : \unit}
+  {\Gamma \vdash l : \tref{T} \quad \Gamma \vdash e : T}
+\qquad
+\infer[\textsc{T-While}]
+  {\Gamma \vdash \whiledo{B}{C} : \unit}
+  {\Gamma \vdash B : \tybool \quad \Gamma \vdash C : \unit}
+\]
+\subsection{solved example}
+$\lambda f.\, f\, f$ does not typecheck
+
+Consider \lstinline|proc(f) zero?((f f))|.  We try to infer the type of $f$.
+ 
+\begin{itemize}
+  \item Let $f : \alpha$.
+  \item The expression $f\, f$ requires $f$ to be a function type, so
+        $\alpha = \alpha \to \beta$ for some fresh $\beta$.
+  \item But $\alpha = \alpha \to \beta$ has no finite solution: expanding
+        repeatedly yields $\alpha = (\alpha \to \beta) \to \beta =
+        ((\alpha\to\beta)\to\beta)\to\beta = \cdots$
+\end{itemize}
+
+unification fails (occurs check). Therefore the expression has no type in the simply typed lambda calculus without recursive types.
+
+\subsection{Scala generics}
+\begin{lstlisting}
+case class MyPair[A,B](x:A,y:B)
+val p = MyPair(1, "Scala")
+def id[1](x:T)=x
+val q = id(1)
+\end{lstlisting}
+
+
+the definition of \lstinline|id| introduces a \texttt{polymorphic} type: it can be applied to any type , and each call site independently instantiates a $T$.
+
+\begin{lstlisting}
+B  = !n < 5
+B1 = !term <= 2
+C1 = res := !n
+C2 = c:=!a+!b; res:=!n; !c; a:=!b; b:=!c
+C  = if B1 then C1 else C2; n:=!n+1
+a:=1; b:=1; while B do C
+\end{lstlisting}
+
+reading off types from the operations performed:
+\begin{itemize}
+  \item $n, \mathit{res}, a, b, c : \tref{\tyint}$ (assigned integers and
+        dereferenced in arithmetic).
+  \item $\mathit{term} : \tref{\tyint}$ (compared with $2$).
+  \item $B, B_1 : \tybool$.
+  \item $C_1, C_2, C : \unit$ (commands produce no value).
+  \item The whole program : $\unit$.
+\end{itemize}
+
+\subsection{Exercises}
+ 
+Infer the type of the S combinator:
+$\lambda x.\,\lambda y.\,\lambda z.\; x\,z\,(y\,z)$.
+What constraints does unification generate?
+ 
+Consider $\lambda f.\,\lambda x.\; f\,(f\,x)$.  Does it typecheck?  If so,
+give its most general type.
+ 
+What types are inferred for \lstinline|f|, \lstinline|result|, and
+\lstinline|pairs| in the following Scala snippet?
+\begin{lstlisting}
+def f[A](lst: List[A]) = lst.head
+val result = f(List(1,2,3))
+val pairs  = List((1,"a"), (2,"b"))
+\end{lstlisting}
+
+Given $x : \tref{\tyint}$ and $b : \tref{\tybool}$, does the following
+expression typecheck?  If so, give its type.
+\[
+  \assign{b}{\deref{x}=0}\;;\;\ift{\deref{b}}{\assign{x}{1}}{\mathbf{skip}}
+\]
