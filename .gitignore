@@ -1,4 +1,4 @@
-# ---------- LaTeX build artifacts ----------
+
 *.aux
 *.lof
 *.log
@@ -12,7 +12,7 @@
 *.cb2
 .*.lb
 
-# Intermediate / auxiliary files
+
 *.bbl
 *.bcf
 *.blg
@@ -24,7 +24,7 @@
 *.xdv
 *.ps
 
-# Bibliography / index
+
 *.idx
 *.ilg
 *.ind
@@ -37,49 +37,44 @@
 *.nlo
 *.nls
 
-# minted / listings
+
 _minted-*/
 *.pyg
 
-# beamer
+
 *.nav
 *.snm
 *.vrb
 
-# TikZ externalized
+
 *.auxlock
 *.figlist
 *.makefile
 
-# todonotes / changes
+
 *.tdo
 
-# Build directory
+
 build/
 out/
 
-# ---------- Editor / IDE ----------
+
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# ---------- macOS ----------
+
 .DS_Store
 .AppleDouble
 .LSOverride
 Icon?
 
-# ---------- Sistema / temporales ----------
+
 *.bak
 *.tmp
 Thumbs.db
 
-# ---------- PDFs ----------
-# Si quieres versionar el PDF final, comenta la línea siguiente
-# o haz excepciones específicas con !ruta/al.pdf
-*.pdf
-!assets/**/*.pdf
-!**/figures/**/*.pdf
-!**/diagrams/**/*.pdf
+
+
