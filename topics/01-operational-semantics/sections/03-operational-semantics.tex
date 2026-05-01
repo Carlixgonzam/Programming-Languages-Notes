@@ -5,3 +5,110 @@
 %   - Big-step: $\bigstep{C}{\sigma}{\sigma'}$
 %   - Reglas para if, while, asignación, secuenciación
 %   - Determinismo y equivalencia entre semánticas
+
+\subsection{Big-step semantics}
+In \emph{big-step} (natural semantics, a judgement) $\bigstep{e}{\sigma}{v}$ asserts that expression $e$ in store $\sigma$ evaluates \emph{directly} to value $v$, without exposing intermediate steps. Derivations are trees whose leaves are axioms and whose internal nodes are inference rules.
+
+\subsubsection{Lists: \texttt{concat} and \texttt{append}}
+
+We assume the constructors $\nil$ (empty list) and $\cons{h}{t}$ (list with
+head $h$ and tail $t$).
+
+\paragraph{\texttt{concat}$(e,\ell)$, insert element $e$ at the end of $\ell$.}
+
+\[
+\infer[\textsc{Concat-Nil}]
+  {\bigstep{\concat{e}{\nil}}{\sigma}{\cons{e}{\nil}}}
+  {}
+\qquad
+\infer[\textsc{Concat-Cons}]
+  {\bigstep{\concat{e}{\cons{h}{t}}}{\sigma}{\cons{h}{t'}}}
+  {\bigstep{\concat{e}{t}}{\sigma}{t'}}
+\]
+
+\paragraph{\texttt{append}$(\ell_1, \ell_2)$ concatenate two lists.}
+
+\[
+\infer[\textsc{Append-Nil}]
+  {\bigstep{\append{\nil}{\ell_2}}{\sigma}{\ell_2}}
+  {}
+\qquad
+\infer[\textsc{Append-Cons}]
+  {\bigstep{\append{\cons{h}{t_1}}{\ell_2}}{\sigma}{\cons{h}{\ell'}}}
+  {\bigstep{\append{t_1}{\ell_2}}{\sigma}{\ell'}}
+\]
+
+Derivation for append
+We verify $\bigstep{\append{\cons{1}{\nil}}{\cons{2}{\nil}}}{\sigma}{\cons{1}{\cons{2}{\nil}}}$:
+
+\[
+\infer[\textsc{Append-Cons}]
+  {\bigstep{\append{\cons{1}{\nil}}{\cons{2}{\nil}}}{\sigma}{\cons{1}{\cons{2}{\nil}}}}
+  {
+    \infer[\textsc{Append-Nil}]
+      {\bigstep{\append{\nil}{\cons{2}{\nil}}}{\sigma}{\cons{2}{\nil}}}
+      {}
+  }
+\]
+\subsection{Small-step semantics}
+
+In \emph{small-step} semantics, a judgement
+$\steppair{P}{\sigma}{P'}{\sigma'}$ performs a single atomic reduction.
+A program is fully evaluated when no rule applies (it is a value or a
+stuck state) or when it reduces to $\mathbf{skip}$ (for commands).
+
+\subsubsection{For-loops in SIMP}
+
+The grammar of SIMP extended with \textbf{for} is:
+
+\[
+C ::= \assign{l}{E} \mid \seq{C}{C} \mid \ift{B}{C}{C} \mid
+      \whiledo{B}{C} \mid \mathbf{skip} \mid \fordoo{C}{B}{C}{C}
+\]
+
+The cleanest approach is to treat \textbf{for} as \emph{syntactic sugar}:
+
+\[
+\fordoo{C_i}{B}{C_s}{C_b}
+\;\triangleq\;
+\seq{C_i}{\whiledo{B}{\seq{C_b}{C_s}}}
+\]
+
+If the language requires explicit small-step rules (no sugar), we give:
+
+\[
+\infer[\textsc{For-Init}]
+  {\steppair{\fordoo{C_i}{B}{C_s}{C_b}}{\sigma}
+            {\fordoo{C_i'}{B}{C_s}{C_b}}{\sigma'}}
+  {\steppair{C_i}{\sigma}{C_i'}{\sigma'}}
+\]
+
+\[
+\infer[\textsc{For-Skip}]
+  {\steppair{\fordoo{\mathbf{skip}}{B}{C_s}{C_b}}{\sigma}
+            {\ift{B}{(\seq{C_b}{\seq{C_s}{\fordoo{\mathbf{skip}}{B}{C_s}{C_b}}})}{{\mathbf{skip}}}}{\sigma}}
+  {}
+\]
+
+Rule \textsc{For-Init} reduces the initialiser one step at a time.
+Rule \textsc{For-Skip} fires once the initialiser has been fully executed:
+it checks the guard and either runs the body followed by the step expression
+(and loops), or terminates with $\mathbf{skip}$.
+
+\subsection{Exercises}
+
+\begin{itemize}
+	\item Write big-step rules for $\mathbf{reverse}(\ell)$, which reverses a list.
+	\item Use \texttt{concat} as a helper.
+
+	Prove with a full derivation tree:
+\[
+\bigstep{\concat{3}{\cons{1}{\cons{2}{\nil}}}}{\sigma}
+        {\cons{1}{\cons{2}{\cons{3}{\nil}}}}
+\]
+
+	\item Write big-step rules for $\mathbf{length}(\ell)$, which returns the number of
+elements, and evaluate $\bigstep{\mathbf{length}(\cons{1}{\cons{2}{\nil}})}{\sigma}{2}$
+with a derivation tree.
+\end{itemize}
+
