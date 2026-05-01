@@ -1,0 +1,359 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath, amssymb}
+\usepackage{stmaryrd}          % for \llbracket and \rrbracket
+\usepackage[english]{babel}
+\usepackage{geometry}
+\usepackage{tcolorbox}
+\usepackage{booktabs}
+\usepackage{array}
+\geometry{margin=1in}
+
+\title{PreExam Solution}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+
+\section{Ejercicio 1: Inferencia de Tipos}
+
+
+Se analiza la función:
+
+\begin{verbatim}
+(define (count x l)
+  (if (null? l)
+      0
+      (if (equal? (car l) x)
+          (+ 1 (count x (cdr l)))
+          (count x (cdr l)))))
+\end{verbatim}
+
+\subsection*{Paso 1: Identificación de variables}
+
+\begin{itemize}
+    \item $x$: tipo desconocido $\Rightarrow T$
+    \item $l$: lista de elementos del mismo tipo que $x$
+          $\Rightarrow T\ \mathbf{list}$
+\end{itemize}
+
+\subsection*{Paso 2: Análisis de operaciones}
+
+\begin{itemize}
+    \item \texttt{(null? l)} requiere $l : T\ \mathbf{list}$ y devuelve
+          $\mathbf{bool}$
+    \item \texttt{(car l)} devuelve el primer elemento $\Rightarrow T$
+    \item \texttt{(cdr l)} devuelve la cola $\Rightarrow T\ \mathbf{list}$
+    \item \texttt{equal?(car(l), x)} requiere ambos del mismo tipo
+          $\Rightarrow$ ambos $T$, confirmando $x : T$
+\end{itemize}
+
+\subsection*{Paso 3: Tipo de retorno}
+
+La función retorna:
+\begin{itemize}
+    \item $0$ en el caso base $\Rightarrow \mathbf{int}$
+    \item $(+ \; 1 \; (\text{count} \ldots))$ en el caso recursivo
+          $\Rightarrow \mathbf{int}$
+\end{itemize}
+
+Ambas ramas coinciden: el tipo de retorno es $\mathbf{int}$.
+
+\subsection*{Resultado final}
+
+\[
+  \boxed{count : T \rightarrow T\ \mathbf{list} \rightarrow \mathbf{int}}
+\]
+
+\begin{tcolorbox}
+  \textbf{Patrón clave:} funciones recursivas sobre listas suelen tener
+  tipo $T \to T\ \mathbf{list} \to \alpha$.
+  El tipo es \emph{polimórfico} en $T$: funciona para listas de enteros,
+  strings, etc.
+\end{tcolorbox}
+
+
+\section{Ejercicio 2: Semántica Operacional}
+
+
+Se desea definir la semántica de la instrucción:
+\[
+  \mathbf{repeat}\ E\ \mathbf{times}\ C
+\]
+
+\subsection*{Idea clave}
+
+\begin{itemize}
+    \item La expresión $E$ se evalúa \textbf{una sola vez} al inicio.
+    \item El resultado $n$ es el contador; se decrementa en 1 después de
+          cada ejecución de $C$.
+    \item Introducimos una forma auxiliar
+          $\mathbf{repeat\text{-}n}\ k\ \mathbf{times}\ C$
+          donde $k \in \mathbb{N}$ ya es un valor entero (no una expresión).
+\end{itemize}
+
+% ── Big-step rules ────────────────────────────────────────────────────────────
+\subsection*{Regla de entrada (evalúa $E$ una sola vez)}
+
+\[
+  \frac{
+    \langle E,\, \sigma \rangle \Downarrow n
+    \qquad
+    \langle \mathbf{repeat\text{-}n}\ n\ \mathbf{times}\ C,\,
+            \sigma \rangle \Downarrow \sigma'
+  }{
+    \langle \mathbf{repeat}\ E\ \mathbf{times}\ C,\,
+            \sigma \rangle \Downarrow \sigma'
+  }
+  \quad \textsc{[Repeat-Eval]}
+\]
+
+\subsection*{Caso base ($k = 0$)}
+
+\[
+  \frac{\phantom{X}}{
+    \langle \mathbf{repeat\text{-}n}\ 0\ \mathbf{times}\ C,\,
+            \sigma \rangle \Downarrow \sigma
+  }
+  \quad \textsc{[Repeat-Zero]}
+\]
+
+\subsection*{Caso recursivo ($k > 0$)}
+
+
+\[
+  \frac{
+    k > 0
+    \qquad
+    \langle C,\, \sigma \rangle \Downarrow \sigma'
+    \qquad
+    \langle \mathbf{repeat\text{-}n}\ (k{-}1)\ \mathbf{times}\ C,\,
+            \sigma' \rangle \Downarrow \sigma''
+  }{
+    \langle \mathbf{repeat\text{-}n}\ k\ \mathbf{times}\ C,\,
+            \sigma \rangle \Downarrow \sigma''
+  }
+  \quad \textsc{[Repeat-Step]}
+\]
+
+\begin{tcolorbox}
+  \textbf{Corrección importante:} en la regla \textsc{Repeat-Step},
+  \emph{no} se vuelve a evaluar $E$.
+  Solo se trabaja con el contador entero $k$ y se resta $1$.
+  Re-evaluar $E$ en cada iteración violaría la especificación del enunciado.\\[4pt]
+  \textbf{Intuición:} equivalente a un \texttt{for}-loop donde el límite
+  superior se fija antes de entrar al ciclo.
+\end{tcolorbox}
+
+
+\section{Ejercicio 3: Traducción Infix a Postfix}
+
+
+\subsection*{Función semántica}
+
+Definimos $\mathcal{P}\llbracket \cdot \rrbracket : \mathbf{Expr}
+\to \mathbf{String}$ que traduce una expresión infija a postfija.
+
+\subsection*{Reglas denotacionales}
+
+\[
+  \mathcal{P}\llbracket n \rrbracket = \texttt{"n"}
+\]
+\[
+  \mathcal{P}\llbracket E_1 + E_2 \rrbracket
+    = \mathcal{P}\llbracket E_1 \rrbracket
+      \;\frown\; \mathcal{P}\llbracket E_2 \rrbracket
+      \;\frown\; \texttt{"+"}
+\]
+\[
+  \mathcal{P}\llbracket E_1 - E_2 \rrbracket
+    = \mathcal{P}\llbracket E_1 \rrbracket
+      \;\frown\; \mathcal{P}\llbracket E_2 \rrbracket
+      \;\frown\; \texttt{"-"}
+\]
+\[
+  \mathcal{P}\llbracket E_1 * E_2 \rrbracket
+    = \mathcal{P}\llbracket E_1 \rrbracket
+      \;\frown\; \mathcal{P}\llbracket E_2 \rrbracket
+      \;\frown\; \texttt{"*"}
+\]
+\[
+  \mathcal{P}\llbracket E_1 / E_2 \rrbracket
+    = \mathcal{P}\llbracket E_1 \rrbracket
+      \;\frown\; \mathcal{P}\llbracket E_2 \rrbracket
+      \;\frown\; \texttt{"/"}
+\]
+
+donde $\frown$ denota concatenación de strings (con espacio separador).
+
+\subsection*{Ejemplo: $3 + 4 * 5$}
+
+Con precedencia estándar ($*$ liga más que $+$), el árbol es
+$3 + (4 * 5)$:
+
+\begin{align*}
+  \mathcal{P}\llbracket 3 + (4 * 5) \rrbracket
+    &= \mathcal{P}\llbracket 3 \rrbracket
+       \;\frown\; \mathcal{P}\llbracket 4 * 5 \rrbracket
+       \;\frown\; \texttt{"+"} \\
+    &= \texttt{"3"}
+       \;\frown\;
+       \bigl(\mathcal{P}\llbracket 4 \rrbracket
+             \;\frown\; \mathcal{P}\llbracket 5 \rrbracket
+             \;\frown\; \texttt{"*"}\bigr)
+       \;\frown\; \texttt{"+"} \\
+    &= \texttt{"3"} \;\frown\; \texttt{"4"} \;\frown\;
+       \texttt{"5"} \;\frown\; \texttt{"*"} \;\frown\; \texttt{"+"} \\
+    &= \texttt{"3 4 5 * +"}
+\end{align*}
+
+\begin{tcolorbox}
+  \textbf{Regla clave:} izquierdo $\frown$ derecho $\frown$ operador.
+  La precedencia la maneja el \emph{parser} al construir el AST;
+  la función $\mathcal{P}$ solo recorre el árbol resultante.
+\end{tcolorbox}
+
+
+\section{Ejercicio 4: Alcance Estático vs.\ Dinámico}
+
+
+\subsection*{Los dos modelos}
+
+\begin{center}
+\begin{tabular}{lll}
+  \toprule
+  Modelo & Pregunta a hacer & Resultado \\
+  \midrule
+  \textbf{Estático (léxico)} &
+    ¿Dónde está \emph{definido} \texttt{proc1} en el fuente? &
+    $x = 2$ \\
+  \textbf{Dinámico} &
+    ¿Qué hay en la \emph{pila de llamadas} ahora mismo? &
+    $x = 3$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{Alcance estático}
+
+\texttt{proc1} está definido en el \textbf{nivel global} del programa.
+El único $x$ visible en su contexto de definición es el $x$ global,
+cuyo valor es $2$ (asignado por \texttt{main} antes de llamar a
+\texttt{proc2}).
+
+\[
+  \Rightarrow \texttt{print} \text{ imprime } \textbf{x=2}
+\]
+
+\subsection*{Alcance dinámico}
+
+En tiempo de ejecución, la pila al momento del \texttt{print} es:
+
+\[
+  \underbrace{\texttt{main}}_{\displaystyle x=2}
+  \;\longrightarrow\;
+  \underbrace{\texttt{proc2}}_{\displaystyle x=3 \text{ (local)}}
+  \;\longrightarrow\;
+  \texttt{proc1}
+\]
+
+El enlace más reciente de $x$ en la pila es el de \texttt{proc2},
+con valor $3$.
+
+\[
+  \Rightarrow \texttt{print} \text{ imprime } \textbf{x=3}
+\]
+
+\begin{tcolorbox}
+  \textbf{Regla mental:}\\
+  Estático $=$ dónde se \emph{define} (contexto léxico)\\
+  Dinámico $=$ desde dónde se \emph{llama} (pila en tiempo de ejecución)
+\end{tcolorbox}
+
+
+\section{Ejercicio 5: Paso de Parámetros}
+
+
+\subsection*{Tipos de parámetros}
+
+\begin{itemize}
+    \item \textbf{ref} (por referencia): alias directo al argumento.
+          Leer/escribir el parámetro lee/escribe la variable original.
+    \item \textbf{name} (por nombre / Jensen's device):
+          la expresión argumento se \emph{re-evalúa} cada vez que se usa
+          el parámetro.  Si las variables internas cambian, cada uso puede
+          acceder a una celda diferente.
+    \item \textbf{VR} (value-result): copia \emph{in} al entrar
+          ($z_{\text{local}} \leftarrow $ valor actual del argumento) y
+          copia \emph{out} al salir ($i \leftarrow z_{\text{local}}$).
+
+\end{itemize}
+
+\subsection*{Estado inicial}
+
+\[
+  a = \{0,\,10,\,20,\,40\}, \qquad i = 0
+\]
+
+\subsection*{Llamada: \texttt{test(i, a[i], i)}}
+
+\begin{itemize}
+  \item $x \xleftarrow{\text{ref}} i$: alias de $i$
+  \item $y \xleftarrow{\text{name}} \mathtt{a[i]}$: expresión diferida
+  \item $z_{\text{local}} \xleftarrow{\text{VR}} 0$ (copia-in de $i=0$)
+\end{itemize}
+
+\subsection*{Ejecución línea a línea}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{clll}
+  \toprule
+  Línea & Sentencia & Efecto & Estado tras ejecutar \\
+  \midrule
+  8 & \texttt{x := x+1} &
+      $x$ es alias de $i$; $i \leftarrow 0{+}1 = 1$ &
+      $i=1,\; z_{\text{local}}=0$ \\
+  9 & \texttt{y := y+1} &
+      $y = \mathtt{a[i]}$; $i=1$ ahora $\Rightarrow y = a[1] = 10$ &
+      $a[1] \leftarrow 11$ \\
+  10 & \texttt{z := z+2} &
+      copia local $z_{\text{local}} \leftarrow 0{+}2 = 2$ &
+      $z_{\text{local}}=2$, $i=1$ \\
+  11 & \texttt{y := y+1} &
+      $y = \mathtt{a[i]}$; $i=1$ todavía $\Rightarrow y = a[1] = 11$ &
+      $a[1] \leftarrow 12$ \\
+  \midrule
+  \multicolumn{2}{l}{\textbf{Retorno (VR copia-out)}} &
+      $z_{\text{local}} = 2 \;\Rightarrow\; i \leftarrow 2$ &
+      $i = 2$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{Resultado final}
+
+
+\[
+  \boxed{i = 2, \qquad a = \{0,\; 12,\; 20,\; 40\}}
+\]
+
+\begin{tcolorbox}
+  \textbf{Tres interacciones críticas:}
+  \begin{enumerate}
+    \item \textbf{ref cambia el índice de name.}
+          La línea 8 incrementa $i$ de 0 a 1 vía \texttt{ref}.
+          Las líneas 9 y 11 usan $y = a[i]$ con $i=1$, accediendo a
+          $a[1]$ (no $a[0]$).
+    \item \textbf{name modifica la misma celda dos veces.}
+          Tanto la línea 9 como la 11 operan sobre $a[1]$,
+          incrementándolo de 10 a 11 y luego a 12.
+    \item \textbf{VR sobreescribe el cambio de ref al retornar.}
+          \texttt{ref} dejó $i=1$, pero la copia-out de VR escribe
+          $z_{\text{local}}=2$ sobre $i$, resultando en $i=2$.
+  \end{enumerate}
+\end{tcolorbox}
+
+\end{document}
