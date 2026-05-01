@@ -7,54 +7,81 @@
 %   - Estrategias: call-by-name, call-by-value, normal order
 %   - Codificaciones de Church (booleanos, números, pares)
 %   - Combinador de punto fijo $Y$
-Language formalizations and its structure have been successfully applied the logic of first order predicates with quantifiers.
-First of all, when the lambda calculus concept comes to be oriented in semantics representations, or either in programming language studies, the mechanisms are based on the meta-operations and functional abstraction.
+Lambda calculus is a formal system that serves as the theoretical foundation for functional programming languages. The core idea is surprisingly simple: everything reduces to functions, how they are defined and how they are applied.
 
-\subsection{example 1} 
-We can take the phrase 'every athlete strives to victory' and consider its structure:
+\subsection{basic syntax} 
+There a re only three constructs in the language:
+
 
 \begin{itemize}
     \item \textbf{Variables:} $x, y, z \dots$
-    \item \textbf{Abstraction:} $\lambda x. e$ (represents a function with parameter $x$ and body $e$).
-    \item \textbf{Application:} $e_1 \, e_2$ (applying function $e_1$ to argument $e_2$).
+    \item \textbf{Abstraction:} $\lambda x.\, e$ — defines a function with
+    parameter $x$ and body $e$.
+    \item \textbf{Application:} $e_1\, e_2$ — applies function $e_1$ to
+    argument $e_2$.
 \end{itemize}
+
+from just these three pieces, any computation can be expressed.
+
 
 \subsection{Free and Bound Variables}
-In an expression $\lambda x. M$, the variable $x$ is \textbf{bound}. If a variable is not within the scope of a $\lambda$, it is called a \textbf{free variable}.
-\begin{itemize}
-    \item \textbf{$\alpha$-equivalence:} Allows renaming bound variables as long as no name conflicts occur. Example: $\lambda x. x \equiv_\alpha \lambda y. y$.
-\end{itemize}
+In $\lambda x.\, M$, we say $x$ is \textbf{bound}: the abstraction defines
+its scope. A variable that appears outside the scope of any $\lambda$ is
+called \textbf{free}.
+
+\textbf{$\alpha$-equivalence} tells us that the name of a bound variable
+does not matter, as long as renaming causes no conflicts:
+\[
+  \lambda x.\, x \;\equiv_\alpha\; \lambda y.\, y
+\]
 
 \subsection{Reduction Rules}
+Computation happens through two main rules:
 \begin{itemize}
-    \item \textbf{$\beta$-reduction:} The primary computational step. It substitutes the argument into the function's body: 
-    \[ (\lambda x. e) \, v \to e[x := v] \]
-    \item \textbf{$\eta$-reduction:} Captures the idea that two functions are identical if they behave the same for all arguments: 
-    \[ \lambda x. (f \, x) \to f \quad \text{(if $x$ is not free in $f$)} \]
+    \item \textbf{$\beta$-reduction} — substitutes the argument into the
+    function body:
+    \[(\lambda x.\, e)\, v \;\to\; e[x := v]\]
+    This is the fundamental computational step.
+
+    \item \textbf{$\eta$-reduction} — two functions are equal if they produce
+    the same result for every argument:
+    \[\lambda x.\, (f\, x) \;\to\; f \qquad \text{(if $x$ is not free in
+    $f$)}\]
 \end{itemize}
 
 \subsection{Evaluation Strategies}
+In what order do we reduce? There are several options, each with different
+consequences:
+
 \begin{enumerate}
-    \item \textbf{Normal Order:} Always reduces the leftmost, outermost redex (reducible expression) first. It is guaranteed to find a normal form if one exists.
-    \item \textbf{Call-by-Value:} Arguments are evaluated before being passed to the function (used in C, Java, Python).
-    \item \textbf{Call-by-Name:} Arguments are passed without being evaluated (the basis for lazy evaluation).
+    \item \textbf{Normal Order:} always reduces the leftmost, outermost redex
+    first. Guaranteed to find a normal form if one exists.
+    \item \textbf{Call-by-Value:} evaluates the argument before passing it
+    to the function (used in C, Java, Python).
+    \item \textbf{Call-by-Name:} passes the argument unevaluated — the basis
+    for lazy evaluation.
 \end{enumerate}
 
 \subsection{Church Encodings}
+Since lambda calculus has no built-in types or literals, we need to
+\emph{encode} familiar values as functions:
+
 \begin{itemize}
     \item \textbf{Booleans:}
-    \begin{itemize}
-        \item $TRUE \equiv \lambda t. \lambda f. t$
-        \item $FALSE \equiv \lambda t. \lambda f. f$
-        \item $AND \equiv \lambda p. \lambda q. p \, q \, p$
-    \end{itemize}
-    \item \textbf{Church Numerals:}
-    \begin{itemize}
-        \item $0 \equiv \lambda f. \lambda x. x$
-        \item $1 \equiv \lambda f. \lambda x. f \, x$
-        \item $2 \equiv \lambda f. \lambda x. f (f \, x)$
-        \item $SUCC \equiv \lambda n. \lambda f. \lambda x. f (n \, f \, x)$
-    \end{itemize}
+    \begin{align*}
+        \mathit{TRUE}  &\equiv \lambda t.\, \lambda f.\, t \\
+        \mathit{FALSE} &\equiv \lambda t.\, \lambda f.\, f \\
+        \mathit{AND}   &\equiv \lambda p.\, \lambda q.\, p\, q\, p
+    \end{align*}
+    \item \textbf{Church Numerals} — the number $n$ applies $f$ exactly
+    $n$ times:
+    \begin{align*}
+        0    &\equiv \lambda f.\, \lambda x.\, x \\
+        1    &\equiv \lambda f.\, \lambda x.\, f\, x \\
+        2    &\equiv \lambda f.\, \lambda x.\, f\,(f\, x) \\
+        \mathit{SUCC} &\equiv \lambda n.\, \lambda f.\, \lambda x.\,
+                               f\,(n\, f\, x)
+    \end{align*}
 \end{itemize}
 
 \subsection{Recursion: The Y Combinator}
@@ -62,24 +89,12 @@ Since functions are anonymous, recursion is achieved via fixed points. Curry's Y
 \[ Y = \lambda f. (\lambda x. f (x \, x)) (\lambda x. f (x \, x)) \]
 It satisfies the property: $Y \, g = g (Y \, g)$, enabling infinite recursion.
 
-\subsection{Exercises}
+\subsection{Recursion: The Y Combinator}
 
-\subsection{Reduction and Variables}
-\begin{enumerate}
-    \item Identify the free and bound variables in the expression: $\lambda x. (\lambda y. x \, z) \, y$.
-    \item Reduce the following expression to its normal form: $(\lambda x. \lambda y. x \, y) (\lambda z. z) \, w$.
-    \item Are the expressions $\lambda a. \lambda b. a \, b$ and $\lambda b. \lambda a. b \, a$ $\alpha$-equivalent? Justify your answer.
-\end{enumerate}
-
-\subsection{Church Arithmetic}
-\begin{enumerate}
-    \item Using the definition of $SUCC$ and the numeral $1$, prove through $\beta$-reductions that $SUCC \, 1 = 2$.
-    \item Define the addition combinator $PLUS$ such that $PLUS \, m \, n$ returns the Church numeral representing the sum. (\textit{Hint: Apply the successor function to $n$, $m$ times}).
-\end{enumerate}
-
-\subsection{Logic and Combinators}
-\begin{enumerate}
-    \item Prove that $AND \, TRUE \, FALSE$ reduces to $FALSE$.
-    \item The $\Omega$ combinator is defined as $(\lambda x. x \, x)(\lambda x. x \, x)$. What happens when you attempt to reduce it? Does it have a normal form?
-    \item Use the $Y$ combinator to propose the structure of a function that calculates the factorial (specify the structure $F$ such that $Y \, F$ represents the factorial function).
-\end{enumerate}
+Lambda functions are anonymous, so recursion is not straightforward.
+The solution is Curry's \textbf{fixed-point combinator}:
+\[
+  Y = \lambda f.\,(\lambda x.\, f\,(x\, x))\,(\lambda x.\, f\,(x\, x))
+\]
+It satisfies $Y\, g = g\,(Y\, g)$, which allows recursive functions to be
+defined without ever naming them.
