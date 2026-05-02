@@ -7,3 +7,66 @@
 %   - $\llbracket C \rrbracket : \Sigma \to \Sigma_\bot$ (parcial por \texttt{while})
 %   - Punto fijo de Kleene para iteración
 %   - Equivalencia con la semántica operacional
+While operational smeantics describes \emph{how} a program executes step by step, denotational semantics asks a different question: \emph{what does a program mean?}. the idea is to assign each program a mathematical object, its denotation, in a way that is compositional; the meaning of compound expression is built entirely from the meanings of its parts.
+
+\subsection{interpretation functions}
+The central tool is the \textbf{interpretation function} $\llbracket \cdot \rrbracket$, which maps syntactic expressions to mathematical values. The double brackets are just notation, is like a translation from syntax into math.
+
+\subsection{the state domain}
+Programs do not compute in a vacuum, they read and write variables. We model this with a \textit{state}, a snapshot of memory at any point during execution:
+\[
+  \Sigma = \mathit{Var} \to \mathit{Val}
+\]
+A state $\sigma \in \Sigma$ assigns a value to every variable. With this, we can give meaning to both expressions and commands.
+
+\subsection{meaning of expressions}
+An arithmetic or boolean expression takes a state and returns a value:\[
+  \llbracket e \rrbracket : \Sigma \to \mathit{Val}
+\]
+For example, the meaning of $x + 1$ in state $\sigma$ is just $\sigma(x) + 1$. There is no mutation here, expressions are pure functions over states.
+
+\subsection{meaning fo commands}
+Commands are more interesting: they \emph{transform} states. A command takes an initial state and produces a final one:
+\[
+  \llbracket C \rrbracket : \Sigma \to \Sigma_\bot
+\]
+The $\bot$ subscript is important. It accounts for \emph{non-termination}, a \texttt{while} loop may never finish, so the result is not always a
+state. $\Sigma_\bot = \Sigma \cup \{\bot\}$ adds a special element $\bot$ (``bottom'') to represent divergence.
+
+\subsection{fixed points and iteration}
+
+The \texttt{while} loop is the tricky case. We cannot define its meaning directly, since it may run for an unbounded number of steps. instead, we use \textbf{Kleene's fixed-point theorem}.
+
+The idea is to build the meaning of \texttt{while} $b$ \texttt{do} $C$ as the least fixed point of a functional $\Phi$:
+\[
+  \Phi(f)(\sigma) =
+  \begin{cases}
+    f(\llbracket C \rrbracket(\sigma)) & \text{if } \llbracket b
+    \rrbracket(\sigma) = \mathit{true} \\
+    \sigma & \text{if } \llbracket b \rrbracket(\sigma) =
+    \mathit{false}
+  \end{cases}
+\]
+We approximate the meaning from below: $\Phi^0 = \bot$,
+$\Phi^1 = \Phi(\bot)$, $\Phi^2 = \Phi(\Phi(\bot))$, and so on. The least fixed point $\mathit{lfp}(\Phi) = \bigsqcup_{n \geq 0} \Phi^n$ captures \emph{all finite unrollings} of the loop, which is exactly what the loop computes.
+
+\subsection{equivalence with operational semantics}
+
+A natural question arises: do both styles of semantics agree? The answer is yes.
+
+\begin{theorem}[Equivalence]
+For all commands $C$, initial states $\sigma$, and final states
+$\sigma'$:
+\[
+  \langle C,\, \sigma \rangle \Downarrow \sigma'
+  \iff
+  \llbracket C \rrbracket(\sigma) = \sigma'
+\]
+\end{theorem}
+
+
+operational semantics tells us \emph{how} the program runs, and denotational semantics tells us \emph{what} it computes, and they agree on every input/output pair. Neither one is more ``correct''; they are two lenses on the same truth.
+
+
+
+
