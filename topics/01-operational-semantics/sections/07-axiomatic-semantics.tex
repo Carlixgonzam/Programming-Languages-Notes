@@ -1,5 +1,5 @@
 % !TeX root = ../main.tex
-\section{Axiomatic semantics (Hoare logic)}
+\section{Axiomatic semantics}
 % Sugerencias de contenido:
 %   - Tripletas de Hoare $\{P\}\, C\, \{Q\}$
 %   - Reglas: asignación, secuencia, condicional, while, consecuencia
@@ -7,3 +7,133 @@
 %   - Corrección parcial vs total
 %   - Precondición más débil (weakest precondition, $\mathit{wp}$)
 %   - Ejemplos: factorial, suma de un arreglo
+Axiomatic semantics takes a different approach from the other two styles: instead of describing how a program executes or what function it computes, it gives meaning to programs through \textbf{logical assertions} about their behavior. The central idea is to reason about what is true \emph{before} and \emph{after} a program runs.
+
+\subsection{Hoare triples}
+The basic unit is the \textbf{Hoare triple}:
+\[
+  \{P\}\; C\; \{Q\}
+\]
+where $P$ is the \textbf{precondition}, $C$ is a command, and $Q$ is the \textbf{postcondition}. Read it as: ``if $P$ holds before running $C$, and $C$ terminates, then $Q$ holds afterward.''
+
+For example:
+\[
+  \{x = 5\}\; x := x + 1\; \{x = 6\}
+\]
+
+\subsection{inference rules}
+The power of hoare logic comes from its \textbf{compositional rules}, one per language construct.
+
+\begin{itemize}
+  \item \textbf{Assignment:}
+  \[
+    \{P[x := e]\}\; x := e\; \{P\}
+  \]
+  Work backwards: to have $P$ after the assignment, you need $P$ with
+  $e$ substituted for $x$ before it.
+
+  \item \textbf{Sequence:}
+  \[
+    \frac{\{P\}\; C_1\; \{R\} \quad \{R\}\; C_2\; \{Q\}}
+         {\{P\}\; C_1;\, C_2\; \{Q\}}
+  \]
+  The postcondition of the first command becomes the precondition of
+  the second.
+
+  \item \textbf{Conditional:}
+  \[
+    \frac{\{P \wedge b\}\; C_1\; \{Q\} \quad \{P \wedge \neg b\}\;
+    C_2\; \{Q\}}
+         {\{P\}\; \texttt{if}\; b\; \texttt{then}\; C_1\;
+         \texttt{else}\; C_2\; \{Q\}}
+  \]
+  Each branch gets the precondition strengthened with the condition or
+  its negation.
+
+  \item \textbf{While:}
+  \[
+    \frac{\{I \wedge b\}\; C\; \{I\}}
+         {\{I\}\; \texttt{while}\; b\; \texttt{do}\; C\;
+         \{I \wedge \neg b\}}
+  \]
+  The loop \textbf{invariant} $I$ must hold before the loop, be
+  preserved by every iteration, and together with the negated condition
+  gives the postcondition when the loop exits.
+
+  \item \textbf{Consequence:}
+  \[
+    \frac{P \Rightarrow P' \quad \{P'\}\; C\; \{Q'\} \quad
+    Q' \Rightarrow Q}
+         {\{P\}\; C\; \{Q\}}
+  \]
+  Allows strengthening preconditions and weakening postconditions, essential for connecting rules together in a proof.
+\end{itemize}
+
+
+\subsection{loop invariants}
+Finding a good loop invariant is often the hardest part od a hoare logic proof. A valid invariant $I$ must satisfy three conditions:
+\begin{enumerate}
+  \item $I$ holds \textbf{before} the loop begins.
+  \item If $I$ holds and the condition $b$ is true, then after one
+  iteration of the body, $I$ still holds.
+  \item When the loop exits ($b$ is false), $I \wedge \neg b$ implies
+  the desired postcondition.
+\end{enumerate}
+
+\subsection{partial vs.\ total correctness}
+There are two flavors of correctness:
+\begin{itemize}
+  \item \textbf{Partial correctness} $\{P\}\, C\, \{Q\}$: if $C$
+  terminates, then $Q$ holds. It says nothing about \emph{whether}
+  $C$ terminates.
+  \item \textbf{Total correctness} $[P]\, C\, [Q]$: $C$ is guaranteed
+  to terminate \emph{and} $Q$ holds afterward.
+\end{itemize}
+
+total correctness requieres an additional argument, typically a \textbf{variant}, a quantity that strictly decreases with each iteration and is bounded below.
+
+\subsection{weakness preconditions}
+
+Rather tahn guessing a precondition, we can \emph{compute} the weakest one that makes a triple valid. The \textbf{weakest precondition} $\mathit{wp}(C, Q)$ is the least restrictive $P$ such that $\{P\}\, C\, \{Q\}$ holds.
+
+The key cases are:
+\begin{align*}
+  \mathit{wp}(x := e,\; Q) &= Q[x := e] \\
+  \mathit{wp}(C_1;\, C_2,\; Q) &= \mathit{wp}(C_1,\;
+  \mathit{wp}(C_2, Q)) \\
+  \mathit{wp}(\texttt{if}\; b\; \texttt{then}\; C_1\;
+  \texttt{else}\; C_2,\; Q)
+    &= (b \Rightarrow \mathit{wp}(C_1, Q))
+       \wedge (\neg b \Rightarrow \mathit{wp}(C_2, Q))
+\end{align*}
+For \texttt{while} loops, $\mathit{wp}$ cannot be computed
+mechanically in general, this is where loop invariants come back in.
+
+\subsection{Examples}
+
+\subsubsection{Factorial}
+
+Consider a program that computes $n!$ iteratively, storing the result
+in $r$. A suitable invariant is:
+\[
+  I \;:\; r \cdot i! = n! \;\wedge\; 0 \leq i \leq n
+\]
+Before the loop: $r = 1$, $i = n$, so $1 \cdot n! = n!$ — the
+invariant holds. Each iteration multiplies $r$ by $i$ and decrements
+$i$, preserving $r \cdot i! = n!$. When $i = 0$, we get $r = n!$.
+
+
+\subsubsection{Array Sum}
+
+For a program that sums the elements of an array $a[0..n-1]$ into
+variable $s$:
+\[
+  I \;:\; s = \sum_{k=0}^{i-1} a[k] \;\wedge\; 0 \leq i \leq n
+\]
+The invariant tracks a partial sum. When the loop exits with $i = n$,
+we have $s = \sum_{k=0}^{n-1} a[k]$, which is exactly the full sum.
+
+
+
+
+
