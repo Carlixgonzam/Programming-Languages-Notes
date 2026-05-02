@@ -8,3 +8,59 @@
 %   - Lema de canonicidad de valores
 %   - Lema de sustitución
 %   - Esquema de la demostración por inducción estructural
+Type safety is the formal guarantee that well-typed programs do not (go wrong), they never reach a state that is undefined or meaningless. It is established through two theorems that work together: \textbf{progress} and \textbf{preservation}.
+
+\subsection{progress}
+A well-typed expression is never \emph{stuck}, it is either already a value, or it can take a step.
+\begin{theorem}[progress]
+If $\vdash e : \tau$ and $e \reduces e'$, then $\vdash e' : \tau$.
+\end{theorem}
+
+Intuitively, this rules out situations like applying an integer as if it were a function, a well-typed program always has somewhere to go.
+
+\subsection{preservation}
+Taking a step does not change the type of an expression.
+
+\begin{theorem}[preservation]
+If $\vdash e : \tau$ and $e \reduces e'$, then $\vdash e' : \tau$
+\end{theorem}
+
+Together, progress and preservation give us the \textbf{type safety} property: evaluation of a well-typed expression either produces a value of the expected type, or diverges; but it never crashes.
+
+\subsection{Supporting lemmas}
+The proofs of the both theorems rely on two key lemmas.
+\begin{lemma}[Canonicity]
+If $\vdash v : \tau$ and $v$ is a value, then the \emph{shape} of $v$
+is determined by $\tau$. For example:
+\begin{itemize}
+    \item If $\tau = \mathit{Bool}$, then $v$ is either $\mathit{true}$
+    or $\mathit{false}$.
+    \item If $\tau = \tau_1 \to \tau_2$, then $v = \lambda x.\, e$ for
+    some $x$ and $e$.
+\end{itemize}
+\end{lemma}
+
+This lemma is what lets us case-split on the shape of a value during a proof, we know exactly what forms are possible.
+
+\begin{lemma}[Substitution]
+If $\Gamma, x : \tau' \vdash e : \tau$ and $\vdash v : \tau'$, then
+$\Gamma \vdash e[x := v] : \tau$.
+\end{lemma}
+
+in plain terms, substituing a well-typed value for a variable preserves typing. This is the key step in proving Preservation for $\beta$ reduction.
+
+\subsection{proof strategy: structural induction}
+Both theorems are proved by \textbf{structural induction} on the typing derivation. The general scheme is:
+
+\begin{enumerate}
+    \item \textbf{Base cases:} handle values and variables directly, these are straightforward since no reduction is possible.
+    \item \textbf{Inductive cases:} for each typing rule (application,
+    abstraction, conditionals, etc.), assume the result holds for the
+    subexpressions (\emph{induction hypothesis}), then show it holds for
+    the whole expression.
+    \item \textbf{Use the lemmas:} Canonicity tells you what shape a
+    value has; Substitution handles the $\beta$-reduction case in
+    Preservation.
+\end{enumerate}
+
+the structure of the proof closely mirrors the structure of the language, one case per typing rule. Once you see the patternm it becomes mechanical.
