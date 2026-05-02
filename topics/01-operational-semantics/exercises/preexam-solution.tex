@@ -356,4 +356,195 @@ con valor $3$.
   \end{enumerate}
 \end{tcolorbox}
 
+\subsection{Worked Examples}
+
+The following examples are designed to address two common sources of
+confusion: the difference between big-step and small-step style, and
+how to extend the semantics with new constructs. Each example is worked
+out in full.
+
+% ---------------------------------------------------------------
+\subsubsection{Example 1: Big-step vs.\ Small-step on the Same Program}
+% ---------------------------------------------------------------
+
+Consider the following SIMP program with initial state
+$\sigma = \{x \mapsto 3,\; y \mapsto 0\}$:
+
+\begin{verbatim}
+y := !x + 1 ;
+x := !y * 2
+\end{verbatim}
+
+\paragraph{Big-step derivation.}
+Big-step semantics derives the \emph{final} state in one tree. We write
+$\langle C, \sigma \rangle \Downarrow \sigma'$ to mean ``command $C$
+in state $\sigma$ terminates in state $\sigma'$''.
+
+The key insight: in big-step style you build a \textbf{derivation tree} the root is the whole program, the leaves are axioms. Work
+\emph{top-down} by applying the sequence rule, then fill in each
+sub-derivation.
+
+\[
+\dfrac{
+  \dfrac{
+    \langle !x + 1,\;\sigma \rangle \Downarrow 4
+  }{
+    \langle y := !x + 1,\;\sigma \rangle \Downarrow \sigma_1
+  }
+  \qquad
+  \dfrac{
+    \langle !y * 2,\;\sigma_1 \rangle \Downarrow 8
+  }{
+    \langle x := !y * 2,\;\sigma_1 \rangle \Downarrow \sigma_2
+  }
+}{
+  \langle y := !x + 1\;;\; x := !y * 2,\;\sigma \rangle
+  \Downarrow \sigma_2
+}
+\]
+
+where $\sigma_1 = \sigma[y \mapsto 4]$ and
+$\sigma_2 = \sigma_1[x \mapsto 8]$.
+
+Final state: $\sigma_2 = \{x \mapsto 8,\; y \mapsto 4\}$.
+
+\paragraph{Small-step derivation.}
+Small-step semantics reduces the program \emph{one step at a time}.
+We write $\langle C, \sigma \rangle \to \langle C', \sigma' \rangle$
+(or $\langle C, \sigma \rangle \to \langle \mathbf{skip}, \sigma'
+\rangle$ at the last step).
+
+The key insight: in small-step style you write a \textbf{linear
+sequence} of configurations. At each step, apply exactly one rule to
+the leftmost reducible sub-expression.
+
+\begin{align*}
+&\langle\; y := !x + 1\;;\; x := !y * 2,\;\sigma \rangle \\
+\to\;&\langle\; y := 3 + 1\;;\; x := !y * 2,\;\sigma \rangle
+  &&\text{(dereference $!x$)} \\
+\to\;&\langle\; y := 4\;;\; x := !y * 2,\;\sigma \rangle
+  &&\text{(arithmetic)} \\
+\to\;&\langle\; \mathbf{skip}\;;\; x := !y * 2,\;\sigma_1 \rangle
+  &&\text{(assign, $\sigma_1 = \sigma[y\mapsto 4]$)} \\
+\to\;&\langle\; x := !y * 2,\;\sigma_1 \rangle
+  &&\text{(skip-seq)} \\
+\to\;&\langle\; x := 4 * 2,\;\sigma_1 \rangle
+  &&\text{(dereference $!y$)} \\
+\to\;&\langle\; x := 8,\;\sigma_1 \rangle
+  &&\text{(arithmetic)} \\
+\to\;&\langle\; \mathbf{skip},\;\sigma_2 \rangle
+  &&\text{(assign, $\sigma_2 = \sigma_1[x\mapsto 8]$)}
+\end{align*}
+
+Both styles reach the same final state
+$\{x \mapsto 8,\; y \mapsto 4\}$.
+
+\paragraph{When to use each.}
+\begin{itemize}
+  \item Use \textbf{big-step} when you only care about the final result
+  and want a compact derivation.
+  \item Use \textbf{small-step} when you need to reason about
+  intermediate states, non-termination, or concurrency.
+  \item Never mix styles in the same derivation.
+\end{itemize}
+
+\subsubsection{Example 2: Extending SIMP with \texttt{for}}
+
+We extend SIMP with the construct \texttt{for} $E_1$ \texttt{to} $E_2$
+\texttt{do} $C$, which evaluates $E_1$ and $E_2$ \emph{once} at the
+start and executes $C$ for each integer $i$ with $n_1 \leq i \leq n_2$
+(does nothing if $n_1 > n_2$).
+
+\paragraph{Step 1 Define the rules}
+
+The standard strategy is to \emph{desugar} the new construct into
+existing ones once the bounds are known. We need three rules.
+
+\medskip
+\noindent\textbf{Evaluate the bounds} (two expression-reduction steps,
+small-step):
+\[
+  \frac{
+    \langle E_1, \sigma \rangle \to \langle E_1', \sigma \rangle
+  }{
+    \langle \texttt{for}\; E_1\;\texttt{to}\; E_2\;\texttt{do}\; C,\;
+    \sigma \rangle \;\to\;
+    \langle \texttt{for}\; E_1'\;\texttt{to}\; E_2\;\texttt{do}\; C,\;
+    \sigma \rangle
+  }
+\]
+\[
+  \frac{
+    \langle E_2, \sigma \rangle \to \langle E_2', \sigma \rangle
+  }{
+    \langle \texttt{for}\; n_1\;\texttt{to}\; E_2\;\texttt{do}\; C,\;
+    \sigma \rangle \;\to\;
+    \langle \texttt{for}\; n_1\;\texttt{to}\; E_2'\;\texttt{do}\; C,\;
+    \sigma \rangle
+  }
+\]
+
+\noindent\textbf{Base case} bounds are values, loop is empty
+($n_1 > n_2$):
+\[
+  \frac{n_1 > n_2}{
+    \langle \texttt{for}\; n_1\;\texttt{to}\; n_2\;\texttt{do}\; C,\;
+    \sigma \rangle \;\to\;
+    \langle \mathbf{skip},\; \sigma \rangle
+  }
+\]
+
+\noindent\textbf{Inductive case} unfold one iteration ($n_1 \leq
+n_2$):
+\[
+  \frac{n_1 \leq n_2}{
+    \langle \texttt{for}\; n_1\;\texttt{to}\; n_2\;\texttt{do}\; C,\;
+    \sigma \rangle \;\to\;
+    \langle C\;;\;\texttt{for}\; (n_1{+}1)\;\texttt{to}\; n_2\;
+    \texttt{do}\; C,\; \sigma \rangle
+  }
+\]
+
+\paragraph{Step 2 Trace through an example.}
+
+Use state $\sigma = \{x \mapsto 0,\; n_1 \mapsto 1,\; n_2 \mapsto 3\}$
+and program \texttt{for} $!n_1$ \texttt{to} $!n_2$ \texttt{do}
+$x := !x + 1$.
+
+\begin{align*}
+&\langle \texttt{for}\;!n_1\;\texttt{to}\;!n_2\;\texttt{do}\;
+  x{:=}!x{+}1,\;\sigma \rangle \\
+\to\;&\langle \texttt{for}\;1\;\texttt{to}\;!n_2\;\texttt{do}\;
+  x{:=}!x{+}1,\;\sigma \rangle
+  &&\text{(deref $!n_1$)}\\
+\to\;&\langle \texttt{for}\;1\;\texttt{to}\;3\;\texttt{do}\;
+  x{:=}!x{+}1,\;\sigma \rangle
+  &&\text{(deref $!n_2$)}\\
+\to\;&\langle x{:=}!x{+}1\;;\;\texttt{for}\;2\;\texttt{to}\;3\;
+  \texttt{do}\;x{:=}!x{+}1,\;\sigma \rangle
+  &&\text{(unfold, $1 \leq 3$)}\\
+\to\;&\langle \mathbf{skip}\;;\;\texttt{for}\;2\;\texttt{to}\;3\;
+  \texttt{do}\;x{:=}!x{+}1,\;\sigma_1 \rangle
+  &&\text{(assign, $\sigma_1 = \sigma[x\mapsto 1]$)}\\
+\to\;&\langle \texttt{for}\;2\;\texttt{to}\;3\;\texttt{do}\;
+  x{:=}!x{+}1,\;\sigma_1 \rangle
+  &&\text{(skip-seq)}\\
+  &\quad\vdots \\
+\to\;&\langle \mathbf{skip},\;\sigma_3 \rangle
+  &&\text{(base case, $4 > 3$, $\sigma_3 = \sigma[x \mapsto 3]$)}
+\end{align*}
+
+\paragraph{Common mistakes to avoid.}
+\begin{itemize}
+  \item \textbf{Evaluating the bounds repeatedly.} The bounds $n_1$ and
+  $n_2$ must be fully reduced to values \emph{before} unfolding begins.
+  If you unfold first, you may re-evaluate a side-effectful expression
+  on every iteration.
+  \item \textbf{Forgetting the base case.} Without the $n_1 > n_2$
+  rule, the derivation never terminates for empty ranges.
+  \item \textbf{Mixing big-step and small-step notation.} In big-step,
+  the \texttt{for} rules look different, each premise is a full
+  $\Downarrow$ judgment, not a single $\to$ step.
+\end{itemize}
+
 \end{document}
