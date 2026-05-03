@@ -4,7 +4,7 @@
 \subsection{The Core Idea}
 
 A \textbf{domain-specific language} (DSL) is a programming language built for one thing.
-Not a general tool --- a scalpel. You trade the ability to do \emph{anything} for the
+Not a general tool, a scalpel. You trade the ability to do \emph{anything} for the
 ability to express things in a specific domain so naturally that the program almost reads
 like plain text written by a domain expert.
 
@@ -25,7 +25,7 @@ cannot, precisely because it does less.
 
 \subsection{Examples Worth Studying}
 
-\subsubsection{SQL --- The Canonical DSL}
+\subsubsection{SQL The Canonical DSL}
 
 SQL is probably the most successful DSL ever written. The domain is relational data, and
 the language maps almost perfectly onto how people think about tables and relationships.
@@ -35,15 +35,15 @@ Instead of writing a join algorithm, you write:
 SELECT athlete.name, workout.distance
 FROM athlete
 JOIN workout ON athlete.id = workout.athlete_id
-WHERE workout.date = '2024-01-15';
+WHERE workout.date = '2026-05-03';
 \end{lstlisting}
 
-Notice what's missing: no loops, no memory management, no iteration order. The \emph{how}
+Notice what's missing; no loops, no memory management, no iteration order. The \emph{how}
 (hash join? nested loop? index scan?) is the engine's problem. You only say \emph{what}
 you want. That declarative gap between intent and execution is exactly what makes SQL so
 readable decades after it was designed.
 
-\subsubsection{Makefile --- Dependency-Driven Computation}
+\subsubsection{Makefile: Dependency-Driven Computation}
 
 A Makefile is a DSL for build systems. The domain is dependency graphs: given a set of
 files and the commands that produce them, figure out the minimal set of steps needed to
@@ -65,20 +65,20 @@ clean:
 
 The interesting thing about Makefiles is that the semantics are \emph{graph-based}: the
 language describes nodes and edges, and the interpreter does a topological sort to figure
-out what to run. Execution is lazy --- nothing is rebuilt unless its dependencies changed.
+out what to run. Execution is lazy, nothing is rebuilt unless its dependencies changed.
 This is very different from the imperative ``run these commands in order'' style of a shell
 script. The DSL encodes the \emph{structure} of the computation, not the sequence.
 
-\subsubsection{Regular Expressions --- Extremely Small Domain}
+\subsubsection{Regular Expressions Extremely Small Domain}
 
 A regex like \texttt{[A-Z][a-z]+\textbackslash{}d\{4\}} replaces what would be
 20--30 lines of character-matching code in a general-purpose language. The domain is so
 narrow (string patterns) that you can pack enormous expressiveness into a handful of
 characters. The downside is the flip side of that density: regexes are hard to read for
-anyone who doesn't already speak the notation. This is a real design tension --- concise
+anyone who doesn't already speak the notation. This is a real design tension; concise
 is not always readable.
 
-\subsubsection{A Training DSL --- The Running Example}
+\subsubsection{A Training DSL, the running example}
 
 For this project, the domain is athletic training plans. A coach writing a plan might
 naturally say ``Monday: threshold run, 10 kilometers, then 15 minutes of rest''. The
@@ -120,7 +120,7 @@ is a grammar over $\Sigma$ that defines which strings are syntactically valid, a
 $\mathcal{S}$ is a semantic function that maps parse trees to meanings. A program is any
 string $p \in \mathcal{L}(\mathcal{G})$, and its meaning is $\mathcal{S}(\text{parse}(p))$.
 
-This is the same structure as any programming language --- the DSL isn't doing anything
+This is the same structure as any programming language, the DSL isn't doing anything
 fundamentally different from Python or Java at the formal level. The difference is in
 scope: $\Sigma$ is small, $\mathcal{G}$ is simple, and $\mathcal{S}$ is restricted to
 the domain.
@@ -143,7 +143,7 @@ UNIT      ::= 'km' | 'm' | 'min' | 'h'
 
 This grammar is context-free and unambiguous. It's small enough that a hand-written
 recursive-descent parser can handle it in $O(n)$ time with just one token of lookahead.
-That simplicity is intentional --- if the grammar is getting complicated, it's usually a
+That simplicity is intentional; if the grammar is getting complicated, it's usually a
 sign that the language is trying to do too much.
 
 \subsection{External vs Internal DSLs}
@@ -159,12 +159,12 @@ Protocol Buffers are all external DSLs.
 The upside is full control: the syntax can look exactly like the domain vocabulary, there
 are no constraints from a host language, and non-programmers can read the programs.
 The downside is real: you have to build everything yourself. Lexer, parser, semantic
-analyzer, interpreter or compiler, error messages --- all from scratch.
+analyzer, interpreter or compiler, error messages; all from scratch.
 
-\subsubsection{Internal (Embedded) DSLs}
+\subsubsection{Internal or Embedded DSLs}
 
-An internal DSL lives inside a host language. It uses the host's features --- method
-chaining, operator overloading, macros --- to approximate domain syntax while staying
+An internal DSL lives inside a host language. It uses the host's features; method
+chaining, operator overloading, macros, to approximate domain syntax while staying
 legal in the host language:
 
 \begin{lstlisting}[language=Python]
@@ -175,7 +175,7 @@ plan = (TrainingPlan()
 \end{lstlisting}
 
 You get the host language's toolchain for free (parser, type checker, debugger, IDE
-support). What you lose is syntax freedom --- the result still looks like Python, and
+support). What you lose is syntax freedom, the result still looks like Python, and
 errors still come from Python. For a training coach, this is probably a deal-breaker.
 For a team of developers building a test framework (like pytest) or a query builder
 (like SQLAlchemy), it's a perfectly good trade.
@@ -280,7 +280,7 @@ produce different, targeted messages.
 
 \subsection{Syntax, Semantics, and Execution: The Three Pillars}
 
-Any programming language --- and any DSL --- is defined by three things.
+Any programming language and; any DSL is defined by three things.
 
 \textbf{Syntax} says what programs look like. It's the grammar that defines which strings
 are valid. This is the most visible part because it's what the user sees and writes.
@@ -333,7 +333,7 @@ with its programs.
 The flip side is real and worth being honest about. You have to build the whole toolchain.
 No debugger, no IDE autocomplete, no standard library unless you write them. The language
 will evolve, and versioning a language is harder than versioning an API. And there's an
-adoption cost --- users have to learn the notation, even if it's simple.
+adoption cost, users have to learn the notation, even if it's simple.
 
 The decision makes sense when the domain is stable, the user base is large or non-technical,
 and correctness constraints at the domain level are worth enforcing. When those conditions

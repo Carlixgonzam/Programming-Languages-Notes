@@ -60,8 +60,8 @@ plan.add_activity(
 \end{center}
 
 The declarative version doesn't talk about \texttt{add\_day} or \texttt{add\_activity}.
-It talks about what the Monday training looks like. That shift in perspective --- from
-operations to descriptions --- is what makes a DSL feel natural to a domain expert.
+It talks about what the Monday training looks like. That shift in perspective from
+operations to descriptions is what makes a DSL feel natural to a domain expert.
 
 \subsubsection{Verbosity and Conciseness}
 
@@ -90,7 +90,7 @@ use indentation as structure, which reads naturally but makes the lexer more com
 (it has to track indent/dedent tokens). JSON and C use explicit delimiters, which are
 simpler to parse but add syntactic noise.
 
-For the training DSL, using indentation to separate days from activities is natural --- it
+For the training DSL, using indentation to separate days from activities is natural it
 mirrors how a human would write a schedule on paper. The complexity cost of tracking
 indentation in the lexer is worth it for the readability gain.
 
@@ -117,8 +117,7 @@ should make structure unambiguous, not rely on the user to ``write it right.''
 \subsubsection{Context-Free is Usually Enough}
 
 Most DSL syntaxes fit comfortably in the context-free grammar class. Context-free grammars
-are parseable in $O(n^3)$ in general, but with LL(1) or LR(1) grammars you get $O(n)$
---- linear time, token by token.
+are parseable in $O(n^3)$ in general, but with LL(1) or LR(1) grammars you get $O(n)$ linear time, token by token.
 
 Context-sensitive constraints (``this unit must be compatible with this exercise'') don't
 belong in the grammar. They belong in the semantic analysis phase, after the parse tree
@@ -225,7 +224,7 @@ messages precise: you always know which layer caught the problem.
 \subsection{Abstraction Level}
 
 One of the harder design decisions is figuring out \emph{how much} to abstract. The right
-level is the one that matches the domain's natural vocabulary --- not higher, not lower.
+level is the one that matches the domain's natural vocabulary not higher, not lower.
 
 \begin{center}
 \begin{tikzpicture}[node distance=1.8cm]
@@ -393,13 +392,13 @@ Error handling is not something you add at the end. It's part of the language de
 The four levels of errors in a DSL form a hierarchy:
 
 \begin{enumerate}
-  \item \textbf{Lexical errors} --- something the lexer doesn't recognize.
+  \item \textbf{Lexical errors} something the lexer doesn't recognize.
     \texttt{r\%n: 10km} fails because \texttt{\%} isn't in the alphabet.
-  \item \textbf{Syntax errors} --- valid tokens in an invalid structure.
+  \item \textbf{Syntax errors} valid tokens in an invalid structure.
     \texttt{run 10km:} fails because the colon is in the wrong position.
-  \item \textbf{Semantic errors} --- valid structure, wrong types or constraints.
+  \item \textbf{Semantic errors} valid structure, wrong types or constraints.
     \texttt{run: 10min} fails because \texttt{min} is a duration unit, not a distance.
-  \item \textbf{Domain errors} --- valid and typed, but physically unreasonable.
+  \item \textbf{Domain errors} valid and typed, but physically unreasonable.
     \texttt{run: 500km @sprint} passes all structural checks but represents an impossible
     training session.
 \end{enumerate}
@@ -414,7 +413,7 @@ language should produce domain-specific errors.
 One distinctive design decision for this particular DSL is the integration with an AI
 layer. The system accepts natural language input (``add a threshold run Monday, about
 10k'') and translates it into a valid DSL program before parsing. This is not part of
-the DSL itself --- it's a translation layer that sits in front of the lexer.
+the DSL itself; it's a translation layer that sits in front of the lexer.
 
 \begin{center}
 \begin{tikzpicture}[node distance=2.4cm]
@@ -447,7 +446,7 @@ the DSL itself --- it's a translation layer that sits in front of the lexer.
 \end{center}
 
 The reason this architecture makes sense is that the DSL acts as a \emph{structured
-intermediate representation}. The AI doesn't output training schedules directly --- it
+intermediate representation}. The AI doesn't output training schedules directly; it
 outputs DSL programs that are then validated by the full pipeline. If the AI produces
 something invalid (wrong unit, impossible value, malformed structure), the semantic
 checker catches it. The validation feedback can even be fed back to the AI to ask for
@@ -499,5 +498,5 @@ Evolution         & Additive      & Don't break stored plans \\
 
 The through-line across all these decisions is the same: the design serves the user, not
 the implementor. A training DSL that forces a coach to think about parsers or type systems
-has failed. The goal is for the language to disappear --- for the user to think about
+has failed. The goal is for the language to disappear for the user to think about
 training, not syntax.
