@@ -1,0 +1,81 @@
+\section{Design Decisions in DSL Development}
+\subsection{Intuition}
+
+Designing a DSL is not only about defining syntax, but about making a series of trade-offs that affect usability, expressiveness, and implementation complexity.
+
+Every design choice reflects a balance between:
+\begin{itemize}
+\item Simplicity vs Expressiveness
+\item Flexibility vs Safety
+\item Abstraction vs Control
+\end{itemize}
+
+\subsection{Core Design Dimensions}
+
+\subsubsection{Syntax Design}
+A DSL must be readable and intuitive for its users.
+\begin{itemize}
+\item Declarative vs imperative style
+\item Verbosity vs conciseness
+\end{itemize}
+\textbf{Example:}
+\begin{verbatim}
+swim: 2000m
+\end{verbatim}
+This is preferred over:
+\begin{verbatim}
+addExercise("swim", 2000)
+\end{verbatim}
+
+
+\subsubsection{Abstraction Level}
+The DSL should operate at the level of the domain, not implementation details.
+\begin{center}
+\begin{tikzpicture}
+\node (low) [draw, rectangle] {Low-level code};
+\node (mid) [draw, rectangle, above of=low, yshift=1cm] {General-purpose abstraction};
+\node (high) [draw, rectangle, above of=mid, yshift=1cm] {Domain-specific abstraction};
+\draw[->] (low) -- (mid);
+\draw[->] (mid) -- (high);
+\end{tikzpicture}
+\end{center}
+\subsubsection{Error Handling and Validation}
+A well-designed DSL should prevent invalid programs.
+Examples:
+\begin{itemize}
+\item Prevent unrealistic workloads
+\item Ensure valid units and structure
+\end{itemize}
+\subsubsection{Extensibility}
+The DSL should evolve without breaking existing programs.
+Strategies:
+\begin{itemize}
+\item Modular grammar design
+\item Versioning
+\end{itemize}
+\subsection{Execution Model}
+Deciding how the DSL runs:
+\begin{itemize}
+\item Interpreted vs compiled
+\item Static vs dynamic evaluation
+\end{itemize}
+For this project, an interpreted model is preferred for flexibility and rapid iteration.
+\subsection{Design Trade-offs}
+\begin{center}
+\begin{tikzpicture}
+\node (simplicity) [draw, rectangle] {Simplicity};
+\node (expressiveness) [draw, rectangle, right of=simplicity, xshift=4cm] {Expressiveness};
+\draw[<->] (simplicity) -- (expressiveness);
+\end{tikzpicture}
+\end{center}
+Increasing expressiveness often introduces complexity.
+\subsection{Connection to My DSL}
+In the training DSL:
+\begin{itemize}
+\item The syntax is declarative to match how athletes think
+\item The abstraction focuses on workouts, not code
+\item Validation ensures realistic training loads
+\item The system is designed to integrate with AI for intelligent recommendations
+\end{itemize}
+One key decision is to allow natural language inputs to be translated into the DSL, combining flexibility with structure.
+This positions the DSL as a central component in an intelligent training system rather than just a scripting tool.
