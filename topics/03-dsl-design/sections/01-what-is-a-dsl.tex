@@ -1,0 +1,66 @@
+% !TEX root = ../main.tex
+\section{What is a Domain-Specific Language (DSL)?}
+\subsection{Intuition}
+
+A domain-specific language is a programming language designed to solve problems within a specific domain. Unlike general-purpose languages such as \texttt{Python} or \texttt{Java}, DSLs focus on expressiveness and efficiency for a narrow set of tasks.
+
+Instead of writing generic code, users express intent directly in terms of the domain.
+
+\subsection{examples}
+\begin{itemize}
+\item SQL for databse queries
+\item HTML for document structure
+\item Regular expressions for pattern matching
+\end{itemize}
+
+Each of these languages abstracts away general computation in favor of domain clarity.
+
+\subsection{General-purpose vs Domain-specific languages}
+\begin{center}
+\begin{tikzpicture}[node distance=3cm]
+\node (gpl) [draw, rectangle] {General-Purpose Languages};
+\node (dsl) [draw, rectangle, right of=gpl, xshift=4cm] {Domain-Specific Languages};
+\node (gpl_desc) [below of=gpl] {Flexible \ Broad \ Verbose};
+\node (dsl_desc) [below of=dsl] {Focused \ Expressive \ Concise};
+\draw[->] (gpl) -- (dsl) node[midway, above] {Specialization};
+\end{tikzpicture}
+\end{center}
+
+
+\subsection{Types of DSLs}
+\begin{itemize}
+\item \textbf{External DSLs:} Standalone languages with custom syntax (e.g., SQL)
+\item \textbf{Internal DSLs:} Embedded within a host language (e.g., fluent APIs in Python)
+\end{itemize}
+
+\subsection{Formal View}
+A DSL can be defined by three main components:
+\begin{itemize}
+\item \textbf{Syntax:} The structure of valid programs
+\item \textbf{Semantics:} The meaning of those programs
+\item \textbf{Execution Model:} How programs are evaluated or interpreted
+\end{itemize}
+
+\subsection{Pipeline of a DSL}
+\begin{center}
+\begin{tikzpicture}[node distance=2.5cm]
+\node (input) [draw, rectangle] {User Input};
+\node (parser) [draw, rectangle, right of=input, xshift=3cm] {Parser};
+\node (ast) [draw, rectangle, right of=parser, xshift=3cm] {AST};
+\node (exec) [draw, rectangle, right of=ast, xshift=3cm] {Execution};
+\draw[->] (input) -- (parser);
+\draw[->] (parser) -- (ast);
+\draw[->] (ast) -- (exec);
+\end{tikzpicture}
+\end{center}
+\subsection{Why DSLs Matter}
+DSLs allow:
+\begin{itemize}
+\item Higher productivity within a domain
+\item Reduced cognitive load
+\item More maintainable and readable domain logic
+\end{itemize}
+They are especially powerful when combined with automation and intelligent systems.
+
+
+The DSL becomes the bridge between human intent and machine-executable logic.
