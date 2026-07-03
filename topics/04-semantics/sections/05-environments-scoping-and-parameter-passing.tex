@@ -1,0 +1,383 @@
+% !TeX root = ../main.tex
+\section{Environments, scoping, and parameter passing}
+
+Both the operational and denotational sections used a store
+$\sigma : \mathit{Loc} \to \mathit{Val}$ (or, loosely, $\mathit{Var} \to \mathit{Val}$) as if
+variable names \emph{were} memory locations. That conflation is harmless for SIMP, where
+every variable is a single mutable cell that's never hidden, shadowed, or passed around as
+a first-class value. It stops being harmless the moment a language has function
+definitions, parameters, nested scopes, or closures --- you need to separate ``which
+location does this name currently refer to'' from ``what value is stored at that
+location.'' That separation, and its consequences for scoping, closures, and how a function
+call binds its parameters, is the subject of this section.
+
+\subsection{environments vs.\ state}
+
+\begin{definition}[Environment and store]
+An \textbf{environment} is a mapping from names to locations, $\rho \in \mathit{Env} =
+\mathit{Var} \to \mathit{Loc}$. A \textbf{store} (the $\sigma$ you already know) maps
+locations to values, $\sigma \in \mathit{Store} = \mathit{Loc} \to \mathit{Val}$. Reading a
+variable $x$ under environment $\rho$ and store $\sigma$ is $\sigma(\rho(x))$: look up
+$x$'s location, then look up that location's value.
+\end{definition}
+
+Why bother with two maps when one, $\mathit{Var} \to \mathit{Val}$, would suffice for SIMP?
+Because separating them is exactly what lets two different names alias the \emph{same}
+location (two parameters bound to the same variable, a closure capturing a variable, a
+reference parameter), and it's what lets one name refer to \emph{different} locations at
+different times (recursion allocating a fresh location per call, a block-scoped
+declaration shadowing an outer one). Every example in the rest of this section, scoping,
+closures, aliasing under different parameter-passing disciplines, is really a story about
+how $\rho$ and $\sigma$ get extended, copied, or shared.
+
+\begin{remark}
+For a purely functional language with no mutation, you can collapse $\rho$ directly into
+$\mathit{Var} \to \mathit{Val}$: there's no need for locations if nothing is ever written to
+twice. That's the version of ``environment'' you'll see in most treatments of the untyped
+or simply-typed lambda calculus. As soon as assignment re-enters the picture, keep the two
+maps separate --- it's the only way to model aliasing correctly.
+\end{remark}
+
+\subsection{static (lexical) vs.\ dynamic scoping}
+
+\begin{definition}[Static and dynamic scoping]
+Under \textbf{static (lexical) scoping}, a free variable in a function body refers to the
+binding that is textually in scope at the point where the function is \emph{defined} ---
+you can determine which binding a name resolves to just by reading the source, without
+running the program. Under \textbf{dynamic scoping}, a free variable refers to the most
+recent binding still active on the call stack at the point where the function is
+\emph{called} --- determining which binding a name resolves to requires knowing the call
+history, not just the text.
+\end{definition}
+
+The cleanest way to see the difference is to run the \emph{same} program under both
+disciplines. Pseudo-Scheme:
+\begin{lstlisting}[language=Lisp]
+(define x 10)
+
+(define (f) x)          ; f's body refers to the free variable x
+
+(define (g)
+  (define x 20)          ; a *local* x, shadowing the global one
+  (f))                    ; calls f
+\end{lstlisting}
+
+\textbf{Static scoping} (Scheme, Python, JavaScript, C, and almost everything else you use
+day to day): when \texttt{f} was \emph{defined}, the enclosing scope had \texttt{x = 10}
+(the global). Calling \texttt{(g)} calls \texttt{(f)}, but \texttt{f}'s reference to
+\texttt{x} was already resolved to the global binding at definition time, regardless of who
+calls it or what local \texttt{x} values happen to be on the stack. \texttt{(g)} returns
+\texttt{10}.
+
+\textbf{Dynamic scoping} (traditional Lisp, early APL, Emacs Lisp ``special'' variables,
+and, as a very real modern example, Bash function variables): \texttt{f}'s reference to
+\texttt{x} is resolved by walking \emph{up the call stack} looking for the nearest active
+binding of \texttt{x}. Calling \texttt{(f)} from inside \texttt{(g)} finds \texttt{g}'s
+local \texttt{x = 20} first, so \texttt{(g)} returns \texttt{20}.
+
+You can watch this exact split happen in a real, currently-maintained language, because
+Bash's \texttt{local} is dynamically scoped:
+\begin{lstlisting}[language=bash]
+x=10
+f() { echo "$x"; }
+g() { local x=20; f; }
+
+g       # prints 20, not 10 -- f finds g's local x on the call stack
+f       # prints 10 -- no g on the stack, nearest x is the global one
+\end{lstlisting}
+
+Same shape of program, same names, two different, both internally consistent, answers.
+This is exactly why dynamic scoping is rare in modern general-purpose languages: to know
+what \texttt{f} returns, you'd need to know \emph{every call site} that might reach it, not
+just \texttt{f}'s own text --- that breaks the kind of modular, call-site-independent
+reasoning the operational and axiomatic semantics sections gave you (a Hoare triple for
+\texttt{f} alone would be meaningless if \texttt{f}'s free variables depended on who calls
+it). Where dynamic-like scoping survives today, it's usually opt-in and narrowly scoped:
+Emacs Lisp's special variables, \texttt{parameterize} in Racket, thread-local or
+``context'' variables in some frameworks, or shell scripting, where the informality of
+small scripts is an acceptable trade for the convenience of ambient configuration.
+
+\subsection{closures: deep vs.\ shallow binding}
+
+Now suppose a function \emph{returns} a function, or stores one in a data structure, and
+that inner function is later called long after the outer call has returned --- the outer
+function's stack frame is gone. If lexical scoping is going to keep working (the inner
+function's free variables must still resolve to the bindings that were in scope where it
+was \emph{defined}), the inner function needs to bring its defining environment along with
+it. That bundle, code plus the environment it was defined in, is a \textbf{closure}.
+
+\begin{definition}[Closure]
+A closure is a pair $(\lambda x.\, e,\ \rho)$ of a function value and the environment
+$\rho$ active at the point the function was created. Calling the closure with argument $v$
+evaluates $e$ under $\rho[x \mapsto \ell]$ for a fresh location $\ell$ with
+$\sigma(\ell) = v$ --- \emph{not} under the caller's environment.
+\end{definition}
+
+Given that closures must carry an environment, the interesting design question is exactly
+\emph{what} they carry:
+\begin{itemize}
+  \item \textbf{Deep binding}: the closure captures the environment itself, i.e., which
+  \emph{locations} the free variables point to. If a captured variable is later mutated
+  through that same location by someone else, the closure sees the update: closure and
+  outside world share memory.
+  \item \textbf{Shallow binding}: the closure captures a \emph{copy of the values} of the
+  free variables at creation time. Later mutation of the original variable is invisible to
+  the closure.
+\end{itemize}
+Almost every modern language with closures, Python, JavaScript, Scheme, Java's lambdas over
+effectively-final locals, uses deep binding for captured mutable state. The loop-variable
+gotcha below is a direct, very visible consequence of that choice.
+
+\subsection{the loop-variable gotcha}
+
+\begin{example}
+\begin{lstlisting}[language=Python]
+funcs = []
+for i in range(3):
+    funcs.append(lambda: i)
+
+print([f() for f in funcs])   # [2, 2, 2], NOT [0, 1, 2]
+\end{lstlisting}
+All three lambdas close over the \emph{same} location, the one bound to \texttt{i} by the
+\texttt{for} loop. Python's \texttt{for} doesn't create a fresh binding per iteration, it
+repeatedly reassigns one binding. By the time any lambda is called, the loop has finished
+and \texttt{i} holds its final value, \texttt{2}; deep binding means all three closures see
+that shared, now-final, location. The standard fix forces a fresh value per iteration by
+exploiting default-argument evaluation timing (defaults are evaluated once, at
+\texttt{lambda}-creation time, copying the current value in): \texttt{lambda i=i: i}.
+\end{example}
+
+JavaScript has the identical gotcha with \texttt{var}, which is why ES6 added \texttt{let}:
+\begin{lstlisting}
+var funcsVar = [];
+for (var i = 0; i < 3; i++) {
+  funcsVar.push(() => i);
+}
+console.log(funcsVar.map(f => f()));   // [3, 3, 3] -- var is function-scoped
+
+var funcsLet = [];
+for (let j = 0; j < 3; j++) {
+  funcsLet.push(() => j);
+}
+console.log(funcsLet.map(f => f()));   // [0, 1, 2] -- let is block-scoped, fresh per iteration
+\end{lstlisting}
+\texttt{var} declares one binding for the whole enclosing function, exactly like Python's
+\texttt{for}, so every arrow function captures the same location. \texttt{let}, by
+specification, creates a \emph{new} binding for \texttt{j} on every iteration: formally, a
+fresh location $\ell_i$ with $\rho_i = \rho[j \mapsto \ell_i]$ for each iteration $i$, so
+each closure captures a different location. Same underlying phenomenon (deep binding over a
+mutable variable), two different fixes: Python's is a manual workaround that exploits
+default-argument timing, JavaScript's \texttt{let} bakes ``fresh binding per iteration''
+directly into the loop's own semantics.
+
+\subsection{parameter passing mechanisms}
+
+A function call extends the environment and store to bind formal parameters to whatever
+was passed --- exactly \emph{how} it does so is itself a design decision with observable
+consequences.
+
+\paragraph{Call by value.} The formal parameter gets a fresh location, initialized by
+\emph{copying} the value of the argument expression. Mutating the parameter only ever
+touches that fresh, private location; the caller's variable is untouched.
+\begin{lstlisting}[language=C]
+void swap(int a, int b) {
+    int t = a; a = b; b = t;
+}
+int main(void) {
+    int x = 1, y = 2;
+    swap(x, y);
+    printf("%d %d\n", x, y);  // 1 2 -- unchanged
+    return 0;
+}
+\end{lstlisting}
+\texttt{swap} above dutifully swaps its own local copies \texttt{a} and \texttt{b} and has
+zero effect on \texttt{x}, \texttt{y}: by the time \texttt{swap} runs, the connection to the
+caller's variables is already gone.
+
+\paragraph{Call by reference.} The formal parameter is bound to the \emph{same} location
+as the argument: no fresh location, no copy. Reading or writing the parameter inside the
+function directly reads or writes the caller's variable.
+\begin{lstlisting}[language=C++]
+void swap(int &a, int &b) {
+    int t = a; a = b; b = t;
+}
+int main() {
+    int x = 1, y = 2;
+    swap(x, y);
+    std::cout << x << " " << y << "\n";  // 2 1 -- actually swapped
+}
+\end{lstlisting}
+This is exactly why \texttt{swap} needs references (or, in plain C, explicit pointers,
+\texttt{int *a}) to work at all: call-by-value can never let a callee mutate the caller's
+variables through an ordinary parameter.
+
+\paragraph{Call by name.} The argument is not evaluated once and passed as a value; it is
+passed as an unevaluated expression (a thunk) that gets \emph{re-evaluated at every
+occurrence} of the formal parameter in the body. This can make a callee observe a different
+value on each use, if something the argument expression depends on changes in between.
+\begin{lstlisting}
+procedure p(x);
+begin
+    i := i + 1;
+    print(x)
+end;
+
+i := 0;
+p(a[i]);
+\end{lstlisting}
+Under \textbf{call by value}, \texttt{x} is bound once, to \texttt{a[0]}'s value at call
+time; \texttt{i := i+1} doesn't touch \texttt{x}; the procedure prints \texttt{a[0]}. Under
+\textbf{call by name}, \texttt{x} is the thunk \texttt{a[i]} itself; by the time
+\texttt{print(x)} forces it, \texttt{i} has already been incremented to \texttt{1}, so it
+prints \texttt{a[1]} instead --- a different array cell, from the very same call, purely
+because the ``argument'' is a re-runnable piece of code rather than a fixed location or
+value. This is the mechanism behind classic Algol tricks like Jensen's device, and the
+reason call-by-name all but disappeared once it became clear how easily it produces
+surprising, order-dependent results.
+
+\paragraph{Call by need.} Like call by name, the argument is passed as an unevaluated
+thunk, but the thunk is \emph{memoized}: the first time it's forced, its value is cached,
+and every later use of the same parameter returns the cached value instead of re-running
+the expression. This restores ``ordinary'' value semantics for a parameter used repeatedly
+with nothing relevant changing in between, at the cost of some bookkeeping to track whether
+each thunk has been forced yet. Call by need is the default argument-passing discipline in
+Haskell, and it's really a special case of \emph{laziness} in general --- the full
+treatment of thunks, forcing, and sharing belongs to lazy evaluation, covered in
+\texttt{topics/05-runtime-systems/sections/01-lazy-evaluation.tex}; the point to keep here
+is just that call-by-need is call-by-name plus memoization.
+
+\paragraph{Call by value-result (copy-restore).} The formal parameter behaves like call by
+value \emph{during} the call: a fresh, private location, initialized by copying the
+argument's value. But at the moment the call returns, the final value of that private
+location is copied back into the caller's original variable. This coincides with call by
+reference as long as there's no aliasing, and diverges from it exactly when there is.
+
+\begin{example}
+\begin{lstlisting}
+g := 1;
+procedure p(x) begin
+    x := x + 1;
+    print(x + g)
+end;
+p(g);
+\end{lstlisting}
+\textbf{Call by reference}: \texttt{x} and \texttt{g} are the \emph{same} location.
+\texttt{x := x+1} sets \texttt{g} to \texttt{2} directly (since \texttt{x} \emph{is}
+\texttt{g}). Then \texttt{print(x + g)} reads \texttt{2 + 2 = 4}.
+
+\textbf{Call by value-result}: \texttt{x} is a fresh, private location, initialized by
+copying \texttt{g}'s value (\texttt{1}). \texttt{x := x+1} sets the private \texttt{x} to
+\texttt{2}; \texttt{g} itself is untouched so far. \texttt{print(x + g)} reads the private
+\texttt{x} (\texttt{2}) plus the \emph{still-unmodified} global \texttt{g} (\texttt{1}),
+printing \texttt{3}. Only when \texttt{p} returns does the copy-restore step write
+\texttt{x}'s final value (\texttt{2}) back into \texttt{g}.
+\end{example}
+
+Same program, same call, genuinely different observable output, \texttt{4} versus
+\texttt{3}, purely because of the parameter-passing discipline. This is exactly why passing
+the same variable as two different arguments, or a global aliased with a parameter, was a
+notorious source of compiler-dependent bugs in languages (older Fortran among them) that
+used copy-restore.
+
+\subsection{a small-step rule for function calls}
+
+To ground all of this in the same formal machinery as the rest of the chapter, let's give
+call by value (and, for contrast, call by reference) an explicit small-step rule. Treat a
+procedure value as a closure, exactly as defined above, applied to procedure declarations
+rather than just returned lambdas: $\mathbf{proc}(x, C, \rho_{\mathrm{def}})$ pairs a formal
+parameter and a body with the environment in effect where the procedure was \emph{defined}.
+For uniformity, assume procedure names live in the environment/store exactly like any other
+variable, so a call configuration $\langle \mathbf{call}\ f(E),\ \rho,\ \sigma \rangle$ finds
+the closure at $\sigma(\rho(f))$.
+
+\[
+\infer[\textsc{Call-By-Value}]
+  {\steppair{\mathbf{call}\ f(E)}{\rho,\sigma}{\mathbf{skip}}{\rho,\sigma''}}
+  {
+    \sigma(\rho(f)) = \mathbf{proc}(x, C, \rho_{\mathrm{def}}) \\
+    \bigstep{E}{\rho,\sigma}{v} \\
+    \ell \notin \mathrm{dom}(\sigma) \\
+    \bigstep{C}{\rho_{\mathrm{def}}[x \mapsto \ell],\, \sigma[\ell \mapsto v]}{\sigma''}
+  }
+\]
+
+Reading the premises in order: look up the closure bound to $f$; evaluate the argument
+expression $E$ to a value $v$ \emph{in the caller's} environment and store (arguments are
+evaluated where they're written, not where the callee happens to be defined); allocate a
+brand-new location $\ell$ used nowhere else; run the body $C$ in the \emph{closure's}
+defining environment $\rho_{\mathrm{def}}$, not the caller's $\rho$ (this is exactly what
+makes it lexical scoping), extended with $x \mapsto \ell$, starting from a store where
+$\ell$ already holds $v$. The whole call reduces to $\mathbf{skip}$ in the caller's
+\emph{unchanged} environment $\rho$ (calling a procedure never rebinds names in the
+caller's scope), but the resulting store $\sigma''$ may differ from $\sigma$ at locations
+other than $\ell$, if the body wrote to aliased or global locations.
+
+Call by reference needs no fresh location at all, only a single line changes:
+\[
+\infer[\textsc{Call-By-Reference}]
+  {\steppair{\mathbf{call}\ f(y)}{\rho,\sigma}{\mathbf{skip}}{\rho,\sigma'}}
+  {
+    \sigma(\rho(f)) = \mathbf{proc}(x, C, \rho_{\mathrm{def}}) \\
+    \bigstep{C}{\rho_{\mathrm{def}}[x \mapsto \rho(y)]}{\sigma}{\sigma'}
+  }
+\]
+(the argument here must itself be a variable $y$, not an arbitrary expression --- you can
+only take a reference to something that already has a location). The entire difference
+between value and reference passing is $x \mapsto \ell$ for a fresh $\ell$ versus
+$x \mapsto \rho(y)$ for the existing location; everything else about the call is identical.
+
+\begin{example}
+Take a global \texttt{r} with $\rho(r) = \ell_r$, $\sigma_0(\ell_r) = 0$, and a procedure
+$\mathtt{double} \triangleq \mathbf{proc}(x, \assign{r}{\deref{x}+\deref{x}}, \rho)$ (defined
+at top level, so $\rho_{\mathrm{def}} = \rho$) with $\rho(\mathtt{double}) = \ell_d$ and
+$\sigma_0(\ell_d) = \mathtt{double}$. We derive
+$\steppair{\mathbf{call}\ \mathtt{double}(3+2)}{\rho,\sigma_0}{\mathbf{skip}}{\rho,\sigma_2}$:
+\[
+\infer[\textsc{Call-By-Value}]
+  {\steppair{\mathbf{call}\ \mathtt{double}(3+2)}{\rho,\sigma_0}{\mathbf{skip}}{\rho,\sigma_2}}
+  {
+    \sigma_0(\ell_d) = \mathbf{proc}(x, \assign{r}{\deref{x}+\deref{x}}, \rho) \\
+    \bigstep{3+2}{\rho,\sigma_0}{5} \\
+    \ell_x \notin \mathrm{dom}(\sigma_0) \\
+    \bigstep{\assign{r}{\deref{x}+\deref{x}}}{\rho[x \mapsto \ell_x],\, \sigma_0[\ell_x \mapsto 5]}{\sigma_2}
+  }
+\]
+where the last premise itself expands to: evaluating $\deref{x}+\deref{x}$ under
+$\rho[x \mapsto \ell_x]$ and $\sigma_1 = \sigma_0[\ell_x \mapsto 5]$ gives $5+5=10$, and the
+assignment writes $\sigma_2 = \sigma_1[\ell_r \mapsto 10]$. So $\sigma_2(\ell_r) = 10$: the
+call correctly computes $\mathtt{double}(5) = 10$ into the global \texttt{r}, while
+\texttt{x}'s private location $\ell_x$ is simply forgotten once the call returns.
+\end{example}
+
+\subsection{Exercises}
+
+\begin{itemize}
+  \item Write a three-function nested program in the style of the \texttt{f}/\texttt{g}
+  example above (a third function \texttt{h} that calls \texttt{g}, which calls
+  \texttt{f}, with each of \texttt{f}, \texttt{g}, \texttt{h} declaring its own local
+  \texttt{x}), and state what \texttt{(h)} returns under static scoping and under dynamic
+  scoping.
+
+  \item Using \textsc{Call-By-Value}, give a full derivation for calling
+  \texttt{procedure square(y) \{ s := y * y \}} (global \texttt{s}, $\sigma_0(s) = 0$) as
+  \texttt{call square(4)}. What is the final store?
+
+  \item Consider \texttt{procedure q(a, b) \{ a := a + 1; b := b + 10 \}} called as
+  \texttt{q(h, h)}, where global \texttt{h} starts at $\sigma_0(h) = 5$. Compute the final
+  value of \texttt{h} under call by reference, and again under call by value-result
+  (assume the copy-restore write-back happens left to right, \texttt{a} then \texttt{b}).
+  Are the two results the same? Should they be?
+
+  \item Write the 3-line \texttt{for (var ...)} snippet from the text yourself, but with 4
+  iterations instead of 3, pushing an arrow function per iteration. Predict the printed
+  array, then predict it again after changing \texttt{var} to \texttt{let}, and explain the
+  difference in terms of fresh locations per iteration.
+
+  \item Using \textsc{Call-By-Reference}, derive the result of calling
+  \texttt{procedure inc(z) \{ z := z + 1 \}} as \texttt{call inc(y)}, where
+  $\rho(y) = \ell_y$ and $\sigma_0(\ell_y) = 9$. What is $\sigma'(\ell_y)$?
+
+  \item In two or three sentences: explain why call by need is often described as ``call
+  by name with memoization,'' and why that distinction matters for a parameter that's used
+  many times inside a loop but whose value, once forced, never needs to change again.
+\end{itemize}

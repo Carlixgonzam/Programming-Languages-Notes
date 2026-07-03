@@ -1,0 +1,141 @@
+% !TeX root = ../main.tex
+\section{Virtual machines}
+
+Tree-walking is simple but slow (every node re-dispatches on its shape on every single
+evaluation, forever). Native compilation is fast but heavy: you need instruction
+selection, register allocation, and a separate backend per target architecture. Bytecode
+virtual machines are the middle ground languages actually tend to land on: compile the
+AST once into a small, compact instruction set for an imaginary, abstract machine, then
+write one comparatively simple interpreter for \emph{that} instruction set. You pay the
+tree-walking cost once, at compile time, instead of on every execution.
+
+\subsection{stack machines vs.\ register machines}
+
+There are two dominant designs for what that abstract machine's instructions actually
+operate on.
+
+\textbf{Stack-based VMs} (the JVM, CPython's VM, Lua's earlier versions, Nystrom's
+\texttt{clox}) keep an operand stack, and every instruction implicitly reads its
+operands off the top of the stack and pushes its result back. \textbf{Register-based
+VMs} (Lua's current VM is the best-known real example) instead have a set of virtual
+registers, and instructions name their operands and destination explicitly, more like
+real machine code.
+
+\begin{example}[\texttt{(a + b) * c}, compiled both ways]
+Stack machine: push everything you need, let the operators consume from the stack top.
+\begin{lstlisting}
+push a
+push b
+add          ; pops b, a; pushes a+b
+push c
+mul          ; pops c, (a+b); pushes (a+b)*c
+\end{lstlisting}
+Register machine (informally, register numbers made up for illustration):
+\begin{lstlisting}
+add r0, a, b        ; r0 = a + b, one instruction, no stack traffic
+mul r1, r0, c       ; r1 = r0 * c
+\end{lstlisting}
+\end{example}
+
+The trade-off is exactly what that example shows: the stack version needed 5
+instructions, each one trivially simple (push a value, or pop 1--2 values and push 1),
+and the compiler that emits them barely has to think, just walk the expression tree and
+emit push/op pairs in postorder. The register version needed only 2 instructions, but
+each one carries explicit operand names, and the compiler has to decide which register
+holds which value at every point, which is a real allocation problem, not a trivial
+postorder walk. Stack machines: simpler instructions, simpler compiler, more
+instruction dispatches and more data movement (values shuffle on and off the stack even
+when they're about to be consumed immediately). Register machines: fewer instructions,
+less redundant data movement, smarter compiler required.
+
+\subsection{the dispatch loop}
+
+Whatever the instruction set looks like, the VM's core is a \textbf{dispatch loop}: fetch
+the next instruction, figure out what it is, run the code for it, repeat.
+
+\begin{lstlisting}[language=C]
+for (;;) {
+    uint8_t instruction = *ip++;         /* fetch */
+    switch (instruction) {               /* dispatch */
+        case OP_CONSTANT: push(constants[*ip++]); break;
+        case OP_ADD:      { double b = pop(), a = pop(); push(a + b); break; }
+        case OP_MULTIPLY: { double b = pop(), a = pop(); push(a * b); break; }
+        case OP_PRINT:    printf("%g\n", pop()); break;
+        case OP_RETURN:   return;
+        /* ... */
+    }
+}
+\end{lstlisting}
+
+The plain \texttt{switch} above is the simplest possible dispatch, and it's perfectly
+fine for a first implementation, but it isn't free: a \texttt{switch} over many cases
+typically compiles to a jump through a table, plus the loop overhead of coming back
+around to fetch the next instruction and re-entering the switch every single time.
+Real, fast VMs (this is exactly what Nystrom's \texttt{clox} discusses) often replace
+this with \textbf{computed goto} (a.k.a.\ threaded code): instead of one central
+\texttt{switch}, each opcode's handler ends by jumping \emph{directly} to the address
+of the next opcode's handler, computed from a jump table, without funneling back
+through a shared dispatch point at all. This shaves off the loop-and-switch overhead
+per instruction, and on real hardware (better branch prediction behaviour for the
+indirect jumps) it measurably speeds up a bytecode interpreter's hot loop, at the cost
+of relying on a compiler extension (GCC/Clang's labels-as-values) rather than portable
+standard C.
+
+\subsection{a worked trace}
+
+\begin{example}[Tracing a tiny bytecode program]
+Take the tiny program \texttt{print (2 + 3) * 4}, compiled to stack-machine bytecode:
+\begin{lstlisting}
+CONSTANT 2
+CONSTANT 3
+ADD
+CONSTANT 4
+MULTIPLY
+PRINT
+\end{lstlisting}
+
+Stepping through the dispatch loop, showing the operand stack after each instruction:
+
+\begin{center}
+\begin{tabular}{l l l}
+\textbf{instruction} & \textbf{effect} & \textbf{stack after} \\
+\hline
+\texttt{CONSTANT 2} & push 2 & $[2]$ \\
+\texttt{CONSTANT 3} & push 3 & $[2, 3]$ \\
+\texttt{ADD} & pop 3, pop 2, push $2+3$ & $[5]$ \\
+\texttt{CONSTANT 4} & push 4 & $[5, 4]$ \\
+\texttt{MULTIPLY} & pop 4, pop 5, push $5\times4$ & $[20]$ \\
+\texttt{PRINT} & pop 20, print it & $[\,]$ \\
+\end{tabular}
+\end{center}
+Output: \texttt{20}. Every single line of this trace is one iteration of the dispatch
+loop: fetch one opcode, run its handler, and (for the stack machine) either grow or
+shrink the operand stack by exactly the amount that instruction specifies. There's
+never any ambiguity about where an instruction's operands come from, they're always
+the top of the stack, which is precisely why the compiler that emits this bytecode
+doesn't need to do any register bookkeeping at all.
+\end{example}
+
+\subsection{Exercises}
+\begin{itemize}
+  \item Compile \texttt{(a - b) * (c + d)} to stack-machine bytecode, following the
+    \texttt{push}/operator pattern shown for \texttt{(a+b)*c}. How many instructions
+    does it take?
+  \item Trace, step by step (as in the worked trace table), the stack contents for
+    running the bytecode \texttt{CONSTANT 10, CONSTANT 4, SUBTRACT, CONSTANT 2,
+    MULTIPLY, PRINT}. What gets printed?
+  \item Sketch, informally, a register-machine version of \texttt{(a - b) * (c + d)},
+    the way \texttt{(a+b)*c}'s register version was sketched in this section. How many
+    instructions does it take, and how many virtual registers does it use?
+  \item Explain, in your own words, why a stack machine's compiler can emit correct
+    code with a simple postorder tree walk, while a register machine's compiler needs
+    something closer to the register-allocation problem from the previous section.
+  \item Think about it: computed-goto dispatch removes the loop-and-switch overhead
+    per instruction, but it isn't portable standard C. Under what circumstances would
+    you judge that trade worth making for a real VM, and when would you stick with a
+    plain \texttt{switch}?
+  \item CPython's bytecode VM is stack-based; Lua's current VM is register-based. Pick
+    one claim from this section's trade-off discussion (instruction count, compiler
+    complexity, data movement) and describe what you'd expect to observe (in bytecode
+    dumps or timing) if you compiled the same small arithmetic expression in both.
+\end{itemize}

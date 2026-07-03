@@ -1,0 +1,252 @@
+% !TeX root = ../main.tex
+\usetikzlibrary{automata}
+\section{Regular languages}
+
+\subsection{Regular expressions: syntax and semantics}
+
+Automata are machines; regular expressions are the notation programmers actually write.
+The two describe the exact same class of languages, but a regex is far more compact for
+most everyday patterns --- which is exactly why every mainstream language has a regex
+library and none ship a ``draw me a DFA'' library.
+
+\begin{definition}
+The set of \textbf{regular expressions} (REs) over alphabet $\Sigma$, and the language
+$L(r)$ each one denotes, is defined recursively:
+\begin{itemize}
+  \item $\emptyset$ is an RE, $L(\emptyset) = \emptyset$ (matches nothing);
+  \item $\varepsilon$ is an RE, $L(\varepsilon) = \{\varepsilon\}$ (matches only the empty
+    string);
+  \item for each $a \in \Sigma$, $a$ is an RE, $L(a) = \{a\}$;
+  \item if $r, s$ are REs, so is $(r \mid s)$ (\textbf{union}), with
+    $L(r \mid s) = L(r) \cup L(s)$;
+  \item if $r, s$ are REs, so is $(rs)$ (\textbf{concatenation}), with
+    $L(rs) = L(r) L(s)$;
+  \item if $r$ is an RE, so is $(r^*)$ (\textbf{Kleene star}), with
+    $L(r^*) = L(r)^*$.
+\end{itemize}
+\end{definition}
+
+That's the whole grammar of regular expressions --- three base cases, three combinators.
+Everything else you've seen in a real regex engine (\texttt{+}, \texttt{?}, character
+classes \texttt{[a-z]}, \texttt{\{n,m\}} repetition counts) is sugar defined in terms of
+these three: $r^+ = rr^*$, $r? = (r \mid \varepsilon)$, $[abc] = (a \mid b \mid c)$, and so
+on. This is exactly the BNF/EBNF relationship from file 02, one level down.
+
+\begin{example}
+Over $\Sigma = \{a,b\}$: the RE $a(a\mid b)^*b$ denotes ``strings that start with $a$, end
+with $b$, and have anything in between'' --- e.g.\ $ab, aab, aababb \in L(a(a\mid b)^*b)$,
+but $ba, a, b \notin L(a(a\mid b)^*b)$.
+\end{example}
+
+\subsection{Kleene's theorem: REs and automata coincide}
+
+\begin{theorem}[Kleene]
+A language $L$ is denoted by some regular expression if and only if $L$ is accepted by some
+finite automaton (DFA or NFA --- by the equivalence theorem in file 03, it doesn't matter
+which). That is, regular expressions, NFAs, and DFAs all describe exactly the class of
+\textbf{regular languages}.
+\end{theorem}
+
+Both directions of this theorem are constructive, which is the useful part.
+Automaton-to-RE goes via state elimination (repeatedly remove states from the automaton,
+labeling the remaining edges with REs that summarize the removed paths) --- we won't work
+through it here, but it's mechanical. The direction that matters for building real tools is
+RE-to-NFA, known as \textbf{Thompson's construction}.
+
+\subsubsection{Thompson's construction, sketched}
+
+The idea is beautifully simple: build an NFA fragment for each of the three RE base cases
+and each combinator, always with exactly one start state and one accepting state, and glue
+fragments together using $\varepsilon$-transitions.
+
+\begin{itemize}
+  \item $a$: a single edge labeled $a$ from a fresh start to a fresh accept state.
+  \item $r \mid s$: build fragments for $r$ and $s$ separately, add a new start state with
+    $\varepsilon$-edges to \emph{both} old starts, and a new accept state with
+    $\varepsilon$-edges \emph{from both} old accepts.
+  \item $rs$: build fragments for $r$ and $s$, and glue $r$'s accept state to $s$'s start
+    state with an $\varepsilon$-edge (or just merge them).
+  \item $r^*$: build a fragment for $r$, add a new start/accept pair, $\varepsilon$-edge
+    from the new start to both the old start and the new accept (to allow zero
+    repetitions), and an $\varepsilon$-edge from the old accept back to the old start (to
+    allow looping) and forward to the new accept.
+\end{itemize}
+
+\begin{example}
+Thompson's construction for $a^*b$ (over $\Sigma = \{a,b\}$):
+
+\begin{center}
+\begin{tikzpicture}[shorten >=1pt, node distance=2.2cm, on grid, auto,
+                    every state/.style={draw, circle, minimum size=0.8cm}]
+  \node[state, initial] (s0) {$s_0$};
+  \node[state] (s1) [right of=s0] {$s_1$};
+  \node[state] (s2) [right of=s1] {$s_2$};
+  \node[state] (s3) [right of=s2] {$s_3$};
+  \node[state, accepting] (s4) [right of=s3] {$s_4$};
+
+  \path[->]
+    (s0) edge node {$\varepsilon$} (s1)
+    (s1) edge [loop above] node {$a$} ()
+    (s1) edge node {$\varepsilon$} (s2)
+    (s2) edge node {$b$} (s3)
+    (s0) edge [bend left=40, above] node {$\varepsilon$} (s3)
+    (s3) edge node {$\varepsilon$} (s4);
+\end{tikzpicture}
+\end{center}
+
+This isn't the minimal NFA a human would draw by hand (a human would just draw a self-loop
+on $a$ and one edge on $b$, three states total) --- and that's the point worth noticing:
+Thompson's construction is a mechanical, compositional recipe meant for a program to
+execute (it's literally what a regex engine or lexer generator does internally to turn your
+pattern into a runnable machine), not a recipe optimized for producing the smallest
+automaton. Minimization is a separate step you'd run afterward if you cared about size.
+\end{example}
+
+\subsection{Practical regex}
+
+The regex syntax you actually type into \texttt{grep}, Python's \texttt{re}, or PCRE is the
+same three-combinator core plus a mountain of convenient sugar. Two realistic examples:
+
+\begin{lstlisting}[language=Python]
+import re
+
+# a loose email-like pattern (good enough for a form validator,
+# NOT a full RFC 5322 implementation)
+email_pattern = r"^[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}$"
+re.match(email_pattern, "carla.gonzalez@uniandes.edu.co")  # matches
+
+# pulling fields out of a log line like:
+# 2026-07-03 14:02:11 ERROR Connection refused (host=db01)
+log_pattern = r"^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) (\w+) (.+)$"
+m = re.match(log_pattern, "2026-07-03 14:02:11 ERROR Connection refused (host=db01)")
+m.groups()  # ('2026-07-03', '14:02:11', 'ERROR', 'Connection refused (host=db01)')
+\end{lstlisting}
+
+Both patterns are built entirely from union (character classes are sugared unions),
+concatenation, and Kleene-star-family repetition (\texttt{+}, \texttt{\{2,\}}) --- nothing
+here needs more than a regular language can express, which is why a DFA under the hood can
+match both in a single linear pass over the input.
+
+\subsubsection{Where ``regex'' engines lie about being regular}
+
+Here's the honest caveat: PCRE-style engines support features that are \emph{not}
+regular in the formal sense, and knowing which is which matters. \textbf{Backreferences}
+(\texttt{(\textbackslash{}w+)\textbackslash{}s\textbackslash{}1}, matching a repeated word)
+require remembering an unboundedly long substring and comparing it later --- no finite
+automaton can do that, because it would need infinitely many states to remember ``the exact
+substring matched so far,'' for substrings of unbounded length. \textbf{Lookahead/lookbehind}
+assertions (\texttt{(?=\ldots)}, \texttt{(?<=\ldots)}) don't add recognizing power on their
+own, but combined with backreferences and how real engines implement matching (backtracking
+search rather than simulating an automaton), practical regex engines can exhibit
+exponential-time worst cases on certain inputs (``catastrophic backtracking'') that a true
+DFA simulation, which is always linear in input length, never can. The takeaway: ``regex''
+as a tool name is broader than ``regular expression'' as a formal object, and the
+performance guarantees of the formal object don't automatically carry over to the tool.
+
+\subsection{The pumping lemma for regular languages}
+
+Every regular language has a structural limitation: since it's recognized by a DFA with
+finitely many states, any sufficiently long accepted string must revisit some state, which
+means part of the string can be repeated (``pumped'') without leaving the language. This is
+the pumping lemma, and its main use is negative: proving a language is \emph{not} regular.
+
+\begin{theorem}[Pumping lemma]
+If $L$ is regular, there exists a constant $p \ge 1$ (the \textbf{pumping length}, at most
+the number of states of a DFA for $L$) such that every string $w \in L$ with $|w| \ge p$
+can be split into three parts $w = xyz$ satisfying:
+\begin{enumerate}
+  \item $|y| \ge 1$,
+  \item $|xy| \le p$,
+  \item $xy^iz \in L$ for every $i \ge 0$.
+\end{enumerate}
+\end{theorem}
+
+The proof is exactly the pigeonhole observation above: run a DFA for $L$ (with $p$ states)
+on the first $p$ symbols of $w$; since there are only $p$ states but $p+1$ visited positions
+(before reading any symbol, and after each of the $p$ symbols), some state repeats, and the
+substring $y$ read between the two visits to that state can be removed or repeated any
+number of times while staying in an accepting run.
+
+\subsubsection{Using it: proving $\{a^n b^n \mid n \ge 0\}$ is not regular}
+
+The pumping lemma is a \emph{universally quantified} statement about all regular languages,
+which makes it awkward to use directly. The standard move is to treat it as a game against
+an adversary who is trying to keep $L$ looking regular:
+
+\begin{enumerate}
+  \item \textbf{You} pick $p$ --- except you don't get to choose it, the lemma just
+    guarantees \emph{some} $p$ exists; you reason about an arbitrary such $p$.
+  \item \textbf{The adversary} (i.e., the lemma) gives you a string $w \in L$ with
+    $|w| \ge p$; you get to choose \emph{which} string, so pick one that will be hardest for
+    the adversary to defend.
+  \item \textbf{The adversary} splits $w = xyz$ satisfying conditions 1 and 2 above; you
+    don't control the split, so your argument must work for \emph{every possible} split.
+  \item \textbf{You} pick an $i$ (usually $i=0$ or $i=2$) and show $xy^iz \notin L$,
+    contradicting condition 3. Since this holds for every possible split the adversary could
+    have chosen, $L$ cannot be regular.
+\end{enumerate}
+
+\begin{example}
+Let $L = \{a^n b^n \mid n \ge 0\}$. Suppose, for contradiction, $L$ is regular; let $p$ be
+its pumping length.
+
+\textbf{Choose the string.} Pick $w = a^p b^p \in L$; certainly $|w| = 2p \ge p$.
+
+\textbf{The split is out of your control.} The lemma guarantees a split $w = xyz$ with
+$|y| \ge 1$ and $|xy| \le p$. Since $|xy| \le p$ and the first $p$ symbols of $w$ are all
+$a$'s, $x$ and $y$ consist \emph{entirely of $a$'s} --- this holds no matter how the
+adversary chooses the split, precisely because of condition 2. So $y = a^k$ for some
+$k \ge 1$.
+
+\textbf{Pump it.} Take $i = 0$: $xy^0z = xz$ removes the $k$ $a$'s in $y$, giving a string
+with $p - k$ $a$'s but still $p$ $b$'s. Since $k \ge 1$, this string has strictly fewer
+$a$'s than $b$'s, so $xz \notin L$ --- contradicting condition 3, which requires
+$xy^iz \in L$ for \emph{every} $i \ge 0$, including $i=0$.
+
+This contradiction holds for \emph{every} valid split the adversary could have picked
+(we never assumed anything about $k$ beyond $k \ge 1$), so no such $p$ can exist, and $L$
+is not regular. $\blacksquare$
+\end{example}
+
+Intuitively: recognizing $a^nb^n$ requires counting the $a$'s exactly and comparing that
+count to the number of $b$'s, and a DFA has no memory beyond ``which of its finitely many
+states am I in'' --- it cannot count arbitrarily high with finitely many states. This is
+precisely why $a^nb^n$ needs a stack (a pushdown automaton, file 05) instead of a finite
+automaton: a stack can count arbitrarily high because it can grow arbitrarily large.
+
+\subsection{Forward pointer: this is what a lexer is}
+
+Every token category in a real programming language --- identifiers, integer literals,
+string literals, keywords, operators --- is a regular language, and its recognizer is
+exactly a regex or, under the hood, the DFA it compiles to (via Thompson's construction
+plus subset construction, both from file 03). The next block of this course builds a lexer
+that does exactly this: define each token kind as a regular expression, combine them (using
+the union closure property from file 03) into one big NFA, run subset construction to get a
+DFA, and scan the source text through it. Everything in this file is the theory that makes
+that machinery work, and work fast (linear time in the length of the source, no
+backtracking, unlike the practical regex engines discussed above).
+
+\subsection{Exercises}
+
+\begin{itemize}
+  \item Write a regular expression over $\{a,b\}$ for ``strings with an even number of
+    $a$'s.'' Then draw the DFA it corresponds to (you can build it directly; you don't
+    need to run full Thompson's construction plus subset construction, but you're welcome
+    to as a check).
+  \item Run Thompson's construction by hand on the regular expression $(a\mid b)^*abb$
+    (the classic ``ends in \texttt{abb}'' example) and draw the resulting NFA.
+  \item The email pattern in this section is deliberately loose. Identify one valid email
+    address it would reject, and one invalid string it would incorrectly accept.
+  \item Use the pumping lemma to prove that $L = \{ww \mid w \in \{a,b\}^*\}$ (strings that
+    are some string repeated twice) is not regular. Follow the four-step adversary
+    structure explicitly: choose your string, acknowledge the split is out of your control,
+    then pick your pumping value $i$ and derive the contradiction.
+  \item Is $\{a^n b^m \mid n, m \ge 0\}$ (any number of $a$'s followed by any number of
+    $b$'s, with no relationship between $n$ and $m$) regular? If so, give a regular
+    expression. If not, attempt the pumping lemma argument and see exactly where it fails
+    to go through --- this failure is itself informative.
+  \item Explain, in your own words, why backreferences push a pattern outside the class of
+    regular languages, using the pumping lemma's ``finite memory'' intuition (not just
+    ``because a DFA can't do it,'' but \emph{why} a DFA's finitely many states can't encode
+    ``the exact substring matched earlier, for arbitrarily long substrings'').
+\end{itemize}

@@ -1,0 +1,325 @@
+% !TeX root = ../main.tex
+\section{Parsing}
+
+The lexer hands you a flat stream of tokens. That stream has no structure --- it's just a
+list. \texttt{IDENT(x) ASSIGN(=) NUMBER(3) PLUS(+) NUMBER(4)} doesn't say, by itself,
+whether this is one statement or two, or which operator applies to which operand. The
+\textbf{parser}'s job is to take that stream and, using the grammar you wrote in the
+previous block, recover the structure the programmer intended: a tree. The next section
+formalizes exactly what that tree looks like for a small imperative language (assignments,
+sequencing, conditionals, loops); here we care about the mechanics of \emph{building} it,
+whatever shape it ends up taking.
+
+If a token sequence can't be produced by the grammar at all, the parser reports a
+\textbf{syntax error} --- a different failure mode from the lexer's ``I don't recognize
+this character'' errors. \texttt{x = = 3} tokenizes just fine (every character is legal),
+but \texttt{ASSIGN ASSIGN NUMBER} isn't a valid statement in any reasonable grammar.
+
+\subsection{recursive descent: one function per nonterminal}
+
+The most direct way to write a parser by hand is \textbf{recursive descent}: for every
+nonterminal in the grammar, write a function; that function's job is to recognize (and
+consume) exactly the tokens that nonterminal can produce, calling other nonterminals'
+functions as it goes. It's a literal, mechanical translation from grammar to code.
+
+Take a small arithmetic grammar:
+\[
+\begin{aligned}
+E  &::= T\; E' \\
+E' &::= \texttt{+}\; T\; E' \mid \texttt{-}\; T\; E' \mid \varepsilon \\
+T  &::= F\; T' \\
+T' &::= \texttt{*}\; F\; T' \mid \texttt{/}\; F\; T' \mid \varepsilon \\
+F  &::= \texttt{NUMBER} \mid \texttt{(}\; E\; \texttt{)}
+\end{aligned}
+\]
+This grammar bakes precedence directly into its structure: $T$ (terms, built from
+\texttt{*}/\texttt{/}) sits ``inside'' $E$ (expressions, built from \texttt{+}/\texttt{-}),
+so a $T$ always binds tighter. Translating it to recursive descent is almost mechanical:
+
+\begin{lstlisting}[language=Python]
+def E():
+    T()
+    Eprime()
+
+def Eprime():
+    if peek() in ("+", "-"):
+        advance()
+        T()
+        Eprime()
+    # else: epsilon. FOLLOW(E') = {')', EOF} tells us it's safe to
+    # stop here without consuming anything.
+
+def T():
+    F()
+    Tprime()
+
+def Tprime():
+    if peek() in ("*", "/"):
+        advance()
+        F()
+        Tprime()
+
+def F():
+    if peek() == "NUMBER":
+        advance()
+    elif peek() == "(":
+        advance()
+        E()
+        expect(")")
+    else:
+        error("expected NUMBER or '('")
+\end{lstlisting}
+
+Every production became a function; every alternative in the grammar became a branch
+picked by looking at the next token.
+
+\subsection{FIRST/FOLLOW sets and what LL(1) means}
+
+That last function, \texttt{F}, decides which branch to take by looking at exactly one
+token of input. That's not an accident --- it's a property of the grammar, and it's called
+\textbf{LL(1)}: parseable Left-to-right, building a Leftmost derivation, with 1 token of
+lookahead.
+
+\begin{definition}[FIRST set]
+$\mathrm{FIRST}(\alpha)$ is the set of terminals that can appear as the first symbol of
+some string derived from $\alpha$ (plus $\varepsilon$, if $\alpha$ can derive the empty
+string).
+\end{definition}
+
+\begin{definition}[FOLLOW set]
+$\mathrm{FOLLOW}(A)$ is the set of terminals that can appear immediately after $A$ in some
+derivation from the start symbol (plus the end-of-input marker, if $A$ can be the last
+symbol of a full derivation).
+\end{definition}
+
+For the grammar above:
+\[
+\mathrm{FIRST}(E) = \mathrm{FIRST}(T) = \mathrm{FIRST}(F) = \{\texttt{NUMBER}, \texttt{(}\}
+\qquad
+\mathrm{FIRST}(E') = \{\texttt{+}, \texttt{-}, \varepsilon\}
+\]
+\[
+\mathrm{FOLLOW}(E) = \{\texttt{)}, \mathtt{EOF}\}
+\qquad
+\mathrm{FOLLOW}(E') = \mathrm{FOLLOW}(E)
+\]
+
+A grammar is \textbf{LL(1)} when, for every nonterminal with more than one alternative,
+looking at just the next token (comparing it against the FIRST sets of each alternative,
+and FOLLOW when $\varepsilon$ is in play) always tells you unambiguously which alternative
+to take. That's precisely what lets \texttt{Eprime} decide, with a single \texttt{peek()},
+whether to recurse or to stop: if the next token is in $\{\texttt{+}, \texttt{-}\}$ take
+the first branch, and if it's in $\mathrm{FOLLOW}(E') = \{\texttt{)}, \mathtt{EOF}\}$ take
+the $\varepsilon$ branch. If those sets ever overlapped, one token of lookahead wouldn't be
+enough, and plain recursive descent (without backtracking) couldn't handle the grammar
+as written.
+
+\subsection{grammar massaging: left recursion and left factoring}
+
+Not every grammar you'd naturally write is LL(1), and recursive descent doesn't work at
+all on some of them --- it just hangs. Two transformations fix the common cases.
+
+\textbf{Left recursion.} The grammar $E ::= E\; \texttt{+}\; T \mid T$ is the natural way
+to write ``addition is left-associative,'' but translate it directly into a function and
+you get:
+\begin{lstlisting}[language=Python]
+def E():
+    E()      # infinite recursion before consuming a single token
+    expect("+")
+    T()
+\end{lstlisting}
+\texttt{E} calls itself before consuming any input, forever. The fix is exactly the
+transformation that produced the grammar we used above: rewrite
+$E ::= E\;\texttt{+}\;T \mid T$ as $E ::= T\;E'$, $E' ::= \texttt{+}\;T\;E' \mid
+\varepsilon$. This is a completely general rewrite (any left-recursive rule
+$A ::= A\alpha \mid \beta$ becomes $A ::= \beta A'$, $A' ::= \alpha A' \mid \varepsilon$)
+and it preserves the language while turning a self-call at the start of a production into
+a self-call after consuming a token --- which is exactly what a loop instead of unbounded
+recursion looks like.
+
+\textbf{Left factoring.} Two alternatives that start with the same token also break
+LL(1), even without recursion. Consider statements:
+\[
+\mathit{Stmt} ::= \texttt{if}\;(\mathit{E})\;\mathit{Stmt}
+\ \mid\ \texttt{if}\;(\mathit{E})\;\mathit{Stmt}\;\texttt{else}\;\mathit{Stmt}
+\]
+Both alternatives start with \texttt{if (E) Stmt}; peeking at the next token after that
+tells you nothing until you've already parsed the whole \texttt{if}-body. Left factoring
+pulls the common prefix into its own rule and defers the decision:
+\[
+\mathit{Stmt} ::= \texttt{if}\;(\mathit{E})\;\mathit{Stmt}\;\mathit{ElseOpt}
+\qquad
+\mathit{ElseOpt} ::= \texttt{else}\;\mathit{Stmt} \mid \varepsilon
+\]
+Now the choice (\texttt{else} or not) is made by a single, separate function that peeks at
+one token, exactly like \texttt{Eprime} above --- and as a bonus this is precisely the
+grammar shape that resolves the classic ``dangling else'' ambiguity in favor of attaching
+\texttt{else} to the nearest unmatched \texttt{if}.
+
+\subsection{Pratt parsing: precedence climbing for expressions}
+
+Recursive descent works, but writing a nonterminal per precedence level ($E$, $T$, $F$,
+and one more layer for every new operator) gets tedious fast, especially once you add
+exponentiation, comparisons, boolean \texttt{and}/\texttt{or}, and so on. \textbf{Pratt
+parsing} (also called \textbf{precedence climbing} or \textbf{operator-precedence
+parsing}) replaces that tower of nonterminals with a single loop driven by a table of
+numeric \emph{binding powers}.
+
+The idea: parse one ``atom'' (a number or a parenthesized expression), then keep looking
+at the next operator. If its binding power is at least as strong as the minimum we're
+currently allowed to accept, consume it, recursively parse the right-hand side (demanding
+one more unit of binding power, to force left-associativity), and fold the result into the
+left-hand side. Stop the moment the next operator is too weak, or there isn't one.
+
+\begin{lstlisting}[language=Python]
+PRECEDENCE = {"+": 1, "-": 1, "*": 2, "/": 2}
+
+def parse_expr(tokens, min_bp=0):
+    left = parse_atom(tokens)
+    while True:
+        op = tokens.peek()
+        if op not in PRECEDENCE or PRECEDENCE[op] < min_bp:
+            break
+        tokens.advance()
+        bp = PRECEDENCE[op]
+        right = parse_expr(tokens, bp + 1)   # +1: left-associative
+        left = ("BinOp", op, left, right)
+    return left
+
+def parse_atom(tokens):
+    tok = tokens.advance()
+    if tok == "(":
+        e = parse_expr(tokens, 0)
+        tokens.expect(")")
+        return e
+    return ("Num", tok)
+\end{lstlisting}
+
+Adding a new precedence level is now a one-line change to a dictionary, not a new
+function and a new grammar rule. This is the standard trick used in real
+implementations (it's how Pratt originally described it in 1973, and it's what most
+hand-written expression parsers use today, including the one built step by step in
+Nystrom's \emph{Crafting Interpreters}).
+
+\begin{example}[Tracing precedence climbing on \texttt{1 + 2 * 3}]
+Call \texttt{parse\_expr(tokens, min\_bp=0)}:
+\begin{enumerate}
+  \item \texttt{left = parse\_atom()} $\to$ \texttt{Num(1)}.
+  \item Peek \texttt{+}: precedence 1 $\ge$ 0, so consume it. Recurse with
+    \texttt{min\_bp = 1 + 1 = 2}:
+    \begin{enumerate}
+      \item \texttt{left = parse\_atom()} $\to$ \texttt{Num(2)}.
+      \item Peek \texttt{*}: precedence 2 $\ge$ 2, so consume it. Recurse with
+        \texttt{min\_bp = 2 + 1 = 3}:
+        \begin{itemize}
+          \item \texttt{left = parse\_atom()} $\to$ \texttt{Num(3)}. No more tokens, return
+            \texttt{Num(3)}.
+        \end{itemize}
+      \item \texttt{left} becomes \texttt{BinOp(*, Num(2), Num(3))}. No more tokens,
+        return.
+    \end{enumerate}
+  \item \texttt{right} above is \texttt{BinOp(*, Num(2), Num(3))}. \texttt{left} becomes
+    \texttt{BinOp(+, Num(1), BinOp(*, Num(2), Num(3)))}.
+\end{enumerate}
+The result is $1 + (2 \times 3)$, not $(1+2)\times 3$ --- multiplication's higher binding
+power forced it to bind to \texttt{2} before control returned to the outer \texttt{+}, with
+no explicit grammar rule for precedence anywhere in sight.
+\end{example}
+
+\subsection{bottom-up parsing, briefly}
+
+Recursive descent and Pratt parsing are both \textbf{top-down}: they start from the start
+symbol and work their way down to the tokens, guessing which production to expand based on
+lookahead. The other family, \textbf{LR (shift-reduce) parsing}, works \textbf{bottom-up}:
+it pushes tokens onto a stack (``shift'') and, whenever the top of the stack matches the
+right-hand side of some production, replaces it with the corresponding nonterminal
+(``reduce''), building the tree from the leaves up to the root.
+
+LR parsers accept a strictly larger class of grammars than LL --- in particular, they
+handle left recursion natively and don't require left factoring. The price is that the
+parsing tables (which state does what on which lookahead token) are large and genuinely
+unpleasant to construct by hand; in practice nobody does. Tools like \texttt{yacc},
+\texttt{bison}, and ANTLR take a grammar and generate the table (and often the whole
+parser) for you. Table construction itself (SLR, LALR, canonical LR) is out of scope for
+these notes --- Aho, Lam, Sethi and Ullman's \emph{Compilers: Principles, Techniques, and
+Tools} devotes several chapters to it if you want the full theory. For hand-written
+parsers, which is the practical choice for most small languages and DSLs, top-down wins
+on readability and error-message quality, and that's what the rest of this block assumes.
+
+\subsection{error recovery, briefly}
+
+A parser that stops dead at the first syntax error is unpleasant to use --- you fix one
+typo, rerun, and find the \emph{next} one, one at a time. The standard fix by hand is
+\textbf{panic mode}: on an error, discard tokens until you reach a known
+\emph{synchronization point} (a semicolon, a keyword that starts a new statement, a
+closing brace) and resume parsing from there, so the rest of the file still gets checked.
+This is exactly the strategy discussed in more depth, with a concrete DSL example, in the
+``Error Recovery'' part of \texttt{topics/06-dsl-design/sections/02-design-decisions.tex}
+--- worth a look if you're implementing a real parser and want the fuller design
+discussion; here the point is just to know the technique exists and what it's called.
+
+\subsection{a worked example: parsing \texttt{3 + 4 * 2 - 1} by hand}
+
+Using the LL(1) grammar from the top of this section (not precedence climbing, so you can
+see the recursive-descent call structure explicitly), trace the token stream
+\texttt{NUMBER(3) PLUS NUMBER(4) STAR NUMBER(2) MINUS NUMBER(1) EOF}.
+
+\begin{enumerate}
+  \item \texttt{E()} calls \texttt{T()}, which calls \texttt{F()}: consumes \texttt{3}.
+    Back in \texttt{T()}, call \texttt{Tprime()}: peek is \texttt{+}, not in
+    $\{\texttt{*},\texttt{/}\}$, so \texttt{Tprime} takes the $\varepsilon$ branch. \texttt{T}
+    returns having matched just \texttt{3}.
+  \item Back in \texttt{E()}, call \texttt{Eprime()}: peek is \texttt{+}, consume it, call
+    \texttt{T()} again.
+  \item This inner \texttt{T()} calls \texttt{F()}: consumes \texttt{4}. Then
+    \texttt{Tprime()}: peek is \texttt{*}, consume it, call \texttt{F()}: consumes
+    \texttt{2}. \texttt{Tprime()} recurses: peek is \texttt{-}, not in
+    $\{\texttt{*},\texttt{/}\}$, take $\varepsilon$. This \texttt{T} has matched
+    \texttt{4 * 2}.
+  \item Back in the outer \texttt{Eprime()}, having matched \texttt{+ 4 * 2}, recurse into
+    \texttt{Eprime()} again: peek is \texttt{-}, consume it, call \texttt{T()}, which
+    matches just \texttt{1} (its own \texttt{Tprime} immediately sees \texttt{EOF} and
+    takes $\varepsilon$).
+  \item \texttt{Eprime()} recurses one more time: peek is \texttt{EOF}, take
+    $\varepsilon$, unwind everything.
+\end{enumerate}
+
+Reading the calls in the order they combined values (not the order they were entered)
+gives the tree, using the same node-drawing convention the next section formalizes for
+full programs:
+\[
+\begin{array}{c}
+\textsc{Minus} \\
+\swarrow \quad \searrow \\
+\textsc{Plus} \qquad 1 \\
+\swarrow \quad \searrow \\
+3 \qquad \textsc{Star} \\
+\quad\quad\quad \swarrow \ \searrow \\
+\quad\quad\quad 4 \quad\ \ 2
+\end{array}
+\]
+which is exactly $(3 + (4 \times 2)) - 1$ --- the grammar's built-in precedence
+(multiplication nested one level deeper than addition/subtraction) produced the right
+tree without any explicit binding-power bookkeeping, at the cost of four nonterminals
+instead of one loop.
+
+\subsection{Exercises}
+\begin{itemize}
+  \item Eliminate left recursion from
+    $\mathit{Cmp} ::= \mathit{Cmp}\ \texttt{<}\ E \mid \mathit{Cmp}\ \texttt{>}\ E \mid E$,
+    then write the corresponding recursive-descent functions.
+  \item Compute $\mathrm{FIRST}$ and $\mathrm{FOLLOW}$ for every nonterminal in
+    $S ::= \texttt{if}\ (E)\ S\ \mathit{ElseOpt} \mid \texttt{print}\ E$,
+    $\mathit{ElseOpt} ::= \texttt{else}\ S \mid \varepsilon$. Is this grammar LL(1)?
+  \item Trace the precedence-climbing code on \texttt{2 * 3 + 4 * 5}, showing the sequence
+    of recursive calls and the final tree, the way the worked example does for
+    \texttt{1 + 2 * 3}.
+  \item Extend \texttt{PRECEDENCE} and \texttt{parse\_expr} to support a right-associative
+    exponentiation operator \texttt{\^{}} (binding tighter than \texttt{*}/\texttt{/}).
+    Hint: right-associativity means the recursive call on the right should \emph{not} add
+    1 to the minimum binding power.
+  \item Using the LL(1) grammar from this section, hand-parse
+    \texttt{(1 + 2) * 3} step by step and draw the resulting tree.
+  \item In your own words: why does left recursion break plain recursive descent but pose
+    no problem at all for a bottom-up (shift-reduce) parser?
+\end{itemize}

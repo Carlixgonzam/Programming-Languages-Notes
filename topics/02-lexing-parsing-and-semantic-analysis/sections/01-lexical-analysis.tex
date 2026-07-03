@@ -1,0 +1,320 @@
+% !TeX root = ../main.tex
+\section{Lexical Analysis}
+
+This is where the pipeline actually starts. Everything in the previous block was about
+languages as sets of strings, recognized by grammars and automata. Now we build the first
+real piece of a language implementation: the component that reads raw text and turns it
+into something a parser can work with.
+
+\subsection{what a lexer does}
+
+A \textbf{lexer} (also called a \emph{scanner} or \emph{tokenizer}) takes a raw stream of
+characters and groups it into a stream of \textbf{tokens}, discarding anything that isn't
+meaningful --- whitespace, comments, the exact number of spaces you used to indent a line.
+It's the first phase of any compiler or interpreter, and everything downstream (parsing,
+semantic analysis, code generation) works on tokens, never on raw characters again.
+
+\begin{definition}[Token]
+A \emph{token} is a pair $(\mathit{kind}, \mathit{lexeme})$, where $\mathit{kind}$ is the
+category of the token (e.g.\ \texttt{NUMBER}, \texttt{IDENT}, \texttt{PLUS}) and
+$\mathit{lexeme}$ is the exact substring of the source text that produced it. Two tokens
+of the same kind can have different lexemes: \texttt{NUMBER(3)} and \texttt{NUMBER(42)}
+are both \texttt{NUMBER} tokens.
+\end{definition}
+
+Concretely, given the input
+\begin{lstlisting}
+x = 3 + 42
+\end{lstlisting}
+a lexer produces something like
+\[
+\texttt{IDENT(x)} \;\; \texttt{ASSIGN(=)} \;\; \texttt{NUMBER(3)} \;\;
+\texttt{PLUS(+)} \;\; \texttt{NUMBER(42)} \;\; \texttt{EOF}
+\]
+Five tokens from eleven characters. The spaces are gone, and so is any trace that they
+were ever there --- which is exactly the point. The parser that consumes this stream
+doesn't care how many spaces separated \texttt{x} and \texttt{=}; it only cares about the
+sequence of token kinds.
+
+\subsection{tokens are regular languages, lexers are DFAs}
+
+This is the connection back to the previous block, and it's not a metaphor: it's literally
+the same machinery. Each token category is defined by a regular expression --- identifiers
+match \texttt{[a-zA-Z\_][a-zA-Z0-9\_]*}, integer literals match \texttt{[0-9]+}, the keyword
+\texttt{if} matches the literal string \texttt{if}. A regular expression can be compiled
+into a DFA (via Thompson's construction and then subset construction, if you did that
+exercise in the previous block), and a DFA can decide in one linear pass over the input
+whether a string belongs to the language it recognizes.
+
+A lexer is what you get when you run \emph{all} of these DFAs at once, character by
+character, and at each point ask ``which of these automata are still alive, and which one
+(if any) is in an accepting state right now?'' Lexer generators like \texttt{lex}/\texttt{flex}
+build exactly this: they take a list of regular expressions, one per token kind, and
+compile them into a single combined DFA via a product construction. Wilhelm and Seidel's
+\emph{Compiler Design: Syntactic and Semantic Analysis} works through this construction in
+detail if you want the automaton-theoretic view all the way down; Aho, Lam, Sethi and
+Ullman's \emph{Compilers: Principles, Techniques, and Tools} (the ``Dragon Book'') covers
+the same ground in its lexical analysis chapter.
+
+\subsection{maximal munch}
+
+There's one rule that makes all of this work when several DFAs could match a prefix of
+the input: \textbf{longest match}, also called \textbf{maximal munch}.
+
+\begin{definition}[Maximal munch]
+When more than one prefix of the remaining input matches some token pattern, the lexer
+picks the \emph{longest} one. If two patterns match the same longest prefix, the pattern
+listed first (usually: keywords before identifiers, specific operators before their
+prefixes) wins.
+\end{definition}
+
+The classic example is why \texttt{<=} is one token and not two. Suppose your language has
+both \texttt{<} (less-than) and \texttt{<=} (less-or-equal). When the lexer sees the
+character \texttt{<}, it does \emph{not} immediately emit an \texttt{LT} token. It looks
+one character ahead: if the next character is \texttt{=}, both characters together form a
+longer match (\texttt{<=}), so that's what gets emitted. Get this wrong and
+\texttt{x <= 10} tokenizes as \texttt{LT}, \texttt{ASSIGN}, \texttt{NUMBER} --- which is not
+even close to what the program means.
+
+The same principle governs identifiers versus keywords: \texttt{iffy} is one identifier
+token, not the keyword \texttt{if} followed by the identifier \texttt{fy}. Maximal munch
+says: keep consuming characters as long as the identifier pattern keeps matching. Only once
+you \emph{cannot} extend the match any further do you ask, ``is this exact lexeme one of the
+reserved keywords?''
+
+\subsection{keywords are identifiers with a special case}
+
+This gives the standard recipe for handling keywords, and it's worth stating explicitly
+because it's easy to get backwards. You do \emph{not} write a separate regular expression
+per keyword and try to match those first. Instead:
+
+\begin{enumerate}
+  \item Match the longest possible identifier-shaped lexeme (letters, digits, underscores,
+    not starting with a digit).
+  \item Look the resulting lexeme up in a fixed table of reserved words.
+  \item If it's in the table, emit the corresponding keyword token
+    (\texttt{IF}, \texttt{WHILE}, \texttt{PRINT}, \ldots). Otherwise, emit \texttt{IDENT}.
+\end{enumerate}
+
+This is simpler than it sounds, and it composes correctly with maximal munch: since
+identifiers and keywords share exactly the same character pattern, there is never a
+question of which pattern is ``longer.'' You match once, then classify.
+
+\subsection{whitespace, comments, and position tracking}
+
+Whitespace and comments are recognized and then thrown away; they never become tokens.
+A lexer typically has a small loop that runs before scanning each token: skip spaces,
+tabs, and newlines; if you see a comment marker, skip to the end of the comment (end of
+line, for a line comment; the matching closer, for a block comment) and then go back to
+skipping whitespace, since comments and whitespace can alternate.
+
+Newlines deserve special mention: even though they're discarded like other whitespace,
+the lexer must \emph{count} them, along with columns, to support error messages like
+\texttt{line 4, column 12: unexpected character '\$'}. Without position tracking, every
+error message you produce is useless for anyone actually trying to fix their program ---
+imagine a 200-line file and the only feedback is ``syntax error somewhere.''
+
+\subsection{lexical errors}
+
+A lexical error happens when the current character doesn't start \emph{any} valid token
+pattern --- an illegal character. In most languages this is things like a stray \texttt{\$}
+or \texttt{\textbackslash} that isn't part of any operator, or an unterminated string
+literal that runs off the end of the file before its closing quote. Note the scope of what
+a lexer can catch: it only knows about individual characters and local patterns. It has no
+idea whether \texttt{x} was declared, or whether \texttt{3 + true} type-checks. Those are
+problems for later phases (parsing catches structural nonsense; semantic analysis, covered
+later in this block, catches everything context-dependent).
+
+\subsection{a hand-written lexer}
+
+Let's build one. The toy language has integers, identifiers, the keywords \texttt{if},
+\texttt{else}, \texttt{while}, \texttt{print}, the operators
+\texttt{+ - * / = == != < <= > >=}, punctuation \texttt{( ) \{ \} ; ,}, and \texttt{\#}-style
+line comments.
+
+\begin{lstlisting}[language=Python]
+KEYWORDS = {"if", "else", "while", "print"}
+
+class Token:
+    def __init__(self, kind, lexeme, line, col):
+        self.kind, self.lexeme = kind, lexeme
+        self.line, self.col = line, col
+
+    def __repr__(self):
+        return f"{self.kind}({self.lexeme!r})"
+
+
+class LexError(Exception):
+    def __init__(self, message, line, col):
+        super().__init__(f"line {line}, col {col}: {message}")
+
+
+class Lexer:
+    def __init__(self, source):
+        self.src = source
+        self.pos = 0
+        self.line, self.col = 1, 1
+
+    def peek(self, ahead=0):
+        i = self.pos + ahead
+        return self.src[i] if i < len(self.src) else "\0"
+
+    def advance(self):
+        ch = self.src[self.pos]
+        self.pos += 1
+        if ch == "\n":
+            self.line += 1
+            self.col = 1
+        else:
+            self.col += 1
+        return ch
+
+    def scan(self):
+        tokens = []
+        while True:
+            self._skip_whitespace_and_comments()
+            if self.peek() == "\0":
+                break
+            tokens.append(self._scan_token())
+        tokens.append(Token("EOF", "", self.line, self.col))
+        return tokens
+
+    def _skip_whitespace_and_comments(self):
+        while True:
+            c = self.peek()
+            if c in " \t\r\n":
+                self.advance()
+            elif c == "#":
+                while self.peek() not in ("\n", "\0"):
+                    self.advance()
+            else:
+                return
+
+    def _scan_token(self):
+        line, col = self.line, self.col
+        c = self.advance()
+
+        # --- maximal munch for numbers ---
+        if c.isdigit():
+            lexeme = c
+            while self.peek().isdigit():
+                lexeme += self.advance()
+            return Token("NUMBER", lexeme, line, col)
+
+        # --- maximal munch for identifiers/keywords ---
+        if c.isalpha() or c == "_":
+            lexeme = c
+            while self.peek().isalnum() or self.peek() == "_":
+                lexeme += self.advance()
+            kind = lexeme.upper() if lexeme in KEYWORDS else "IDENT"
+            return Token(kind, lexeme, line, col)
+
+        # --- maximal munch for two-character operators: try the ---
+        # --- two-character form BEFORE falling back to one char ---
+        two_char = {"<=": "LE", ">=": "GE", "==": "EQ", "!=": "NE"}
+        two = c + self.peek()
+        if two in two_char:
+            self.advance()
+            return Token(two_char[two], two, line, col)
+
+        one_char = {
+            "+": "PLUS", "-": "MINUS", "*": "STAR", "/": "SLASH",
+            "=": "ASSIGN", "<": "LT", ">": "GT",
+            "(": "LPAREN", ")": "RPAREN",
+            "{": "LBRACE", "}": "RBRACE",
+            ";": "SEMI", ",": "COMMA",
+        }
+        if c in one_char:
+            return Token(one_char[c], c, line, col)
+
+        raise LexError(f"unexpected character {c!r}", line, col)
+\end{lstlisting}
+
+The whole design is the maximal-munch loop in \texttt{\_scan\_token}: for each category,
+keep consuming characters as long as the category's pattern is still satisfiable, and only
+stop once extending the lexeme by one more character would break the match. The two-char
+operator check is the clearest instance --- it explicitly tries the longer match
+(\texttt{c + peek()}) before falling back to the single character, which is maximal munch
+written out as an \texttt{if} statement.
+
+\subsection{generated vs.\ hand-written lexers}
+
+You didn't have to write that loop by hand. Tools like \texttt{lex} and its modern
+descendant \texttt{flex} take a list of regular expressions with associated actions and
+generate the scanning code (typically a table-driven DFA in C) for you. This is the
+industrial approach: fast, consistent, and mechanically correct once your regular
+expressions are right, because the tool is doing the DFA construction that you'd otherwise
+have to do by hand.
+
+The trade-off is control. A generated lexer is a black box that implements ``longest
+match, first rule wins on ties'' uniformly; if your language needs something irregular ---
+Python's indentation-sensitive blocks, for instance, which need a stack of indent levels
+that isn't expressible as a single DFA --- you end up hand-patching the generated code
+anyway. Robert Nystrom's \emph{Crafting Interpreters} makes the case for writing the lexer
+by hand even for a real language (Lox): the code is short, it's exactly as fast as you need
+for a tree-walking interpreter, and you get precise control over error messages and edge
+cases like indentation or string interpolation. For a small DSL --- the kind you build once
+and iterate on constantly --- hand-written usually wins for the same reason: you'll want to
+tweak error messages and add odd little rules more often than you'll want raw scanning
+throughput.
+
+\begin{example}[Lexing a program by hand]
+Take the following short program in the toy language above:
+\begin{lstlisting}
+x = 3
+if x <= 10 {
+  print x  # done
+}
+\end{lstlisting}
+Running it through the lexer produces:
+
+\begin{center}
+\begin{tabular}{lll}
+\hline
+Token & Lexeme & Line \\
+\hline
+\texttt{IDENT}  & \texttt{x}     & 1 \\
+\texttt{ASSIGN} & \texttt{=}     & 1 \\
+\texttt{NUMBER} & \texttt{3}     & 1 \\
+\texttt{IF}     & \texttt{if}    & 2 \\
+\texttt{IDENT}  & \texttt{x}     & 2 \\
+\texttt{LE}     & \texttt{<=}    & 2 \\
+\texttt{NUMBER} & \texttt{10}    & 2 \\
+\texttt{LBRACE} & \texttt{\{}    & 2 \\
+\texttt{PRINT}  & \texttt{print} & 3 \\
+\texttt{IDENT}  & \texttt{x}     & 3 \\
+\texttt{RBRACE} & \texttt{\}}    & 4 \\
+\texttt{EOF}    &                & 5 \\
+\hline
+\end{tabular}
+\end{center}
+
+Notice three things at once: \texttt{<=} survived as a single \texttt{LE} token (maximal
+munch), \texttt{if} and \texttt{print} became keyword tokens rather than
+\texttt{IDENT}s (the keyword table lookup), and the comment \texttt{\# done} disappeared
+entirely, along with all the indentation --- it never influenced the token stream because
+this toy language doesn't give whitespace any meaning.
+\end{example}
+
+\subsection{Exercises}
+\begin{itemize}
+  \item Lex the string \texttt{y != 4 \# stop} by hand, listing every token with its kind
+    and lexeme, the way the worked example above does.
+  \item Add support for \texttt{:=} as an alternative assignment operator, sitting
+    alongside \texttt{=}. What does maximal munch have to say about the input
+    \texttt{x := 3} versus \texttt{x : = 3}? Would your lexer accept the second one, and
+    should it?
+  \item Extend the \texttt{NUMBER} rule to accept a single decimal point (\texttt{3.14}).
+    What ambiguity shows up if the input is \texttt{3.} followed immediately by
+    \texttt{foo} with no space -- i.e., \texttt{3.foo}? How would you resolve it?
+  \item Explain, in your own words, why the keyword check has to happen \emph{after}
+    matching the full identifier pattern rather than before. Construct a concrete input
+    that a ``keywords-first'' lexer would tokenize incorrectly.
+  \item Modify \texttt{\_skip\_whitespace\_and\_comments} to support block comments
+    delimited by \texttt{/* ... */} in addition to \texttt{\#} line comments. What happens
+    if a block comment is never closed before end of file --- where should that error be
+    reported?
+  \item A generated lexer (flex-style) and the hand-written one above will tokenize any
+    valid input identically. Describe one concrete situation where they would
+    \emph{disagree} on how to report an error, and explain why.
+\end{itemize}

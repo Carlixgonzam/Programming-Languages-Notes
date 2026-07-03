@@ -1,0 +1,282 @@
+% !TeX root = ../main.tex
+\usetikzlibrary{automata}
+\section{Finite automata}
+
+\subsection{Why automata at all}
+
+Grammars \emph{generate} strings; automata \emph{recognize} them. Given a candidate string,
+a grammar doesn't directly tell you ``yes/no, is this in the language'' --- you'd have to
+search over all possible derivations. An automaton, by contrast, is a machine you run the
+string through, symbol by symbol, and it tells you yes or no at the end, deterministically
+and in linear time (for the finite automata in this file). The relationship between the two
+is the subject of the equivalence theorem later in this file, and it's the same duality
+you'll meet again with pushdown automata and context-free grammars in file 05: one
+formalism describes the language declaratively, the other gives you an algorithm to decide
+membership.
+
+\subsection{Deterministic finite automata (DFA)}
+
+\begin{definition}
+A \textbf{deterministic finite automaton} (DFA) is a 5-tuple $M = (Q, \Sigma, \delta, q_0, F)$
+where:
+\begin{itemize}
+  \item $Q$ is a finite set of \textbf{states},
+  \item $\Sigma$ is the input alphabet,
+  \item $\delta: Q \times \Sigma \to Q$ is the (total) \textbf{transition function},
+  \item $q_0 \in Q$ is the \textbf{start state},
+  \item $F \subseteq Q$ is the set of \textbf{accepting} (final) states.
+\end{itemize}
+\end{definition}
+
+Extend $\delta$ to strings: $\hat\delta(q, \varepsilon) = q$, and
+$\hat\delta(q, wa) = \delta(\hat\delta(q, w), a)$ for $a \in \Sigma$. Then:
+
+\begin{definition}
+The \textbf{language accepted} by DFA $M$ is
+$L(M) = \{ w \in \Sigma^* \mid \hat\delta(q_0, w) \in F \}$.
+\end{definition}
+
+Because $\delta$ is total and a function (exactly one next state for every state/symbol
+pair), a DFA never has to guess and is never stuck --- it consumes every symbol of the
+input and lands in exactly one state at the end. That's what makes DFAs mechanically
+simple to run: no backtracking, no branching, one pass.
+
+\subsubsection{Worked example: strings over $\{0,1\}$ ending in \texttt{01}}
+
+\begin{example}
+Let $L$ = binary strings ending in \texttt{01}. The trick to designing this DFA by hand is
+to make each state track ``the longest suffix of the input read so far that is also a
+prefix of \texttt{01}.'' The prefixes of \texttt{01} are $\varepsilon$, \texttt{0}, and
+\texttt{01} itself, so three states suffice:
+\begin{itemize}
+  \item $A$: matched prefix $\varepsilon$ (the last symbol, if any, was not a \texttt{0}
+    that could start a fresh match),
+  \item $B$: matched prefix \texttt{0} (the last symbol read was \texttt{0}),
+  \item $C$ (accepting): matched prefix \texttt{01} (the last two symbols were exactly
+    \texttt{01}).
+\end{itemize}
+From each state, ask ``if I read a 0 next, what's the longest prefix of \texttt{01} that
+matches the new suffix? and if I read a 1?'' That question fills in every transition:
+\[
+\delta(A,0)=B,\quad \delta(A,1)=A,\quad
+\delta(B,0)=B,\quad \delta(B,1)=C,\quad
+\delta(C,0)=B,\quad \delta(C,1)=A.
+\]
+The two transitions worth double-checking are $\delta(C,0) = B$ (after accepting on
+\texttt{01}, a new \texttt{0} restarts the match at prefix \texttt{0}, it doesn't throw
+away the progress) and $\delta(C,1) = A$ (a new \texttt{1} after \texttt{01} matches no
+prefix of \texttt{01} at all, so we fall back to $\varepsilon$).
+
+\begin{center}
+\begin{tikzpicture}[shorten >=1pt, node distance=3cm, on grid, auto,
+                    every state/.style={draw, circle, minimum size=0.9cm}]
+  \node[state, initial] (A) {$A$};
+  \node[state] (B) [right of=A] {$B$};
+  \node[state, accepting] (C) [right of=B] {$C$};
+
+  \path[->]
+    (A) edge [loop above] node {1} ()
+    (A) edge [bend left, above] node {0} (B)
+    (B) edge [loop above] node {0} ()
+    (B) edge [bend left, above] node {1} (C)
+    (C) edge [bend left=50, below] node {1} (A)
+    (C) edge [bend right, above] node {0} (B);
+\end{tikzpicture}
+\end{center}
+
+Trace $1001$: $A \xrightarrow{1} A \xrightarrow{0} B \xrightarrow{0} B \xrightarrow{1} C$.
+Final state $C \in F$, so $1001$ is accepted --- correctly, since its last two symbols are
+indeed \texttt{01}. The general lesson: build the DFA table \emph{as a table} (every state,
+every symbol, exactly one entry) by asking the ``longest matching prefix'' question
+systematically, rather than drawing arrows by intuition. It's mechanical, and it's much
+harder to get wrong.
+\end{example}
+
+\subsection{Nondeterministic finite automata (NFA)}
+
+\begin{definition}
+A \textbf{nondeterministic finite automaton} (NFA) is a 5-tuple
+$M = (Q, \Sigma, \delta, q_0, F)$ where everything is as in a DFA except
+$\delta: Q \times (\Sigma \cup \{\varepsilon\}) \to \mathcal{P}(Q)$ --- the transition
+function maps a state and a symbol (or $\varepsilon$, the empty string) to a \emph{set} of
+possible next states.
+\end{definition}
+
+An NFA can have zero, one, or many transitions out of a state on a given symbol, and can
+also move to another state ``for free'' via an $\varepsilon$-transition, without consuming
+input. A string is accepted if \emph{some} sequence of choices leads to an accepting state.
+
+\begin{example}
+NFA for strings over $\{a,b\}$ containing the substring \texttt{ab}, built directly and
+loosely from the informal idea ``guess where the \texttt{ab} starts'':
+
+\begin{center}
+\begin{tikzpicture}[shorten >=1pt, node distance=3cm, on grid, auto,
+                    every state/.style={draw, circle, minimum size=0.9cm}]
+  \node[state, initial] (p0) {$p_0$};
+  \node[state] (p1) [right of=p0] {$p_1$};
+  \node[state, accepting] (p2) [right of=p1] {$p_2$};
+
+  \path[->]
+    (p0) edge [loop above] node {a,b} ()
+    (p0) edge node {a} (p1)
+    (p1) edge node {b} (p2)
+    (p2) edge [loop above] node {a,b} ();
+\end{tikzpicture}
+\end{center}
+
+From $p_0$, on symbol \texttt{a} there are \emph{two} outgoing choices: stay in $p_0$ (self
+loop, since \texttt{a} is also in the self-loop label) or move to $p_1$. That's exactly the
+nondeterminism: the machine doesn't commit to ``this \texttt{a} is the start of the
+\texttt{ab} substring'' until it sees whether a \texttt{b} follows, and formally it explores
+both possibilities at once.
+\end{example}
+
+\subsection{Subset construction: NFA $\to$ DFA}
+
+Since real hardware can't ``explore both possibilities at once,'' we need a way to convert
+any NFA into an equivalent DFA. The idea is simple once you see it: track the \emph{set} of
+all NFA states the machine could currently be in, and make each such set a single DFA
+state. This is the \textbf{subset construction} (also called the powerset construction).
+
+\begin{definition}
+Given NFA $N = (Q, \Sigma, \delta, q_0, F)$, define $E(q)$ (the \textbf{$\varepsilon$-closure}
+of $q$) as the set of states reachable from $q$ using only $\varepsilon$-transitions
+(including $q$ itself). The equivalent DFA is $D = (Q', \Sigma, \delta', q_0', F')$ where:
+\begin{itemize}
+  \item $Q' = \mathcal{P}(Q)$ (in practice, only the reachable subsets),
+  \item $q_0' = E(q_0)$,
+  \item $\delta'(S, a) = \bigcup_{q \in S} E(\delta(q,a))$ for $S \subseteq Q$,
+  \item $F' = \{ S \subseteq Q \mid S \cap F \neq \emptyset \}$.
+\end{itemize}
+\end{definition}
+
+\subsubsection{Worked example}
+
+\begin{example}
+Let's run subset construction on a small NFA (no $\varepsilon$-transitions, to keep it
+simple) over $\Sigma = \{a,b\}$ recognizing strings that end in \texttt{a}, but built
+nondeterministically: from $q_0$, reading \texttt{a} you can either stay in $q_0$ or guess
+you've hit the final \texttt{a} and move to $q_1$ (accepting); reading \texttt{b} only stays
+in $q_0$.
+
+\[
+\delta(q_0, a) = \{q_0, q_1\}, \quad \delta(q_0, b) = \{q_0\}, \quad
+\delta(q_1, a) = \emptyset, \quad \delta(q_1, b) = \emptyset, \quad F = \{q_1\}
+\]
+
+Start the subset construction from $\{q_0\}$ and only compute what's reachable:
+
+\begin{center}
+\begin{tabular}{lll}
+\hline
+\textbf{DFA state (subset)} & \textbf{on $a$} & \textbf{on $b$} \\
+\hline
+$\{q_0\}$ (start)             & $\{q_0,q_1\}$ & $\{q_0\}$ \\
+$\{q_0,q_1\}$ (accepting)     & $\{q_0,q_1\}$ & $\{q_0\}$ \\
+\hline
+\end{tabular}
+\end{center}
+
+Only two reachable subsets show up, not all $4 = 2^2$ possible subsets of $\{q_0,q_1\}$ ---
+in practice the reachable part of the powerset is usually far smaller than the full
+powerset, which is what keeps subset construction usable. The resulting DFA:
+
+\begin{center}
+\begin{tikzpicture}[shorten >=1pt, node distance=3.6cm, on grid, auto,
+                    every state/.style={draw, circle, minimum size=1cm}]
+  \node[state, initial] (A) {$\{q_0\}$};
+  \node[state, accepting] (B) [right of=A] {$\{q_0,q_1\}$};
+
+  \path[->]
+    (A) edge [loop above] node {b} ()
+    (A) edge [bend left, above] node {a} (B)
+    (B) edge [bend left, below] node {b} (A)
+    (B) edge [loop above] node {a} ();
+\end{tikzpicture}
+\end{center}
+
+Notice the blow-up potential in general: an NFA with $n$ states can force a DFA with up to
+$2^n$ states in the worst case (this is a real, tight bound, not just a sloppy estimate) ---
+but as this example shows, the \emph{reachable} subsets are often far fewer in practice.
+This exponential worst case is the classic trade-off: NFAs are smaller and easier to
+construct (from a regex, say --- see file 04), DFAs are faster to run (no need to track
+sets, no backtracking) but can be exponentially larger.
+\end{example}
+
+\subsection{DFAs and NFAs accept exactly the same languages}
+
+\begin{theorem}
+For every NFA $N$ there is a DFA $D$ with $L(D) = L(N)$ (via subset construction), and every
+DFA is trivially an NFA (one with no nondeterministic choices and no $\varepsilon$-moves).
+Hence the class of languages accepted by DFAs and the class accepted by NFAs coincide; this
+class is exactly the \textbf{regular languages}.
+\end{theorem}
+
+The proof in the DFA-to-NFA direction is immediate (a DFA already satisfies the NFA
+definition, just with singleton transition sets and no $\varepsilon$-edges). The
+NFA-to-DFA direction is exactly the subset construction above, plus an induction on string
+length showing $\hat\delta'(q_0', w) = E(\hat\delta(q_0, w))$ for every $w$ (each side
+reaches, respectively, the DFA state and the exact set of NFA states reachable on $w$) ---
+we won't write out the induction symbol by symbol here, but it's a standard exercise once
+you trust the construction. The practical takeaway: nondeterminism doesn't buy you
+recognizing power, only convenience (an NFA is often much easier to build directly, e.g.\
+from a regular expression, than a DFA is).
+
+\subsection{Closure properties}
+
+One of the most useful features of regular languages is that they're closed under several
+operations --- meaning if you start with regular languages, applying the operation gives you
+back a regular language, with a constructive proof that doubles as an algorithm.
+
+\begin{proposition}
+If $L_1, L_2$ are regular, so are $L_1 \cup L_2$, $L_1 \cap L_2$, and $\overline{L_1}$
+(complement, relative to $\Sigma^*$).
+\end{proposition}
+
+\begin{itemize}
+  \item \textbf{Complement.} Take a DFA for $L_1$ (must be a complete DFA --- total
+    $\delta$, which we've required all along) and swap accepting and non-accepting states:
+    $F' = Q \setminus F$. Every string that used to be rejected is now accepted and vice
+    versa, so $L(D') = \overline{L_1}$. This is a one-line construction, and it's exactly
+    why we insist DFAs are total: an NFA can't be complemented this way, because ``not
+    accepting'' for an NFA isn't the same as ``all paths reject.''
+  \item \textbf{Intersection --- product construction.} Build DFAs $D_1 = (Q_1, \Sigma,
+    \delta_1, q_{0,1}, F_1)$ and $D_2 = (Q_2, \Sigma, \delta_2, q_{0,2}, F_2)$ for $L_1$
+    and $L_2$. Construct $D = (Q_1 \times Q_2, \Sigma, \delta, (q_{0,1}, q_{0,2}), F_1
+    \times F_2)$ with $\delta((p,q), a) = (\delta_1(p,a), \delta_2(q,a))$ --- run both
+    machines in lockstep, tracking a pair of states, and accept only when \emph{both}
+    component machines would accept. Since $F$ is exactly $F_1 \times F_2$, $D$ accepts $w$
+    iff both $D_1$ and $D_2$ accept $w$, i.e.\ $L(D) = L_1 \cap L_2$.
+  \item \textbf{Union.} Either use the same product construction with $F = (F_1 \times Q_2)
+    \cup (Q_1 \times F_2)$ (accept if \emph{either} component accepts), or note that
+    $L_1 \cup L_2 = \overline{\overline{L_1} \cap \overline{L_2}}$ by De Morgan and reuse
+    the two constructions above.
+\end{itemize}
+
+These closure properties are exactly what make regular languages a well-behaved class to
+compute with: you can build small automata for simple sublanguages and combine them
+algorithmically into automata for more complex conditions, instead of building one giant
+automaton by hand for the whole condition at once. This is precisely what a lexer generator
+does under the hood when you give it a list of token patterns (each one a small regular
+language) and it produces a single combined DFA.
+
+\subsection{Exercises}
+
+\begin{itemize}
+  \item Build the DFA table (every state $\times$ every symbol, one entry each) for
+    strings over $\{0,1\}$ that contain \texttt{00} as a substring. Draw the corresponding
+    state diagram.
+  \item Take the NFA in this section for ``contains \texttt{ab}'' and run the full subset
+    construction (not just the reachable part --- compute all subsets that actually show
+    up, including any dead/trap state) to get an equivalent DFA. Draw the result.
+  \item Prove, using the product construction, that regular languages are closed under
+    set difference $L_1 \setminus L_2$ (hint: express set difference using intersection
+    and complement, both of which you already have constructions for).
+  \item Design a DFA that accepts binary strings representing a multiple of 3 (interpreting
+    the string as a binary number, most significant bit first). Explain what each state
+    represents (hint: the state should track the current value mod 3).
+  \item Think about why an NFA's ``exists an accepting path'' semantics does NOT let you
+    complement an NFA just by swapping $F$ and $Q \setminus F$. Construct a tiny NFA and a
+    string where swapping $F$ gives the wrong answer, to make the point concrete.
+\end{itemize}

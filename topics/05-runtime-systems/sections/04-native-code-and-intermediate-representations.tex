@@ -1,0 +1,203 @@
+% !TeX root = ../main.tex
+\section{Native code and intermediate representations}
+
+If the goal is speed, why doesn't a compiler just translate the AST straight into
+machine instructions in one pass? You can do that, and simple compilers do, but any
+serious compiler inserts a stepping stone in between: an \textbf{intermediate
+representation} (IR). This section is about why that extra layer exists and what it
+buys you.
+
+\subsection{why bother with an IR at all}
+
+The AST is shaped like the \emph{source language}: it has \texttt{if} nodes, \texttt{while}
+nodes, nested expressions, all the syntactic sugar a human programmer wanted to write.
+Machine code is shaped like the \emph{target hardware}: registers, flags, jump
+addresses, fixed-width instructions. Translating directly between two representations
+that are both highly specific (one to the source language, one to the target chip)
+means you'd need a separate translator for every (source language, target
+architecture) pair, and you'd have to re-implement every optimization once per pair
+too.
+
+An IR sits in between: lower-level than the AST (closer to what a machine actually
+does, one operation at a time, explicit temporaries instead of nested expressions) but
+still machine-independent (no specific registers, no specific instruction encodings).
+This buys you two things at once:
+\begin{itemize}
+  \item \textbf{Optimization} happens once, on the IR, and benefits every target
+    architecture the compiler supports, instead of being duplicated per-architecture.
+  \item \textbf{Retargeting} to a new architecture only requires writing a new
+    \emph{backend} (IR $\to$ that architecture's machine code), reusing the entire
+    front end (parsing, type checking, IR generation, optimization) unchanged.
+\end{itemize}
+
+\subsection{three-address code}
+
+The canonical example IR is \textbf{three-address code} (TAC): every instruction has at
+most one operator and at most three operands (typically: two operands and one
+destination), and every intermediate result gets its own explicit name, a
+\textbf{temporary}.
+
+\begin{example}[Translating \texttt{x = a + b * c}]
+The AST has a multiplication nested inside an addition. TAC flattens this into a
+sequence of single-operation steps, introducing a temporary for the intermediate
+product:
+\begin{lstlisting}
+t1 = b * c
+x  = a + t1
+\end{lstlisting}
+Every line has one operator; \texttt{b * c} isn't allowed to appear as a subexpression
+of the next line the way it could in the AST, it has to be materialized into
+\texttt{t1} first.
+\end{example}
+
+\begin{example}[Translating an \texttt{if}]
+\begin{lstlisting}
+if (x > 10) { y = 1; } else { y = 2; }
+\end{lstlisting}
+becomes explicit comparisons, conditional jumps, and labels:
+\begin{lstlisting}
+t1 = x > 10
+if t1 goto L_then
+goto L_else
+L_then:
+    y = 1
+    goto L_end
+L_else:
+    y = 2
+L_end:
+\end{lstlisting}
+Notice the \texttt{if}/\texttt{else} \emph{structure} from the AST has disappeared,
+replaced by explicit labels and gotos; TAC has no nested control-flow constructs at
+all, just a flat sequence of instructions and jumps, which is exactly the shape most
+optimizations want to work with.
+\end{example}
+
+\begin{example}[Translating a \texttt{while}]
+\begin{lstlisting}
+while (i < n) { s = s + i; i = i + 1; }
+\end{lstlisting}
+becomes:
+\begin{lstlisting}
+L_test:
+    t1 = i < n
+    if t1 goto L_body
+    goto L_end
+L_body:
+    s = s + i
+    i = i + 1
+    goto L_test
+L_end:
+\end{lstlisting}
+Same idea: the loop's structure is entirely encoded by labels and jumps, there's no
+special ``loop'' instruction at all.
+\end{example}
+
+\subsection{SSA form}
+
+\textbf{Static single assignment} (SSA) is a further refinement of an IR like TAC:
+every variable is assigned to \emph{exactly once}, textually. If the source program
+reassigns a variable, SSA gives each reassignment a fresh, versioned name instead.
+
+The wrinkle is control flow merging: if a variable is assigned differently along two
+branches, and then used after the branches merge back together, which assignment is
+``the'' value at the merge point? SSA's answer is a special \textbf{phi function}
+($\phi$), placed at the merge point, that says ``take the value from whichever branch
+we actually came from''.
+
+\begin{example}[Before/after SSA across a branch]
+Before (ordinary TAC, \texttt{x} reassigned along both branches):
+\begin{lstlisting}
+if (cond) goto L1
+x = 1
+goto L2
+L1:
+x = 2
+L2:
+y = x + 1
+\end{lstlisting}
+After SSA (every assignment gets a fresh version, and the merge point gets a $\phi$):
+\begin{lstlisting}
+if (cond) goto L1
+x1 = 1
+goto L2
+L1:
+x2 = 2
+L2:
+x3 = phi(x1, x2)   ; x1 if we arrived from the fall-through, x2 if from L1
+y1 = x3 + 1
+\end{lstlisting}
+Now every use of a variable (\texttt{x1}, \texttt{x2}, \texttt{x3}, \texttt{y1}) refers,
+unambiguously, to exactly one assignment. That property is what makes SSA so friendly
+to data-flow analyses: ``where did this value come from'' is always a direct,
+syntactic answer, instead of a question that requires tracing execution paths
+backward through possible reassignments.
+\end{example}
+
+\subsection{from IR to native code}
+
+Getting from an IR like TAC (or its SSA-form refinement) down to actual machine
+instructions has two big conceptual pieces.
+
+\subsubsection{instruction selection}
+
+\textbf{Instruction selection} is the problem of matching IR patterns to the target
+machine's actual instructions. A single TAC instruction might correspond to one
+machine instruction, several, or (if the target has a fused instruction for a common
+pattern, a multiply-add, say) fewer than the naive one-to-one count would suggest.
+This is a pattern-matching problem: find, for each chunk of IR, the cheapest sequence
+of real instructions that computes the same thing.
+
+\subsubsection{register allocation}
+
+The IR happily invents as many temporaries as it wants (\texttt{t1}, \texttt{t2}, \ldots,
+unboundedly many), but real hardware has a small, fixed number of registers (a few
+dozen, at most, on most architectures). \textbf{Register allocation} is the problem of
+mapping that unbounded set of IR temporaries onto the small fixed set of physical
+registers, deciding, for each point in the program, which temporaries get to live in a
+real register and which have to be \textbf{spilled} to memory (stored to and reloaded
+from the stack) because there simply aren't enough registers to go around at that
+point.
+
+The classic conceptual framework here is \textbf{graph-coloring register allocation}:
+build an \emph{interference graph} where each node is a temporary and an edge connects
+two temporaries that are both live (still needed) at the same program point, so they
+can't share a register. Assigning registers is then, quite literally, the graph-coloring
+problem: color the graph with $k$ colors ($k$ = number of physical registers) such that
+no two adjacent nodes share a color; a temporary that can't be colored has to spill. We
+won't derive the full algorithm here, but it's worth knowing the name, because it's the
+textbook answer whenever someone asks ``how does a real compiler decide what goes in a
+register''.
+
+\begin{remark}
+Instruction selection and register allocation are, in principle, separate concerns
+(matching \emph{what} instruction to use vs.\ deciding \emph{where}, register or
+memory, a value lives), but real compilers often have to interleave decisions between
+the two, since the best instruction choice can depend on register pressure and vice
+versa. This is one of the genuinely hard, still-actively-researched parts of compiler
+backend design.
+\end{remark}
+
+\subsection{Exercises}
+\begin{itemize}
+  \item Translate \texttt{z = (a + b) * (c - d)} into three-address code by hand,
+    naming temporaries \texttt{t1}, \texttt{t2}, \ldots\ in the order they're
+    introduced.
+  \item Translate \texttt{if (a > b) \{ m = a; \} else \{ m = b; \}} into three-address
+    code with explicit labels and jumps, following the pattern shown for \texttt{if}
+    above.
+  \item Convert your answer to the previous exercise into SSA form, introducing a
+    $\phi$ function at the merge point. Which variable versions does the $\phi$
+    combine, and under what condition does each one apply?
+  \item Trace a small while-loop of your choice (2--3 statements in the body) all the
+    way from source, to TAC, to SSA form, following the patterns shown in this
+    section.
+  \item Think about it: why does SSA form make an optimization like ``is this value
+    ever used again after this point'' (dead code elimination) mechanically easier to
+    check than it would be on ordinary, non-SSA TAC where a variable might be
+    reassigned several times?
+  \item Suppose a target machine has only 3 physical registers, and at some point in
+    the program 4 different temporaries are simultaneously live (needed later).
+    Describe, in your own words, what the register allocator has to do here, and what
+    the runtime cost of that decision is compared to a hypothetical machine with
+    enough registers for everything.
+\end{itemize}

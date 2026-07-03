@@ -1,0 +1,335 @@
+% !TeX root = ../main.tex
+\section{Grammars and language definitions}
+
+\subsection{Alphabets, strings, and languages}
+
+Before we can define what a \emph{grammar} is, we need the raw material grammars operate
+on: strings over an alphabet. This is deliberately the most bare-bones layer of the whole
+theory --- no notion of ``meaning'' yet, just symbols and sequences.
+
+\begin{definition}
+An \textbf{alphabet} $\Sigma$ is a finite, nonempty set of symbols. A \textbf{string}
+(or \textbf{word}) over $\Sigma$ is a finite sequence of symbols from $\Sigma$. The
+\textbf{empty string} is written $\varepsilon$, and $\Sigma^*$ denotes the set of
+\emph{all} strings over $\Sigma$ (including $\varepsilon$).
+\end{definition}
+
+For example, if $\Sigma = \{0, 1\}$, then $\varepsilon, 0, 1, 01, 101, 0011 \in \Sigma^*$.
+Note $\Sigma^*$ is always infinite (as long as $\Sigma$ is nonempty), even though $\Sigma$
+itself is finite --- this is the first hint of why we need finite machinery (grammars,
+automata) to describe infinite sets of strings.
+
+\begin{definition}
+A \textbf{language} over $\Sigma$ is any subset $L \subseteq \Sigma^*$.
+\end{definition}
+
+That's a deceptively simple definition, and it's worth sitting with it: a language is just
+a set of strings, full stop. ``The set of syntactically valid Python programs'' is a
+language in this sense (over the alphabet of Unicode characters, or ASCII if you like).
+So is ``the set of strings with an equal number of \texttt{a}'s and \texttt{b}'s,'' and so
+is ``the set of binary strings representing even numbers.'' Programming languages are
+languages in the formal sense, plus a semantics on top --- which is exactly the layering
+from the previous section.
+
+\subsubsection{Operations on languages}
+
+Since languages are sets of strings, set operations (union, intersection, complement) apply
+directly. But there are two operations specific to strings/languages that are worth
+naming explicitly, because they show up constantly in grammars, regular expressions, and
+automata:
+
+\begin{itemize}
+  \item \textbf{Concatenation.} For strings $x, y$, $xy$ is $x$ followed by $y$. For
+    languages, $L_1 L_2 = \{ xy \mid x \in L_1, y \in L_2 \}$ --- every string formed by
+    gluing a string from $L_1$ to a string from $L_2$.
+  \item \textbf{Kleene star.} $L^* = \bigcup_{i \ge 0} L^i$, where $L^0 = \{\varepsilon\}$
+    and $L^{i+1} = L \cdot L^i$. In words: zero or more strings from $L$, concatenated in
+    any combination. $\Sigma^*$ itself is exactly the Kleene star of $\Sigma$ viewed as a
+    language of length-1 strings.
+\end{itemize}
+
+\begin{example}
+Let $\Sigma = \{a, b\}$, $L_1 = \{a, ab\}$, $L_2 = \{b, \varepsilon\}$. Then
+$L_1 L_2 = \{ab, a, abb, ab\} = \{a, ab, abb\}$ (as a set, duplicates collapse). And
+$L_1^* $ contains $\varepsilon, a, ab, aa, aab, aba, \dots$ --- every string you can build by
+gluing together zero or more copies of $a$ or $ab$.
+\end{example}
+
+Union, concatenation, and Kleene star are the three operations regular expressions are
+built from (file 04). Keep them in mind.
+
+\subsection{Grammars: generating languages instead of just naming them}
+
+Set-builder notation (``$L = \{a^n b^n \mid n \ge 0\}$'') is fine for tiny examples, but it
+doesn't give you an algorithm for anything --- you can't hand it to a machine and ask
+``is this string in $L$?'' or ``generate me a string in $L$.'' A \textbf{grammar} is a
+finite, mechanical description of a (possibly infinite) language: a finite set of rewriting
+rules that, applied repeatedly, generate exactly the strings of the language.
+
+\begin{definition}
+A \textbf{grammar} is a 4-tuple $G = (N, \Sigma, P, S)$ where:
+\begin{itemize}
+  \item $N$ is a finite set of \textbf{nonterminal} symbols (syntactic categories, like
+    ``expression'' or ``statement''),
+  \item $\Sigma$ is a finite set of \textbf{terminal} symbols (the alphabet of the actual
+    strings we're generating), disjoint from $N$,
+  \item $P$ is a finite set of \textbf{production rules}, each of the form $\alpha \to \beta$
+    with $\alpha \in (N \cup \Sigma)^*$ containing at least one nonterminal, and
+    $\beta \in (N \cup \Sigma)^*$,
+  \item $S \in N$ is the \textbf{start symbol}.
+\end{itemize}
+\end{definition}
+
+The general form above (arbitrary $\alpha$ on the left) is the \emph{unrestricted} grammar,
+the top of the Chomsky hierarchy we'll get to shortly. Most of what we do in this course
+restricts $\alpha$ to be a single nonterminal, giving context-free grammars (file 05); this
+section still states things at the general level so you see where the restriction comes
+from.
+
+\subsubsection{Derivations}
+
+A grammar generates strings by \textbf{derivation}: start from $S$, and repeatedly replace
+some substring matching the left side of a rule with the rule's right side, until only
+terminals remain.
+
+\begin{definition}
+Given $\alpha \to \beta \in P$, and a string $\gamma \alpha \delta$, we say
+$\gamma \alpha \delta \Rightarrow \gamma \beta \delta$ (``$\gamma\alpha\delta$
+\textbf{derives} $\gamma\beta\delta$ in one step''). We write $\Rightarrow^*$ for zero or
+more derivation steps. Any string reachable from $S$ via $\Rightarrow^*$ (including $S$
+itself) is called a \textbf{sentential form}. The \textbf{language generated by} $G$ is
+\[
+  L(G) = \{ w \in \Sigma^* \mid S \Rightarrow^* w \}.
+\]
+\end{definition}
+
+A sentential form may still contain nonterminals (it's a snapshot mid-derivation); a string
+in $L(G)$ is a sentential form with \emph{no} nonterminals left. When there's a choice of
+which nonterminal to expand next, two conventions matter for later parsing work:
+
+\begin{itemize}
+  \item a \textbf{leftmost derivation} always expands the leftmost nonterminal in the
+    current sentential form,
+  \item a \textbf{rightmost derivation} always expands the rightmost one.
+\end{itemize}
+
+These give (in general) different sequences of sentential forms for the same string, even
+though the final string and the shape of the parse tree are the same. Leftmost derivations
+correspond to top-down parsing; rightmost derivations (in reverse) correspond to bottom-up
+parsing --- more on that in the next block.
+
+\subsubsection{A worked example: arithmetic expressions}
+
+Let's generate simple arithmetic expressions over identifiers, \texttt{+}, and \texttt{*},
+with parentheses, and actually derive a string.
+
+\[
+\begin{aligned}
+  N &= \{E\}, \qquad \Sigma = \{ \texttt{id}, +, *, (, ) \}, \qquad S = E \\
+  P: \quad & E \to E + E \\
+           & E \to E * E \\
+           & E \to (E) \\
+           & E \to \texttt{id}
+\end{aligned}
+\]
+
+\begin{example}
+Leftmost derivation of $\texttt{id} + \texttt{id} * \texttt{id}$:
+\[
+\begin{array}{lll}
+E & \Rightarrow E + E & (\text{rule } E \to E+E) \\
+  & \Rightarrow \texttt{id} + E & (\text{rule } E \to \texttt{id, leftmost } E) \\
+  & \Rightarrow \texttt{id} + E * E & (\text{rule } E \to E*E) \\
+  & \Rightarrow \texttt{id} + \texttt{id} * E & (\text{rule } E \to \texttt{id}) \\
+  & \Rightarrow \texttt{id} + \texttt{id} * \texttt{id} & (\text{rule } E \to \texttt{id})
+\end{array}
+\]
+Every intermediate line ($E+E$, $\texttt{id}+E$, $\texttt{id}+E*E$, \dots) is a sentential
+form. The last line has no nonterminals left, so it's a string in $L(G)$.
+\end{example}
+
+\subsection{BNF and EBNF}
+
+In practice, nobody writes grammars as bare tuples $(N, \Sigma, P, S)$ --- you write the
+production rules in \textbf{Backus-Naur Form} (BNF) or its extended version, \textbf{EBNF},
+and everything else ($N$, $\Sigma$, $S$) is inferred from context (nonterminals are
+angle-bracketed or capitalized; the start symbol is the one on the left of the first rule,
+by convention).
+
+BNF is exactly the productions from above, written with \texttt{::=} instead of $\to$ and
+\texttt{|} to combine right-hand sides that share a left-hand side:
+
+\begin{lstlisting}
+<expr> ::= <expr> "+" <expr>
+         | <expr> "*" <expr>
+         | "(" <expr> ")"
+         | "id"
+\end{lstlisting}
+
+EBNF adds regular-expression-style operators (\texttt{?} for optional, \texttt{*} for zero
+or more, \texttt{+} for one or more, grouping with parentheses) purely as \emph{notational
+sugar} --- every EBNF rule can be mechanically rewritten into an equivalent set of plain BNF
+rules, usually by introducing an extra nonterminal. Here's a small config-language grammar
+in EBNF, the kind you'd actually reach for in a real parser:
+
+\begin{lstlisting}
+config     ::= entry*
+entry      ::= KEY '=' value NEWLINE
+value      ::= STRING | NUMBER | list
+list       ::= '[' (value (',' value)*)? ']'
+\end{lstlisting}
+
+The \texttt{entry*} says ``zero or more entries,'' and \texttt{(',' value)*} says ``zero or
+more comma-separated repetitions.'' Written in plain BNF this would need two extra helper
+nonterminals (say \texttt{entries} and \texttt{value\_list}) just to express the repetition
+recursively. EBNF is strictly more convenient to write and read; it generates exactly the
+same class of languages as BNF, nothing more.
+
+\subsection{The Chomsky hierarchy: a map of what's ahead}
+
+Not all grammars are equally hard to parse, and it turns out there's a clean four-level
+classification, due to Chomsky, based purely on the shape of the allowed production rules.
+This is the map for the rest of this course (and the next block): each level corresponds to
+a different class of recognizing machine, with different computational cost.
+
+\begin{center}
+\begin{tabular}{p{2.6cm}p{5cm}p{4.3cm}}
+\hline
+\textbf{Type} & \textbf{Restriction on rules} & \textbf{Recognized by} \\
+\hline
+Type 3 --- Regular & $A \to a$ or $A \to aB$ (right-linear), $A, B \in N$, $a \in \Sigma$ &
+  Finite automata (file 03) \\
+Type 2 --- Context-free & $A \to \beta$, single nonterminal on the left &
+  Pushdown automata (file 05) \\
+Type 1 --- Context-sensitive & $\alpha A \beta \to \alpha \gamma \beta$, $|\gamma| \ge 1$ &
+  Linear-bounded automata \\
+Type 0 --- Recursively enumerable & no restriction &
+  Turing machines \\
+\hline
+\end{tabular}
+\end{center}
+
+Each level is a strict subset of the next: regular $\subsetneq$ context-free $\subsetneq$
+context-sensitive $\subsetneq$ recursively enumerable. Every regular language is
+context-free (just never use more than one nonterminal ``in flight''), but not every
+context-free language is regular (we'll \emph{prove} $\{a^n b^n \mid n \ge 0\}$ isn't
+regular in file 04, and it's a totally ordinary context-free language). Most of a
+programming language's syntax lives at the context-free level; the things that don't ---
+``this variable must be declared before use,'' ``this function call must have the right
+number of arguments'' --- are context-sensitive \emph{in spirit} but are essentially never
+handled with a real context-sensitive grammar in practice. Instead, they are pushed into a
+separate semantic-analysis phase after parsing (next block), precisely because
+context-sensitive grammars are a nightmare to parse efficiently. This is the same move we
+already saw in the DSL block: keep the grammar simple, push hard constraints to a later
+phase.
+
+\subsection{Ambiguity}
+
+\begin{definition}
+A grammar $G$ is \textbf{ambiguous} if some string $w \in L(G)$ has two distinct
+\emph{parse trees} (equivalently, two distinct leftmost derivations).
+\end{definition}
+
+Ambiguity is not a small cosmetic issue --- it means the grammar alone doesn't determine the
+structure of the program, so a compiler would have no principled way to decide what a
+program means. Two classic examples are worth internalizing because they show up
+constantly in real language design.
+
+\subsubsection{Expression precedence}
+
+Take a sloppier version of the arithmetic grammar from before, without separating addition
+and multiplication into different nonterminals:
+
+\[
+E \to E + E \mid E * E \mid \texttt{id}
+\]
+
+The string $\texttt{id} + \texttt{id} * \texttt{id}$ has two different leftmost derivations,
+corresponding to two different parse trees:
+
+\begin{center}
+\begin{tikzpicture}[level distance=1.1cm, sibling distance=1.6cm, every node/.style={font=\small}]
+\node {$E$}
+  child { node {$E$} child {node {id}} }
+  child { node {$+$} }
+  child { node {$E$}
+    child { node {$E$} child {node {id}} }
+    child { node {$*$} }
+    child { node {$E$} child {node {id}} }
+  };
+\end{tikzpicture}
+\hspace{1.5cm}
+\begin{tikzpicture}[level distance=1.1cm, sibling distance=1.6cm, every node/.style={font=\small}]
+\node {$E$}
+  child { node {$E$}
+    child { node {$E$} child {node {id}} }
+    child { node {$+$} }
+    child { node {$E$} child {node {id}} }
+  }
+  child { node {$*$} }
+  child { node {$E$} child {node {id}} };
+\end{tikzpicture}
+\end{center}
+
+The left tree groups as $\texttt{id} + (\texttt{id} * \texttt{id})$ (multiplication binds
+tighter, the reading every programmer expects). The right tree groups as
+$(\texttt{id} + \texttt{id}) * \texttt{id}$. Same string, two different computed values
+if you evaluated it, and the grammar itself gives no reason to prefer one over the other.
+
+\textbf{The fix} is to encode precedence directly in the grammar, using one nonterminal per
+precedence level, lowest precedence at the top:
+
+\[
+\begin{aligned}
+E &\to E + T \mid T \\
+T &\to T * F \mid F \\
+F &\to (E) \mid \texttt{id}
+\end{aligned}
+\]
+
+Now multiplication (built from $T$) can only ever appear \emph{nested inside} an addition
+(built from $E$), never the other way around, so the grammar itself forces $*$ to bind
+tighter. This grammar is unambiguous, and it's exactly the pattern real language grammars
+use for arithmetic expressions.
+
+\subsubsection{Dangling else}
+
+The other classic case:
+
+\[
+S \to \mathbf{if}\ b\ \mathbf{then}\ S \mid \mathbf{if}\ b\ \mathbf{then}\ S\ \mathbf{else}\ S \mid \dots
+\]
+
+The string $\mathbf{if}\ b_1\ \mathbf{then}\ \mathbf{if}\ b_2\ \mathbf{then}\ S_1\ \mathbf{else}\ S_2$
+is ambiguous: the $\mathbf{else}$ could bind to the \emph{inner} $\mathbf{if}$ (the usual
+convention, ``else matches the nearest unmatched if'') or to the \emph{outer} one. Both are
+valid parse trees under this grammar. We'll come back to this exact example in file 05 and
+fix it properly by restructuring the grammar to distinguish ``matched'' from ``unmatched''
+if-statements as separate nonterminals --- for now, just notice that the informal rule
+(``nearest unmatched if'') that most languages use is a \emph{disambiguation convention}
+bolted on top of an ambiguous grammar, rather than a property of an unambiguous one, unless
+you do the grammar surgery.
+
+\subsection{Exercises}
+
+\begin{itemize}
+  \item Let $\Sigma = \{a, b\}$, $L_1 = \{\varepsilon, a\}$, $L_2 = \{b, bb\}$. Write out
+    $L_1 L_2$ and the first four ``levels'' of $L_1^*$ (strings obtainable from 0, 1, 2,
+    and 3 concatenated copies of elements of $L_1$).
+  \item Give a grammar $G$ (4-tuple, or BNF) that generates
+    $L = \{a^n b^n \mid n \ge 0\}$. Give a leftmost derivation of $aabb$ using your grammar,
+    showing every sentential form.
+  \item Convert the EBNF config-language grammar in this section into plain BNF (no
+    \texttt{*}, \texttt{?}, or grouping), introducing helper nonterminals as needed.
+  \item Where does $L = \{a^n b^n \mid n \ge 0\}$ sit in the Chomsky hierarchy? Is it
+    regular? (You'll be able to prove this rigorously after file 04 --- for now, just give
+    your best argument for why no DFA with finitely many states could track $n$ for
+    arbitrarily large $n$.)
+  \item Take the ambiguous expression grammar $E \to E+E \mid E*E \mid \texttt{id}$ from
+    this section and show a string with \emph{three} distinct parse trees (hint: you'll
+    need at least two operators of the same kind).
+  \item The dangling-else grammar above is ambiguous. Sketch (in prose, you don't need the
+    full production rules) how you'd introduce two nonterminals --- one for ``statements
+    where every if has a matching else'' and one for ``statements that may have a dangling
+    if'' --- to remove the ambiguity. We'll do this properly in file 05.
+\end{itemize}

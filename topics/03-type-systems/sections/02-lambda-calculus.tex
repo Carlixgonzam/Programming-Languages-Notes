@@ -1,0 +1,103 @@
+% !TeX root = ../main.tex
+\section{Lambda calculus}
+Lambda calculus is a formal system that serves as the theoretical foundation for functional programming languages. The core idea is surprisingly simple: everything reduces to functions, how they are defined and how they are applied. This is the untyped calculus; once we add a type discipline on top we get the simply typed lambda calculus of the next section.
+
+\subsection{basic syntax}
+There are only three constructs in the language:
+
+
+\begin{itemize}
+    \item \textbf{Variables:} $x, y, z \dots$
+    \item \textbf{Abstraction:} $\lambda x.\, e$ — defines a function with
+    parameter $x$ and body $e$.
+    \item \textbf{Application:} $e_1\, e_2$ — applies function $e_1$ to
+    argument $e_2$.
+\end{itemize}
+
+from just these three pieces, any computation can be expressed.
+
+
+\subsection{Free and Bound Variables}
+In $\lambda x.\, M$, we say $x$ is \textbf{bound}: the abstraction defines
+its scope. A variable that appears outside the scope of any $\lambda$ is
+called \textbf{free}.
+
+\textbf{$\alpha$-equivalence} tells us that the name of a bound variable
+does not matter, as long as renaming causes no conflicts:
+\[
+  \lambda x.\, x \;\equiv_\alpha\; \lambda y.\, y
+\]
+
+\subsection{Reduction Rules}
+Computation happens through two main rules:
+\begin{itemize}
+    \item \textbf{$\beta$-reduction} — substitutes the argument into the
+    function body:
+    \[(\lambda x.\, e)\, v \;\to\; e[x := v]\]
+    This is the fundamental computational step.
+
+    \item \textbf{$\eta$-reduction} — two functions are equal if they produce
+    the same result for every argument:
+    \[\lambda x.\, (f\, x) \;\to\; f \qquad \text{(if $x$ is not free in
+    $f$)}\]
+\end{itemize}
+
+\subsection{Evaluation Strategies}
+In what order do we reduce? There are several options, each with different
+consequences:
+
+\begin{enumerate}
+    \item \textbf{Normal Order:} always reduces the leftmost, outermost redex
+    first. Guaranteed to find a normal form if one exists.
+    \item \textbf{Call-by-Value:} evaluates the argument before passing it
+    to the function (used in C, Java, Python).
+    \item \textbf{Call-by-Name:} passes the argument unevaluated — the basis
+    for lazy evaluation.
+\end{enumerate}
+
+\subsection{Church Encodings}
+Since lambda calculus has no built-in types or literals, we need to
+\emph{encode} familiar values as functions:
+
+\begin{itemize}
+    \item \textbf{Booleans:}
+    \begin{align*}
+        \mathit{TRUE}  &\equiv \lambda t.\, \lambda f.\, t \\
+        \mathit{FALSE} &\equiv \lambda t.\, \lambda f.\, f \\
+        \mathit{AND}   &\equiv \lambda p.\, \lambda q.\, p\, q\, p
+    \end{align*}
+    \item \textbf{Church Numerals} — the number $n$ applies $f$ exactly
+    $n$ times:
+    \begin{align*}
+        0    &\equiv \lambda f.\, \lambda x.\, x \\
+        1    &\equiv \lambda f.\, \lambda x.\, f\, x \\
+        2    &\equiv \lambda f.\, \lambda x.\, f\,(f\, x) \\
+        \mathit{SUCC} &\equiv \lambda n.\, \lambda f.\, \lambda x.\,
+                               f\,(n\, f\, x)
+    \end{align*}
+\end{itemize}
+
+\subsection{Recursion: The Y Combinator}
+
+Lambda functions are anonymous, so recursion is not straightforward: there is
+no name to refer to inside the body. The solution is Curry's
+\textbf{fixed-point combinator}:
+\[
+  Y = \lambda f.\,(\lambda x.\, f\,(x\, x))\,(\lambda x.\, f\,(x\, x))
+\]
+It satisfies $Y\, g = g\,(Y\, g)$, which lets us build recursive functions
+without ever naming them: $Y\,g$ unfolds itself exactly as many times as $g$
+needs.
+
+\subsection{Exercises}
+\begin{itemize}
+  \item Reduce $(\lambda x.\, x\, x)\,(\lambda y.\, y)$ to normal form,
+  showing every $\beta$-reduction step.
+  \item Using the Church encoding of booleans, define $\mathit{OR}$ and
+  $\mathit{NOT}$, and check that $\mathit{OR}\;\mathit{TRUE}\;\mathit{FALSE}$
+  reduces to $\mathit{TRUE}$.
+  \item Give the Church numeral for $3$ and show that
+  $\mathit{SUCC}\;2 \equiv_\beta 3$.
+  \item Verify the defining property of the Y combinator: unfold
+  $Y\,g$ one step and check it $\beta$-reduces to $g\,(Y\,g)$.
+\end{itemize}

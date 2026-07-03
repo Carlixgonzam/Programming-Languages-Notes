@@ -1,0 +1,312 @@
+% !TeX root = ../main.tex
+\section{Context-free languages}
+
+\subsection{Context-free grammars, formally}
+
+A \textbf{context-free grammar} (CFG) is exactly the grammar definition from file 02,
+restricted so every left-hand side is a single nonterminal:
+
+\begin{definition}
+A grammar $G = (N, \Sigma, P, S)$ is \textbf{context-free} if every production in $P$ has
+the form $A \to \beta$, with $A \in N$ a single nonterminal and $\beta \in (N \cup
+\Sigma)^*$ arbitrary (including $\varepsilon$).
+\end{definition}
+
+``Context-free'' names the restriction precisely: you're allowed to replace $A$ regardless
+of what surrounds it in the sentential form --- the replacement doesn't depend on
+\emph{context}. This single restriction is what makes CFGs efficiently parseable
+(polynomial time, in general; linear time for the well-behaved subclasses --- LL, LR --- a
+real parser generator targets), while still being expressive enough for essentially every
+programming language's syntax. Everything from file 02 (derivations, leftmost/rightmost,
+$L(G)$, ambiguity) applies unchanged; this file is about the specific tools and pathologies
+that come with the CFG restriction.
+
+\subsection{Parse trees and derivation order}
+
+A \textbf{parse tree} makes a derivation's structure explicit as a tree: the root is $S$,
+each internal node is a nonterminal with children given by the right-hand side of the rule
+used to expand it, and the leaves, read left to right, spell out the derived string.
+
+The key fact worth internalizing: \emph{leftmost and rightmost derivations of the same
+string, using the same grammar, produce the same parse tree} --- they just build it in a
+different order (leftmost expands the tree top-down, left child first; rightmost expands
+right child first). This is why parser implementations bother distinguishing them:
+recursive-descent (top-down) parsers naturally produce a leftmost derivation, while
+shift-reduce (bottom-up) parsers naturally produce a rightmost derivation \emph{in reverse}.
+Different algorithms, same tree, same language --- that equivalence is exactly what lets you
+choose a parsing strategy based on implementation convenience rather than which trees you
+want to allow.
+
+\subsection{Ambiguity in CFGs, revisited: fixing dangling-else}
+
+File 02 showed the dangling-else grammar is ambiguous:
+\[
+S \to \mathbf{if}\ b\ \mathbf{then}\ S \mid \mathbf{if}\ b\ \mathbf{then}\ S\ \mathbf{else}\ S \mid \mathbf{other}
+\]
+Now let's actually fix it, rather than just naming the problem. The standard convention
+(``else binds to the nearest unmatched if'') can be built directly into the grammar by
+distinguishing \emph{matched} statements (every \texttt{if} inside has its \texttt{else})
+from \emph{unmatched} ones (some \texttt{if} is still waiting for an \texttt{else}):
+
+\[
+\begin{aligned}
+S &\to M \mid U \\
+M &\to \mathbf{if}\ b\ \mathbf{then}\ M\ \mathbf{else}\ M \mid \mathbf{other} \\
+U &\to \mathbf{if}\ b\ \mathbf{then}\ S \mid \mathbf{if}\ b\ \mathbf{then}\ M\ \mathbf{else}\ U
+\end{aligned}
+\]
+
+The rule that does all the work is the last one: an unmatched if-then-else must have a
+\emph{matched} statement between \texttt{then} and \texttt{else} (you can't leave an
+unmatched if dangling in there --- any \texttt{if} before the \texttt{else} must already
+have found its own \texttt{else}), and only the \emph{tail} $U$ after the \texttt{else} is
+allowed to be unmatched. This forces every \texttt{else} to attach to the innermost
+\texttt{if} that doesn't already have one.
+
+\begin{example}
+Take $\mathbf{if}\ b_1\ \mathbf{then}\ \mathbf{if}\ b_2\ \mathbf{then}\ S_1\ \mathbf{else}\
+S_2$ (using $S_1, S_2$ as stand-ins for \texttt{other}). Under the new grammar this string
+is derivable only as an unmatched statement $U$, and only in one way:
+\[
+U \to \mathbf{if}\ b_1\ \mathbf{then}\ S
+  \to \mathbf{if}\ b_1\ \mathbf{then}\ U
+  \to \mathbf{if}\ b_1\ \mathbf{then}\ (\mathbf{if}\ b_2\ \mathbf{then}\ M\ \mathbf{else}\ U)
+\]
+with $M \to \mathbf{other}$ ($S_1$) and $U \to \mathbf{other}$ ($S_2$). There is no
+alternative derivation that attaches the \texttt{else} to the outer \texttt{if}, because
+doing so would require the outer $\mathbf{if}\ b_1\ \mathbf{then}\ M\ \mathbf{else}\ U$
+rule, which demands the \emph{then}-branch be a fully matched $M$ --- but
+$\mathbf{if}\ b_2\ \mathbf{then}\ S_1$ (with no \texttt{else}) is not a matched statement.
+The grammar itself rules out the second parse tree. That's the difference between ``we
+adopt the convention that else binds to the nearest if'' (a rule bolted onto an ambiguous
+grammar) and ``the grammar is unambiguous and only generates the intended structure''
+(the actual fix).
+\end{example}
+
+\subsection{Chomsky Normal Form}
+
+Some algorithms that operate on CFGs (notably the CYK parsing algorithm) need the grammar
+in a very restricted shape first.
+
+\begin{definition}
+A CFG is in \textbf{Chomsky Normal Form} (CNF) if every production has one of two forms:
+$A \to BC$ (two nonterminals) or $A \to a$ (a single terminal) --- plus, optionally,
+$S \to \varepsilon$ if $\varepsilon \in L(G)$, with $S$ not appearing on the right of any
+rule.
+\end{definition}
+
+\begin{theorem}
+Every context-free language is generated by some grammar in Chomsky Normal Form.
+\end{theorem}
+
+The conversion algorithm runs in a few mechanical passes:
+\begin{enumerate}
+  \item \textbf{Eliminate $\varepsilon$-productions} ($A \to \varepsilon$) other than
+    possibly $S \to \varepsilon$, by inlining: for every rule containing $A$ on the right,
+    add a version with $A$ removed (handling the case where $A$ appears multiple times by
+    considering all subsets to remove).
+  \item \textbf{Eliminate unit productions} ($A \to B$, a single nonterminal), by
+    replacing $A \to B$ with a copy of every rule $B \to \gamma$ as $A \to \gamma$.
+  \item \textbf{Break long right-hand sides}: any $A \to X_1 X_2 \cdots X_k$ with $k > 2$
+    gets split using fresh nonterminals: $A \to X_1 A_1$, $A_1 \to X_2 A_2$, \ldots,
+    $A_{k-2} \to X_{k-1} X_k$.
+  \item \textbf{Replace terminals mixed with nonterminals}: any rule with a terminal $a$
+    alongside another symbol (e.g.\ $A \to aB$) introduces a fresh nonterminal
+    $T_a \to a$ and rewrites as $A \to T_a B$.
+\end{enumerate}
+
+Why bother: CNF guarantees every derivation of a string of length $n$ takes exactly
+$2n - 1$ steps (each step either splits one nonterminal into two, or terminates one into a
+single terminal), which is exactly the uniform structure the CYK dynamic-programming parser
+needs to fill an $O(n^2)$ table of ``which nonterminals can derive this substring'' in
+$O(n^3)$ time overall. Without that uniformity, there's no clean way to bound the table-filling
+recursion.
+
+\subsection{Pushdown automata}
+
+A DFA/NFA (file 03) has no memory beyond its current state, which is precisely why it can't
+recognize $a^nb^n$ (file 04). A \textbf{pushdown automaton} (PDA) fixes this by adding a
+single unbounded stack --- the minimal amount of extra memory that gets you from regular to
+context-free.
+
+Informally: a PDA reads input left to right, like an NFA, but at each step it may also pop
+a symbol off the stack, and push zero or more symbols onto it, and its transitions can be
+conditioned on what's currently on top of the stack. Acceptance is either by ending in an
+accepting state, or (an equivalent convention) by emptying the stack.
+
+\begin{definition}
+A \textbf{pushdown automaton} is a 7-tuple $M = (Q, \Sigma, \Gamma, \delta, q_0, Z_0, F)$
+where $Q, \Sigma, q_0, F$ are as for an NFA, $\Gamma$ is the \textbf{stack alphabet},
+$Z_0 \in \Gamma$ is the initial stack symbol, and
+$\delta: Q \times (\Sigma \cup \{\varepsilon\}) \times \Gamma \to \mathcal{P}(Q \times
+\Gamma^*)$ maps a state, an input symbol (or $\varepsilon$), and the top-of-stack symbol to
+a set of (next state, string to push in place of the popped symbol) pairs.
+\end{definition}
+
+\begin{example}
+A PDA for $\{a^nb^n \mid n \ge 0\}$: push an $A$ marker for every $a$ read, then pop one
+marker for every $b$ read, and accept exactly when the stack is back to just $Z_0$ and
+input is exhausted.
+\[
+\delta(q_0, a, Z_0) = \{(q_0, AZ_0)\}, \qquad
+\delta(q_0, a, A) = \{(q_0, AA)\}
+\]
+\[
+\delta(q_0, b, A) = \{(q_1, \varepsilon)\}, \qquad
+\delta(q_1, b, A) = \{(q_1, \varepsilon)\}
+\]
+with $q_0$ the start state ($q_0 \in F$, to accept $n=0$) and $q_1 \in F$ accepting once all
+the $A$'s pushed for the $a$'s have been popped by matching $b$'s. Reading $aabb$: push
+$A$, push $A$ (stack: $AAZ_0$, top to bottom), then pop $A$ on the first $b$ (state
+switches to $q_1$), pop $A$ on the second $b$; stack is back to $Z_0$, input exhausted,
+accept. Try $aaab$: after three pushes the stack has three $A$'s, but only one $b$ pops one
+$A$, leaving two $A$'s on the stack when input runs out --- not accepted, correctly.
+\end{example}
+
+\begin{theorem}
+A language is context-free if and only if some pushdown automaton accepts it.
+\end{theorem}
+
+We state this without proof (the constructions in both directions --- CFG-to-PDA via a
+generic ``simulate a leftmost derivation using the stack to hold the pending sentential
+form'' recipe, and PDA-to-CFG via a construction with nonterminals indexed by pairs of
+states --- are standard but mechanical). The practical upshot mirrors file 03's NFA/DFA
+story exactly: PDAs are the ``machine'' view of context-free languages, CFGs are the
+``generative'' view, and they describe the same class.
+
+\subsection{The pumping lemma for context-free languages}
+
+Just as DFAs have bounded memory (finitely many states), PDAs have a stack whose
+\emph{depth} is bounded by a function of the parse tree's height for CNF grammars --- which
+gives a pumping lemma with \emph{two} pumped pieces instead of one.
+
+\begin{theorem}[Pumping lemma for CFLs]
+If $L$ is context-free, there is a constant $p \ge 1$ such that every $z \in L$ with
+$|z| \ge p$ can be split $z = uvwxy$ with:
+\begin{enumerate}
+  \item $|vx| \ge 1$ (at least one of $v, x$ is nonempty),
+  \item $|vwx| \le p$,
+  \item $uv^iwx^iy \in L$ for every $i \ge 0$.
+\end{enumerate}
+\end{theorem}
+
+The proof idea: take a CNF grammar for $L$ with $p'$ nonterminals; any parse tree of height
+$> p'$ must, by pigeonhole, repeat some nonterminal $A$ along its longest root-to-leaf path.
+The subtree between the two occurrences of $A$ produces the ``middle'' pumped piece $v \dots
+x$, and it can be spliced in or cut out repeatedly because both occurrences of $A$ derive
+in the same way.
+
+\subsubsection{Using it: proving $\{a^nb^nc^n \mid n \ge 0\}$ is not context-free}
+
+Same adversary structure as file 04's regular pumping lemma, just with two pieces to track
+instead of one.
+
+\begin{example}
+Let $L = \{a^nb^nc^n \mid n \ge 0\}$. Suppose $L$ is context-free with pumping length $p$.
+
+\textbf{Choose the string.} Pick $z = a^pb^pc^p \in L$, $|z| = 3p \ge p$.
+
+\textbf{The split is out of your control}, but condition 2 constrains it usefully: since
+$|vwx| \le p$, the substring $vwx$ cannot span all three blocks ($a$'s, $b$'s, $c$'s) at
+once --- $p$ symbols aren't enough to reach from the first $a$-block into the $c$-block,
+since the $b$-block alone has length $p$ and sits between them. So $vwx$ touches \emph{at
+most two} of the three distinct letters.
+
+\textbf{Pump it.} Take $i = 2$: $uv^2wx^2y$ increases the total length of the letters
+touched by $v$ and $x$ combined, while condition 1 guarantees $|vx| \ge 1$ so \emph{some}
+letter's count strictly increases. Because $vwx$ touches at most two of $\{a,b,c\}$, at
+least one letter's count is left completely unchanged by pumping, while at least one other
+letter's count strictly grows. So $uv^2wx^2y$ no longer has equal numbers of $a$'s, $b$'s,
+and $c$'s --- contradicting condition 3.
+
+This holds for every possible split satisfying conditions 1--2, so no valid $p$ exists, and
+$L$ is not context-free. $\blacksquare$
+\end{example}
+
+Intuitively: a PDA's single stack can enforce \emph{one} equality constraint (match $a$'s
+against $b$'s, using the stack as a counter) but has no second independent counter left over
+to also match against $c$'s. This is exactly the sense in which context-free languages are
+one step more powerful than regular languages, but still bounded.
+
+\subsection{Closure properties of CFLs}
+
+\begin{proposition}
+Context-free languages are closed under union, concatenation, and Kleene star.
+\end{proposition}
+
+All three constructions are direct grammar surgery: given CFGs $G_1, G_2$ (with disjoint
+nonterminal sets, and start symbols $S_1, S_2$) for $L_1, L_2$, add a fresh start symbol $S$
+and:
+\begin{itemize}
+  \item \textbf{Union}: $S \to S_1 \mid S_2$.
+  \item \textbf{Concatenation}: $S \to S_1 S_2$.
+  \item \textbf{Star}: $S \to S_1 S \mid \varepsilon$.
+\end{itemize}
+Each is a one-line addition to the grammar, which is why CFLs are so easy to combine
+compared to what's coming next.
+
+\begin{proposition}
+Context-free languages are \textbf{not}, in general, closed under intersection or
+complement.
+\end{proposition}
+
+\begin{example}
+Let $L_1 = \{a^nb^nc^m \mid n, m \ge 0\}$ and $L_2 = \{a^mb^nc^n \mid n, m \ge 0\}$. Both
+are context-free: $L_1$'s grammar matches $a$'s against $b$'s with a stack and then just
+appends arbitrarily many $c$'s ($S \to AC$, $A \to aAb \mid \varepsilon$, $C \to cC \mid
+\varepsilon$); $L_2$ is symmetric, matching $b$'s against $c$'s and prefixing arbitrary
+$a$'s. But
+\[
+L_1 \cap L_2 = \{ a^nb^nc^n \mid n \ge 0 \},
+\]
+exactly the language we just proved is \emph{not} context-free. So the intersection of two
+CFLs need not be a CFL --- closure under intersection fails, and this single example is the
+standard counterexample cited for exactly this fact.
+\end{example}
+
+Non-closure under intersection then immediately forces non-closure under complement too, by
+De Morgan: if CFLs were closed under complement, they'd also be closed under intersection
+via $L_1 \cap L_2 = \overline{\overline{L_1} \cup \overline{L_2}}$ (union is closed, so this
+identity would make intersection closed too) --- contradicting the example above. This is
+the mirror image of file 03's regular-language closure properties: regular languages got
+all three (union, intersection, complement) essentially for free via the product
+construction; CFLs only get the ``easy'' three (union, concatenation, star) and lose the
+other two, because a single stack can't be duplicated and run ``in parallel'' against a
+second stack the way two DFAs' finite states can.
+
+\subsection{Forward pointer: this is exactly what parsers handle}
+
+Context-free grammars are, almost without exception, the grammar class used to describe
+real programming language syntax --- arithmetic expressions, statements, function
+definitions, all of it. The next block of this course is about turning a CFG into a working
+parser: recursive-descent (top-down, LL) and shift-reduce (bottom-up, LR) algorithms that
+build the parse tree efficiently, the precedence and ambiguity-removal techniques from this
+file and file 02 applied for real, and what happens when a language's true syntax rules
+(``this identifier must already be declared'') fall outside what any CFG can express at
+all --- pushed, as mentioned back in file 02, into a semantic-analysis phase that runs after
+the parser has already built its tree.
+
+\subsection{Exercises}
+
+\begin{itemize}
+  \item Convert the grammar $S \to aSb \mid ab \mid \varepsilon$ into Chomsky Normal Form,
+    showing each of the four passes (eliminate $\varepsilon$-productions, eliminate unit
+    productions, break long right-hand sides, isolate terminals).
+  \item Draw the two distinct parse trees for
+    $\mathbf{if}\ b_1\ \mathbf{then}\ \mathbf{if}\ b_2\ \mathbf{then}\ S_1\ \mathbf{else}\
+    S_2$ under the \emph{original ambiguous} dangling-else grammar from file 02, then
+    confirm by hand that only one of those two trees is derivable under the fixed
+    $M$/$U$ grammar in this file.
+  \item Extend the $a^nb^n$ PDA in this section to a PDA for $\{a^nb^{2n} \mid n \ge 0\}$
+    (hint: push two markers per $a$, or otherwise adjust how many pops each $b$ performs).
+  \item Use the CFL pumping lemma to show $\{ a^ib^jc^k \mid i < j < k \}$ is not
+    context-free. Follow the adversary structure explicitly.
+  \item $L_1 \cap L_2$ can fail to be context-free even when $L_1, L_2$ are, but what if
+    one of the two languages is \emph{regular} instead of merely context-free? Look up (or
+    conjecture and then check) whether CFLs are closed under intersection with a regular
+    language, and sketch why the product-construction idea from file 03 does or doesn't
+    carry over.
+  \item Is every context-free language also context-sensitive (Type 1 in the Chomsky
+    hierarchy from file 02)? Justify your answer by relating the CNF production shapes to
+    the context-sensitive production shape $\alpha A \beta \to \alpha\gamma\beta$.
+\end{itemize}

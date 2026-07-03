@@ -1,0 +1,341 @@
+% !TeX root = ../main.tex
+\section{Control flow}
+
+The operational semantics section gave you the full machinery for the structured core
+of an imperative language: assignment, sequencing, \texttt{if}, \texttt{while}, and
+\texttt{for} (desugared into \texttt{while}). That's enough to run any SIMP program, but
+it says nothing about \emph{evaluation order} inside a single expression, about operators
+that skip evaluating one of their operands, or about control that jumps somewhere other
+than ``the next instruction.'' This section reuses the same $\steppair{}{}{}{}$ /
+$\bigstep{}{}{}$ toolbox to cover those cases, then tours the big non-standard
+control-transfer mechanisms you'll meet in real languages: exceptions, continuations, and
+coroutines. It closes with the historical argument for why control flow is restricted at
+all, rather than left as raw \texttt{goto}.
+
+\subsection{sequencing and evaluation order}
+
+Sequencing $\seq{C_1}{C_2}$ composes commands left to right, nothing new there. The
+subtlety lives \emph{inside} an expression: when an expression contains more than one
+sub-expression with a side effect, does the language guarantee an order for those effects?
+
+Many languages do. Java, JavaScript, and Scheme guarantee strict left-to-right evaluation
+of operands and function arguments. C (and, for many constructs, C++) famously does
+\emph{not}: the standard leaves the order in which function arguments are evaluated
+unspecified, and mixing a read and a write to the same variable without an intervening
+\emph{sequence point} is undefined behavior, not just ``order not guaranteed.'' This is a
+real-world gotcha, not a theoretical curiosity:
+
+\begin{lstlisting}[language=C]
+int x = 0;
+int f(void) { return x++; }
+int g(void) { return x++; }
+
+int main(void) {
+    printf("%d %d\n", f(), g());
+    return 0;
+}
+\end{lstlisting}
+
+One compiler may evaluate \texttt{g()} before \texttt{f()} (printing \texttt{1 0}), another
+may go left to right (printing \texttt{0 1}) --- both are conforming C. The classic
+textbook example \texttt{i = i++ + ++i;} is worse still: it's not merely
+implementation-defined, it's \emph{undefined behavior}, so the compiler is free to do
+anything at all, including something that looks nonsensical under any evaluation order.
+
+Formally: SIMP's small-step rule for $E_1 + E_2$ (as you'd write it) picks a fixed order to
+reduce $E_1$ and $E_2$, say left operand first. C's semantics for argument evaluation is
+instead a rule schema with no fixed order, a nondeterministic choice among orderings that
+each compiler resolves once and for all. Nondeterminism in a semantics is not automatically
+a bug (the short-circuit rules below are nondeterministic in exactly this controlled,
+observable way) but \emph{unspecified} order combined with mutable shared state is exactly
+what makes a program's meaning depend on which compiler you happen to be using.
+
+\subsection{short-circuit boolean operators}
+
+Extend the boolean grammar with two operators whose operands may themselves contain
+expressions with effects (a function call that mutates the store, say):
+\[
+  B ::= \ldots \mid B_1 \,\&\&\, B_2 \mid B_1 \,||\, B_2
+\]
+How much of $B_1 \,\&\&\, B_2$ actually executes is an observable, semantically meaningful
+choice, not just an optimization; it determines whether $B_2$'s side effects happen at
+all. The small-step rules:
+
+\[
+\infer[\textsc{And-False}]
+  {\steppair{B_1 \,\&\&\, B_2}{\sigma}{\mathbf{false}}{\sigma'}}
+  {\steppair{B_1}{\sigma}{\mathbf{false}}{\sigma'}}
+\qquad
+\infer[\textsc{And-True}]
+  {\steppair{B_1 \,\&\&\, B_2}{\sigma}{B_2}{\sigma'}}
+  {\steppair{B_1}{\sigma}{\mathbf{true}}{\sigma'}}
+\]
+
+\[
+\infer[\textsc{Or-True}]
+  {\steppair{B_1 \,||\, B_2}{\sigma}{\mathbf{true}}{\sigma'}}
+  {\steppair{B_1}{\sigma}{\mathbf{true}}{\sigma'}}
+\qquad
+\infer[\textsc{Or-False}]
+  {\steppair{B_1 \,||\, B_2}{\sigma}{B_2}{\sigma'}}
+  {\steppair{B_1}{\sigma}{\mathbf{false}}{\sigma'}}
+\]
+
+\textsc{And-False} and \textsc{Or-True} are the rules that actually short-circuit: they
+discard $B_2$ entirely and never reduce it, even if $B_2$ would otherwise get stuck or
+diverge. Contrast this with a hypothetical eager, ``bitwise'' \texttt{\&}/\texttt{|} that
+always reduces both sides first --- that operator would need only one rule each, but would
+get stuck (or loop) whenever the discarded operand would have.
+
+\begin{example}
+Take $\deref{x} \neq 0 \,\&\&\, 10 / \deref{x} > 1$ with $\sigma(x) = 0$. The full
+derivation:
+\[
+\infer[\textsc{And-False}]
+  {\steppair{\deref{x} \neq 0 \,\&\&\, 10/\deref{x} > 1}{\sigma}{\mathbf{false}}{\sigma}}
+  {
+    \infer[\textsc{Neq}]
+      {\steppair{\deref{x} \neq 0}{\sigma}{\mathbf{false}}{\sigma}}
+      {\sigma(x) = 0}
+  }
+\]
+The second operand, $10/\deref{x} > 1$, which would get stuck on division by zero, is never
+reduced --- \textsc{And-False} fires the moment the first operand is \textbf{false} and
+discards $B_2$ outright. This is exactly the ``guard \&\& use'' idiom you rely on in C,
+Java, or Python whenever you write \texttt{x != 0 \&\& 10/x > 1}: it's only safe because
+the language's semantics \emph{guarantees} short-circuiting, not because it happens to be
+how your compiler behaves today.
+\end{example}
+
+\subsection{exceptions: non-local transfer of control}
+
+So far, running a command from state $\sigma$ either yields a final store $\sigma'$
+($\bigstep{C}{\sigma}{\sigma'}$) or never yields anything at all (divergence: no rule ever
+fires again, exactly the $\bot$ from denotational semantics). Exceptions add a
+\emph{third} outcome: $C$ can abort, raising a value, with control jumping straight to the
+nearest handler that catches it.
+
+Write $\bigstep{C}{\sigma}{\mathbf{exc}(v),\,\sigma'}$ for ``$C$ aborts, raising value $v$,
+having reached store $\sigma'$ at the point of the throw.'' Extend the grammar:
+\[
+  C ::= \ldots \mid \mathbf{throw}\ E \mid \mathbf{try}\ C\ \mathbf{catch}(x)\ C
+\]
+
+\[
+\infer[\textsc{Throw}]
+  {\bigstep{\mathbf{throw}\ E}{\sigma}{\mathbf{exc}(v),\,\sigma}}
+  {\bigstep{E}{\sigma}{v}}
+\]
+
+The rule that matters most is how exceptions propagate through sequencing --- an exception
+raised by $C_1$ preempts $C_2$ entirely:
+\[
+\infer[\textsc{Seq-Exc}]
+  {\bigstep{\seq{C_1}{C_2}}{\sigma}{\mathbf{exc}(v),\,\sigma'}}
+  {\bigstep{C_1}{\sigma}{\mathbf{exc}(v),\,\sigma'}}
+\]
+Compare this to the ordinary sequencing rule
+$\bigstep{C_1}{\sigma}{\sigma'} \ \bigstep{C_2}{\sigma'}{\sigma''}$ over
+$\bigstep{\seq{C_1}{C_2}}{\sigma}{\sigma''}$, which only applies when $C_1$ terminates
+normally. \textsc{Seq-Exc} and ordinary sequencing are mutually exclusive: $C_1$ can't both
+terminate normally \emph{and} raise, so exactly one of the two rules ever applies to a
+given $\seq{C_1}{C_2}$.
+
+\texttt{try}/\texttt{catch} has two cases, whether the protected command raises or not:
+\[
+\infer[\textsc{Try-Catch}]
+  {\bigstep{\mathbf{try}\ C\ \mathbf{catch}(x)\ C'}{\sigma}{\sigma''}}
+  {\bigstep{C}{\sigma}{\mathbf{exc}(v),\,\sigma'} \\
+   \bigstep{C'}{\sigma'[x \mapsto v]}{\sigma''}}
+\qquad
+\infer[\textsc{Try-Normal}]
+  {\bigstep{\mathbf{try}\ C\ \mathbf{catch}(x)\ C'}{\sigma}{\sigma'}}
+  {\bigstep{C}{\sigma}{\sigma'}}
+\]
+
+\textsc{Try-Catch} \emph{is} stack unwinding, written as an inference rule: control jumps
+straight from wherever the exception was thrown, past any pending sequencing, if, or while
+bodies in between, to the nearest enclosing handler --- nothing textually between the
+\texttt{throw} and the \texttt{catch} ever runs. If $C$ sits nested inside several sequences
+and loops, \textsc{Seq-Exc} (plus analogous propagation rules you'd add for \texttt{if} and
+\texttt{while} bodies) fires once per level of nesting in the \emph{proof tree}, not once
+per step of ordinary execution --- that's the precise sense in which a non-local transfer
+``skips'' normal control flow.
+
+\begin{example}
+\begin{lstlisting}[language=Python]
+def risky(x):
+    if x == 0:
+        raise ValueError("boom")
+    return 10 // x
+
+try:
+    r = risky(0)
+    print("never printed")
+except ValueError as e:
+    r = -1
+print(r)  # -1
+\end{lstlisting}
+Tracing it with the rules above: \texttt{risky(0)} raises, so
+$\bigstep{\mathbf{throw}\ \text{ValueError}}{\sigma}{\mathbf{exc}(v),\,\sigma}$ by
+\textsc{Throw}. The assignment \texttt{r = risky(0)} therefore itself produces an
+$\mathbf{exc}$ outcome, and by \textsc{Seq-Exc} the whole sequence
+\texttt{r = risky(0); print("never printed")} raises \emph{without ever touching}
+\texttt{print}. The enclosing \texttt{try}/\texttt{except} then applies
+\textsc{Try-Catch}: \texttt{r = -1} runs in the store where the exception occurred, giving
+a final store with $r = -1$, which the last \texttt{print(r)} observes.
+\end{example}
+
+\paragraph{Connection to axiomatic semantics.} Before exceptions, a Hoare triple
+$\{P\}\, C\, \{Q\}$ implicitly assumed a two-way split: either $C$ terminates in a state
+satisfying $Q$, or $C$ diverges (and the triple says nothing at all). Exceptions add a
+third outcome that any honest correctness statement about $C$ must account for: $C$ may
+(1) terminate normally satisfying $Q$, (2) diverge, or (3) terminate \emph{abnormally} by
+raising some exception. A triple that silently ignores case (3) can be misleading ---
+$\{x > 0\}\; y := 10 / x\; \{y \cdot x = 10\}$ reads fine as long as you forget that
+division can raise. Hoare logics extended for exception-raising languages split the
+postcondition in two: an ordinary postcondition $Q$ for normal termination, and one
+exceptional postcondition $R_e$ per exception type $e$, giving something like
+$\{P\}\, C\, \{Q \mid R_{e_1}, R_{e_2}, \ldots\}$. Composing two commands in sequence then
+needs $C_1$'s \emph{normal} postcondition to imply $C_2$'s precondition (exactly the old
+sequencing rule), while each of $C_1$'s exceptional postconditions propagates straight past
+$C_2$ to whatever encloses the sequence --- a direct mirror of \textsc{Seq-Exc} above, now
+at the level of assertions instead of stores.
+
+\subsection{continuations: the rest of the computation, as a value}
+
+Everything above models ``what happens next'' implicitly, in the shape of the derivation
+tree: after evaluating $C_1$ in $\seq{C_1}{C_2}$, ``run $C_2$ next'' is baked into the
+sequencing rule itself. A \textbf{continuation} makes that implicit ``what happens next''
+into an explicit, first-class value --- literally a function representing the rest of the
+computation.
+
+Take an ordinary recursive factorial, in Scheme:
+\begin{lstlisting}[language=Lisp]
+(define (fact n)
+  (if (= n 0)
+      1
+      (* n (fact (- n 1)))))
+\end{lstlisting}
+
+Rewriting it in \textbf{continuation-passing style} (CPS) means every function takes one
+extra argument, its continuation $k$: a function to \emph{call} with the answer, instead of
+returning it.
+\begin{lstlisting}[language=Lisp]
+(define (fact-cps n k)
+  (if (= n 0)
+      (k 1)
+      (fact-cps (- n 1) (lambda (v) (k (* n v))))))
+
+(fact-cps 5 (lambda (v) v))   ; => 120
+\end{lstlisting}
+Nothing in \texttt{fact-cps} ever returns a value up the call stack the ordinary way.
+Instead of computing \texttt{(* n (fact (- n 1)))} and handing the result back to its
+caller, it builds a closure \texttt{(lambda (v) (k (* n v)))} that says ``once you know the
+factorial of \texttt{n-1}, multiply it by \texttt{n} and hand \emph{that} to whoever wanted
+my answer,'' and passes that closure down as the new continuation for the recursive call.
+Unwinding \texttt{(fact-cps 3 (lambda (v) v))} by hand:
+\begin{lstlisting}[language=Lisp]
+(fact-cps 3 (lambda (v) v))
+= (fact-cps 2 (lambda (v) ((lambda (v) v) (* 3 v))))     ; k1
+= (fact-cps 1 (lambda (v) (k1 (* 2 v))))                  ; k2
+= (fact-cps 0 (lambda (v) (k2 (* 1 v))))                  ; k3
+= (k3 1) = (k2 1) = (k1 2) = 6
+\end{lstlisting}
+We won't give continuations a denotational semantics here --- that means rewriting the
+entire meaning function $\llbracket \cdot \rrbracket$ to be continuation-passing throughout,
+which is out of scope for this course. The idea to take away is just this: ``the rest of
+the computation'' is a value you can name, save, pass around, and even call more than once.
+That single idea is what underlies Scheme's \texttt{call/cc}, the desugaring of
+\texttt{async}/\texttt{await} in JavaScript, generators, and --- looking back at the
+previous subsection --- exception handling itself: a handler is, informally, ``the
+continuation to jump to.''
+
+\subsection{coroutines and generators}
+
+Contrast plain call/return: the caller calls $f$, $f$ runs to completion (or raises, or
+loops), and the caller resumes with a single value. A \textbf{coroutine} or
+\textbf{generator} suspends \emph{in the middle} of its body, handing control back to the
+caller together with an intermediate value, and can later be resumed exactly where it left
+off, with its local state --- its whole stack frame --- intact.
+
+\begin{lstlisting}[language=Python]
+def countdown(n):
+    while n > 0:
+        yield n
+        n -= 1
+
+for i in countdown(3):
+    print(i)   # 3, 2, 1
+\end{lstlisting}
+
+Every \texttt{yield} suspends \texttt{countdown} mid-loop; the local variable \texttt{n} is
+not lost between suspensions --- it's exactly as if the function's continuation at the
+\texttt{yield} point were captured and handed to the caller as ``the next thing to run.''
+Compare that to a plain function returning a list \texttt{[3, 2, 1]} all at once: with a
+generator, producer and consumer interleave, which matters when the sequence is infinite or
+expensive to produce eagerly. JavaScript's \texttt{async function*} (async generators) and
+\texttt{await} generalize the same idea to suspend across asynchronous operations, not just
+loop iterations.
+
+\subsection{structured vs.\ unstructured control flow}
+
+None of this is how early languages worked. Fortran and early BASIC control flow was built
+entirely out of \texttt{goto} plus labels; loops and conditionals were things a programmer
+assembled by hand out of jumps. Dijkstra's 1968 letter, ``Go To Statement Considered
+Harmful,'' argued that unrestricted jumps make it effectively impossible to reason locally
+about a program's state: at any given label, ``where did control come from, and what's true
+here'' depends on the entire set of jumps that might land there, a set that grows
+combinatorially with program size. Structured constructs (sequencing, \texttt{if},
+\texttt{while}) restrict control flow to a small set of shapes with exactly one entry and
+one exit --- which is precisely why the axiomatic semantics from the previous section works
+at all: the Hoare rule for \texttt{while} relies on there being exactly one way in and one
+way out of the loop. A \texttt{goto} into the middle of a loop body would break that rule
+outright.
+
+Modern languages didn't eliminate non-local control flow, though, they domesticated it.
+Exceptions, \texttt{break}/\texttt{continue}, early \texttt{return}, and generators are all
+restricted, well-behaved escapes: each has a statically knowable set of possible targets
+(the nearest enclosing handler, the nearest enclosing loop, the caller), which is exactly
+the property arbitrary \texttt{goto} lacks. Continuations, seen this way, are the escape
+hatch of last resort: \texttt{call/cc} gives you the full unrestricted power Dijkstra warned
+about, plus a value to reason about, which is why almost no mainstream language exposes it
+directly --- but nearly every mainstream language builds specific, tamed continuations
+(exception handlers, generators, \texttt{async}/\texttt{await}) straight into its runtime.
+
+\subsection{Exercises}
+
+\begin{itemize}
+  \item Give the full small-step derivation, using \textsc{Or-True}/\textsc{Or-False}, for
+  $\deref{x} = 0 \,||\, 10/\deref{x} > 1$ with $\sigma(x) = 0$. Which operand never gets
+  reduced, and why does that matter?
+
+  \item Suppose you add a non-short-circuiting boolean \textbf{xor} to the grammar, one
+  that must evaluate \emph{both} operands no matter what. Write its single small-step rule
+  and explain in a sentence or two why \textbf{xor} cannot be given the two-rule treatment
+  that $\&\&$ and $||$ got above.
+
+  \item Using \textsc{Throw}, \textsc{Seq-Exc}, and \textsc{Try-Catch}, give a full
+  derivation tree for
+  \[
+    \bigstep{\mathbf{try}\ (\seq{\assign{y}{1}}{\mathbf{throw}\ 99})\ \mathbf{catch}(x)\
+    \assign{y}{\deref{x}+1}}{\sigma_0}{\sigma_2}
+  \]
+  where $\sigma_0(y) = 0$. What is $\sigma_2(y)$?
+
+  \item Booleans need an exception outcome too, not just commands: write the missing
+  small-step rule for what happens to $\ift{B}{C_1}{C_2}$ when the guard $B$ itself raises
+  before ever reaching a truth value.
+
+  \item Rewrite a function \texttt{sum-to(n)} that adds $1 + 2 + \cdots + n$ recursively
+  into continuation-passing style (mirror \texttt{fact-cps} above), then hand-unwind
+  \texttt{(sum-to-cps 3 (lambda (v) v))} step by step the way \texttt{fact-cps} was unwound
+  in the text.
+
+  \item A colleague claims: ``a \texttt{return} inside a \texttt{try} block, when the
+  \texttt{try} also has a \texttt{finally}, is just an ordinary function return, no
+  non-local transfer involved.'' Give a short Java example showing this claim is false
+  (hint: what does a \texttt{return} inside \texttt{finally} do to a \texttt{return}
+  already pending from the \texttt{try}?), and explain in one or two sentences why this
+  belongs in this section's list of non-local control transfers.
+\end{itemize}

@@ -1,0 +1,69 @@
+% !TeX root = ../main.tex
+\section{Recursive types}
+
+Try to write down the type of a linked list of integers using only what we've built so far ($\tyint$, $\tybool$, $\to$, products, and sums). You'll want something like ``either empty, or an integer paired with... another list''. But ``another list'' is the very thing we're trying to define — the type refers to itself. None of the type formers from \S3, \S5, or \S6 let you write an equation like
+\[
+  \alpha = \unit + (\tyint \times \alpha)
+\]
+and get back a type $\alpha$ satisfying it, for the same reason STLC couldn't type the Y combinator (\S3): our grammar of types only builds \emph{finite} trees, and this equation, expanded out, has no finite solution — $\alpha = \unit + \tyint\times(\unit+\tyint\times(\unit+\dots))$, forever.
+
+\subsection{$\mu$ types: naming the fixed point}
+
+The fix is to add a type former that names this self-reference directly instead of trying to expand it away: $\mu\alpha.\,\tau$, read ``the type $\alpha$ satisfying $\alpha = \tau$'', i.e., the (least) fixed point of the equation $\alpha = \tau[\alpha]$ where $\tau$ may itself mention $\alpha$.
+\[
+  \tau ::= \dots \mid \mu\alpha.\,\tau \mid \alpha
+\]
+With this, the list type from above is just
+\[
+  \mathbf{List}\,\tyint \;=\; \mu\alpha.\; \unit + (\tyint \times \alpha)
+\]
+read as: a list of integers is either $\unit$ (representing $\nil$) or a pair of an integer and \emph{another list} — and that recursive reference is exactly what $\alpha$, bound by the enclosing $\mu$, stands for.
+
+The same trick handles any self-referential data. A binary tree of integers:
+\[
+  \mathbf{Tree} \;=\; \mu\alpha.\; \tyint + (\alpha \times \tyint \times \alpha)
+\]
+either a leaf holding an integer, or an internal node with a left subtree, a value, and a right subtree — again, "subtree" is just $\alpha$, tied back to the whole type by $\mu$.
+
+\subsection{fold and unfold}
+
+Having a type $\mu\alpha.\,\tau$ doesn't automatically tell you how to construct or destruct its values — for that we need to relate $\mu\alpha.\,\tau$ to its one-step \textbf{unfolding} $\tau[\mu\alpha.\,\tau / \alpha]$ (substitute the whole recursive type back in for $\alpha$ — exactly one layer of the infinite expansion above). In the \textbf{iso-recursive} presentation (the one virtually every real typed language uses), $\mu\alpha.\,\tau$ and its unfolding are treated as two \emph{different, isomorphic} types, connected by an explicit pair of coercions:
+\[
+\infer[\textsc{T-Fold}]
+  {\Gamma \vdash \mathbf{fold}_{\mu\alpha.\tau}(e) : \mu\alpha.\,\tau}
+  {\Gamma \vdash e : \tau[\mu\alpha.\tau / \alpha]}
+\qquad
+\infer[\textsc{T-Unfold}]
+  {\Gamma \vdash \mathbf{unfold}(e) : \tau[\mu\alpha.\tau / \alpha]}
+  {\Gamma \vdash e : \mu\alpha.\,\tau}
+\]
+$\mathbf{fold}$ takes a value shaped like one unrolling of the recursive type and packages it up as the recursive type itself (this is what a list \emph{constructor} like $\mathit{cons}$ does under the hood); $\mathbf{unfold}$ takes a value of the recursive type and reveals one layer of its structure so you can pattern-match on it (this is what happens when you inspect a list to ask "is it empty or a cons?"). They're inverses of each other, and every construction or destruction of a recursive value has to explicitly pass through one of them.
+
+The alternative design is \textbf{equi-recursive} types: instead of adding $\mathbf{fold}$/$\mathbf{unfold}$ as explicit terms, you simply declare $\mu\alpha.\,\tau$ and $\tau[\mu\alpha.\tau/\alpha]$ to be \emph{literally the same type}, and let the type checker silently unfold as many times as needed during type equality checking. This is more convenient on paper — no fold/unfold clutter in the term syntax — but it comes at a real implementation cost: type equality is no longer syntactic, it's checking equivalence of (potentially) infinite trees, which needs its own dedicated algorithm (typically bisimulation-style, comparing the two trees co-inductively). Iso-recursive types push that complexity into two constructs living explicitly in the term language, where a garden-variety syntax-directed type checker (like the one from \S3) can handle them with no special machinery; equi-recursive types keep the term language clean but push the complexity into type equality itself, which is much harder to reconcile with type \emph{inference} in particular — this is a large part of why ML-family languages, which lean so heavily on inference, are iso-recursive.
+
+\subsection{algebraic data types are recursive types}
+
+If any of this looks suspiciously like ordinary sum-of-products data declarations, that's because it is — algebraic data types in Haskell, OCaml, and Rust are recursive types, with $\mathbf{fold}$/$\mathbf{unfold}$ hidden behind constructors and pattern matching.
+\begin{lstlisting}[language=Haskell]
+data List a = Nil | Cons a (List a)
+
+data Tree a = Leaf a | Node (Tree a) a (Tree a)
+\end{lstlisting}
+\lstinline|Cons| \emph{is} $\mathbf{fold}_{\mu\alpha.\, \unit + (a\times\alpha)}$ specialized to the \lstinline|Cons| branch: it takes an $a$ and a $\mathbf{List}\,a$ (one unrolling of the type) and produces a $\mathbf{List}\,a$. Pattern-matching on a list (\lstinline|case xs of Nil -> ...; Cons h t -> ...|) \emph{is} $\mathbf{unfold}$ followed by a case split on the resulting sum type. The same correspondence holds in OCaml (\lstinline|type 'a list = Nil | Cons of 'a * 'a list|) and Rust (\lstinline|enum List<T> { Nil, Cons(T, Box<List<T>>) }| — note Rust needs the explicit \lstinline|Box| because, unlike Haskell and OCaml, it doesn't box recursive fields automatically, and a type can't have infinite size unboxed). Every time you write a recursive \lstinline|data|/\lstinline|enum| declaration, you are writing $\mu\alpha.\,\tau$ with sugar on top; the language's compiler is generating fold and unfold for you (as the automatically-derived constructors and pattern matches) instead of making you write them by hand.
+
+\subsection{closing the loop: the occurs check, revisited}
+
+Back in \S4, Algorithm~W's unification step included an \textbf{occurs check}: when unifying $\alpha$ with some type $\tau$, if $\alpha$ occurs free in $\tau$ itself, unification fails rather than producing an "infinite" substitution. We saw exactly this in \S4's worked example: trying to type $\lambda f.\,f\,f$ forces $\alpha = \alpha\to\beta$, and the occurs check rejects it, because $\alpha$ appears on both sides.
+
+It's worth being precise about \emph{why} that check exists: it exists specifically to keep ordinary Hindley-Milner types finite. HM's grammar of types (like STLC's) only builds finite trees, so equations like $\alpha = \alpha\to\beta$ genuinely have no solution within that grammar, and the occurs check is just unification correctly reporting "no solution exists" rather than silently looping forever trying to construct one.
+
+Recursive types don't contradict that check or work around it — they \emph{change the grammar} so that equations of that shape suddenly do have a solution, on purpose, and mark that solution with an explicit $\mu$. $\mu\alpha.\,\tau$ is precisely a named, well-founded stand-in for what would otherwise be a rejected, infinitely-expanding unification solution: instead of asking "what infinite type solves $\alpha = \tau$", $\mu\alpha.\,\tau$ says "here is a single, finite type \emph{whose meaning} is the solution to that equation" and it comes with fold/unfold as the only sanctioned way to move between a $\mu$-type and one layer of its unrolling. So recursive types are a deliberate, controlled escape hatch — introduced by an explicit type former and mediated by explicit coercions — not a loophole that quietly reopens the door the occurs check was built to close. Ordinary HM inference (lists, trees, and all) still runs the occurs check on every other type variable; it's only at the places you've explicitly written or derived a $\mu$ that self-reference becomes legal.
+
+\subsection{Exercises}
+\begin{itemize}
+  \item Write out $\mathbf{List}\,\tyint = \mu\alpha.\,\unit + (\tyint\times\alpha)$'s unfolding one level, and check that a two-element list $[1,2]$ can be built using two applications of $\mathbf{fold}$ (one for each \lstinline|Cons|, one final one for \lstinline|Nil|).
+  \item Give a $\mu$-type for a \emph{non-empty} list of booleans (i.e., no $\nil$ case — every list has at least one element). Hint: it needs a base case that isn't $\unit$.
+  \item Using the binary tree type $\mathbf{Tree} = \mu\alpha.\,\tyint + (\alpha\times\tyint\times\alpha)$ from this section, write the typing derivation for $\mathbf{fold}$ applied to a single-leaf tree holding the integer $5$.
+  \item Explain in your own words why Rust's \lstinline|enum List<T> { Nil, Cons(T, List<T>) }| (without \lstinline|Box|) fails to compile, connecting your answer to the fact that $\mu\alpha.\,\tau$ types are usually represented as pointers at runtime.
+  \item Iso-recursive types require explicit \lstinline|fold|/\lstinline|unfold| (or, in practice, constructors and pattern matches); equi-recursive types require none, but need a more complex type-equality check. Which design would you expect a language with full, unannotated Hindley-Milner inference to prefer, and why? Which would you expect a language that only does local type \emph{checking} against programmer-supplied annotations (no global inference) to tolerate more easily?
+\end{itemize}

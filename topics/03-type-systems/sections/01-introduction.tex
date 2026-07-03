@@ -1,0 +1,60 @@
+% !TeX root = ../main.tex
+\section{Introduction}
+
+Every program manipulates values: integers, booleans, functions, lists, records. A \textbf{type system} is a syntactic discipline that classifies expressions according to the kinds of values they compute, and it does this classification \emph{before} the program ever runs. That last part is the whole point: a type system is a form of static analysis, a promise the compiler (or a human, reading carefully) can check against the text of the program alone, with no need to execute it.
+
+Concretely, a type system is a set of rules that assign types to program phrases and a judgment
+\[
+  \Gamma \vdash e : \tau
+\]
+read ``under the assumptions in $\Gamma$, expression $e$ has type $\tau$''. $\Gamma$ is a \textbf{typing context}: a finite map from variables to the types we're assuming for them (think of it as ``the types of whatever is currently in scope''). The rules of the system tell you how to derive this judgment compositionally, one syntactic construct at a time. That compositionality is what makes type systems tractable: the type of an expression is computed from the types of its parts, exactly the way the meaning of an expression in denotational semantics is computed from the meanings of its parts.
+
+\subsection{why bother}
+
+You could ask, reasonably, why go through all this trouble instead of just running the program and seeing what happens. A few answers, roughly in order of how often they show up in practice:
+
+\begin{itemize}
+  \item \textbf{Catching errors early.} A type error caught at compile time is a bug you never ship. Compare ``\texttt{TypeError: cannot add int and string}'' at compile time to the same mistake silently producing garbage at 3am in production.
+  \item \textbf{Documentation.} A function signature like \texttt{sort : List<Int> -> List<Int>} tells you something true about the function, and it tells you \emph{for free}, without reading the implementation or trusting a comment that might be stale.
+  \item \textbf{Enabling optimizations.} If the compiler knows a variable is always a machine integer, it can lay it out unboxed, in a register, without a dynamic dispatch check. Dynamically typed languages have to work much harder (and add much more machinery, like inline caches and JIT speculation) to claw back this kind of performance.
+  \item \textbf{Guiding tools.} Autocomplete, refactoring, ``jump to definition'', and type inference itself all lean on the same information a type system computes. A rich type system is a foundation the rest of the tooling ecosystem builds on.
+\end{itemize}
+
+None of this is free. Type systems reject some programs that would have run just fine — that's the price of the guarantee. Designing a type system is largely an exercise in finding a sweet spot: reject as many \emph{bad} programs as possible while rejecting as few \emph{good} ones as you can get away with.
+
+\subsection{four dimensions for comparing type systems}
+
+When people argue about type systems (and they do, loudly and often), the disagreement usually collapses onto one of four independent axes. It's worth having names for them before we go any further, since the rest of this chapter is going to build a concrete type system that makes specific choices on each one.
+
+\begin{description}
+  \item[Static vs.\ dynamic.] Static typing checks types before running the program (Java, Haskell, Rust); dynamic typing checks types \emph{as} the program runs, tagging values with their type at runtime (Python, JavaScript, Scheme). This is the one axis this chapter is entirely about: everything from \S3 onward is a static type system.
+  \item[Strong vs.\ weak.] A strong type system never lets you silently reinterpret a value's bits as another type without an explicit conversion; a weak one performs implicit coercions that can paper over real errors. Example: in Python, \lstinline|"3" + 3| raises a \texttt{TypeError} (strong); in JavaScript, \lstinline|"3" + 3| silently produces \lstinline|"33"| (weak). Note this is orthogonal to static/dynamic — Python is dynamically \emph{and} strongly typed.
+  \item[Explicit vs.\ inferred.] Explicitly typed languages require the programmer to write type annotations (\lstinline|int x = 5;| in Java); inferred languages reconstruct types from context, with few or no annotations needed (\lstinline|let x = 5| in OCaml, where \lstinline|x : int| is deduced). \S4 of this chapter is dedicated to how that reconstruction actually works.
+  \item[Nominal vs.\ structural.] Nominal systems say two types are compatible only if they share a declared name/ancestry (a Java class must \lstinline|implements| an interface to count as one); structural systems say two types are compatible if they have the same shape, regardless of name (a TypeScript object with the right fields satisfies an interface it never mentioned). We'll plant the seed here and dig into this properly in \S6, once we have subtyping on the table.
+\end{description}
+
+\subsection{the thesis: well-typed programs cannot go wrong}
+
+Robin Milner, in the paper that introduced ML's type system, put the goal of all of this in one memorable sentence: \emph{well-typed programs cannot ``go wrong''}. ``Going wrong'' here has a precise technical meaning — it means reaching a stuck state mid-execution, like trying to apply $3$ as if it were a function, or take the head of an empty list when nothing checked that it was non-empty. Milner's slogan is not a vague aspiration; it is a mathematical claim, and by the end of this chapter (\S8, Type Safety) we will state and prove it exactly, as two theorems — \textbf{progress} (a well-typed term is never stuck) and \textbf{preservation} (reduction never changes a term's type). Everything between here and there is scaffolding built specifically to make that proof possible.
+
+\subsection{roadmap}
+
+We'll build up the machinery in stages, each one a natural extension of the last:
+
+\begin{enumerate}
+  \item \textbf{Lambda calculus} (\S2) — the untyped vehicle: no types yet, just functions, applied and abstracted.
+  \item \textbf{Simply typed lambda calculus} (\S3) — we bolt a type discipline onto that vehicle: types, a typing judgment, and the first payoff (strong normalization).
+  \item \textbf{Type inference and checking} (\S4) — how do we compute types automatically, without every subexpression carrying an annotation?
+  \item \textbf{Polymorphism} (\S5) — how a single function can have many types at once, safely.
+  \item \textbf{Subtyping} (\S6) — when is it safe to use a value of one type where another was expected?
+  \item \textbf{Recursive types} (\S7) — how to type self-referential data like lists and trees.
+  \item \textbf{Type safety} (\S8) — the payoff: progress and preservation, made precise and proved.
+\end{enumerate}
+
+\subsection{Exercises}
+\begin{itemize}
+  \item Classify Python, Java, TypeScript, and Rust along all four dimensions above (static/dynamic, strong/weak, explicit/inferred, nominal/structural). Which combinations surprised you?
+  \item Give an example of a program that is rejected by a static type checker but would never actually go wrong at runtime. (This is what people mean when they say static type systems are \emph{conservative}: they can reject correct programs, but never accept incorrect ones.)
+  \item JavaScript is dynamically typed but people still argue about whether it is ``weak''. Find two examples of implicit coercion in JavaScript that you find surprising, and explain what a strongly-typed language would do instead.
+  \item Milner's slogan says well-typed programs cannot go wrong. Does this mean well-typed programs always terminate? Always produce the ``right'' answer? Be precise about what the slogan does and doesn't promise.
+\end{itemize}
