@@ -1,7 +1,7 @@
 # Programming-Languages-Notes
 Librería personal de notas en LaTeX sobre lenguajes de programación: lenguajes formales, autómatas, lexing, parsing, sistemas de tipos, semántica, sistemas en tiempo de ejecución y diseño de DSLs.
 
-Notas del curso **ISIS-2111 · Elementos esenciales de lenguajes de programación (PLE)** — Universidad de los Andes.
+Notas del curso **ISIS-2111** 
 
 ## Estructura
 - `common/` — preamble, macros, entornos de teoremas y bibliografía compartida.
