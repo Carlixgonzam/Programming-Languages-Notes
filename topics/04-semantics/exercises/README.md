@@ -1,4 +1,4 @@
-# Ejercicios — Operational Semantics
+# Ejercicios de semántica
 Documentos LaTeX **autocontenidos** (cada uno con su propio `\documentclass` y `\begin{document}`) con ejercicios sueltos.
 A diferencia de los archivos en `../sections/`, estos NO se incluyen vía `\input` desde `main.tex`: se compilan independientemente.
 ## Convención de nombres
@@ -7,6 +7,6 @@ A diferencia de los archivos en `../sections/`, estos NO se incluyen vía `\inpu
 - `practice-tema.tex` 
 ## Compilar uno
 ```bash
-cd topics/01-operational-semantics/exercises
+cd topics/04-semantics/exercises
 latexmk -pdf preexam-solution.tex
 ```
