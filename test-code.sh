@@ -66,7 +66,7 @@ for topic in "$ROOT"/topics/"$FILTER"*/; do
 
   for f in "$code"/haskell/*.hs; do
     [ -e "$f" ] || continue
-    runghc "$f" > /dev/null 2>&1 && echo "  $(basename "$f"): ok" || fail "$f"
+    runghc --ghc-arg=-package-env=- "$f" > /dev/null 2>&1 && echo "  $(basename "$f"): ok" || fail "$f"
   done
 
   for f in "$code"/c/*.c; do

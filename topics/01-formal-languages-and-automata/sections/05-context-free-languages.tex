@@ -1,312 +1,763 @@
 % !TeX root = ../main.tex
 \section{Context-free languages}
+\label{sec:cfl}
 
-\subsection{Context-free grammars, formally}
+Regular languages cannot count (Section~\ref{sec:regular}), and the syntax of
+programming languages is full of things that must be counted: parentheses,
+\texttt{begin} and \texttt{end}, nested blocks. Context-free languages can.
+This section follows Hopcroft, Motwani and
+Ullman~\cite[Ch.~5--7]{hopcroft2007automata}.
 
-A \textbf{context-free grammar} (CFG) is exactly the grammar definition from file 02,
-restricted so every left-hand side is a single nonterminal:
-
-\begin{definition}
-A grammar $G = (N, \Sigma, P, S)$ is \textbf{context-free} if every production in $P$ has
-the form $A \to \beta$, with $A \in N$ a single nonterminal and $\beta \in (N \cup
-\Sigma)^*$ arbitrary (including $\varepsilon$).
-\end{definition}
-
-``Context-free'' names the restriction precisely: you're allowed to replace $A$ regardless
-of what surrounds it in the sentential form --- the replacement doesn't depend on
-\emph{context}. This single restriction is what makes CFGs efficiently parseable
-(polynomial time, in general; linear time for the well-behaved subclasses --- LL, LR --- a
-real parser generator targets), while still being expressive enough for essentially every
-programming language's syntax. Everything from file 02 (derivations, leftmost/rightmost,
-$L(G)$, ambiguity) applies unchanged; this file is about the specific tools and pathologies
-that come with the CFG restriction.
-
-\subsection{Parse trees and derivation order}
-
-A \textbf{parse tree} makes a derivation's structure explicit as a tree: the root is $S$,
-each internal node is a nonterminal with children given by the right-hand side of the rule
-used to expand it, and the leaves, read left to right, spell out the derived string.
-
-The key fact worth internalizing: \emph{leftmost and rightmost derivations of the same
-string, using the same grammar, produce the same parse tree} --- they just build it in a
-different order (leftmost expands the tree top-down, left child first; rightmost expands
-right child first). This is why parser implementations bother distinguishing them:
-recursive-descent (top-down) parsers naturally produce a leftmost derivation, while
-shift-reduce (bottom-up) parsers naturally produce a rightmost derivation \emph{in reverse}.
-Different algorithms, same tree, same language --- that equivalence is exactly what lets you
-choose a parsing strategy based on implementation convenience rather than which trees you
-want to allow.
-
-\subsection{Ambiguity in CFGs, revisited: fixing dangling-else}
-
-File 02 showed the dangling-else grammar is ambiguous:
-\[
-S \to \mathbf{if}\ b\ \mathbf{then}\ S \mid \mathbf{if}\ b\ \mathbf{then}\ S\ \mathbf{else}\ S \mid \mathbf{other}
-\]
-Now let's actually fix it, rather than just naming the problem. The standard convention
-(``else binds to the nearest unmatched if'') can be built directly into the grammar by
-distinguishing \emph{matched} statements (every \texttt{if} inside has its \texttt{else})
-from \emph{unmatched} ones (some \texttt{if} is still waiting for an \texttt{else}):
-
-\[
-\begin{aligned}
-S &\to M \mid U \\
-M &\to \mathbf{if}\ b\ \mathbf{then}\ M\ \mathbf{else}\ M \mid \mathbf{other} \\
-U &\to \mathbf{if}\ b\ \mathbf{then}\ S \mid \mathbf{if}\ b\ \mathbf{then}\ M\ \mathbf{else}\ U
-\end{aligned}
-\]
-
-The rule that does all the work is the last one: an unmatched if-then-else must have a
-\emph{matched} statement between \texttt{then} and \texttt{else} (you can't leave an
-unmatched if dangling in there --- any \texttt{if} before the \texttt{else} must already
-have found its own \texttt{else}), and only the \emph{tail} $U$ after the \texttt{else} is
-allowed to be unmatched. This forces every \texttt{else} to attach to the innermost
-\texttt{if} that doesn't already have one.
-
-\begin{example}
-Take $\mathbf{if}\ b_1\ \mathbf{then}\ \mathbf{if}\ b_2\ \mathbf{then}\ S_1\ \mathbf{else}\
-S_2$ (using $S_1, S_2$ as stand-ins for \texttt{other}). Under the new grammar this string
-is derivable only as an unmatched statement $U$, and only in one way:
-\[
-U \to \mathbf{if}\ b_1\ \mathbf{then}\ S
-  \to \mathbf{if}\ b_1\ \mathbf{then}\ U
-  \to \mathbf{if}\ b_1\ \mathbf{then}\ (\mathbf{if}\ b_2\ \mathbf{then}\ M\ \mathbf{else}\ U)
-\]
-with $M \to \mathbf{other}$ ($S_1$) and $U \to \mathbf{other}$ ($S_2$). There is no
-alternative derivation that attaches the \texttt{else} to the outer \texttt{if}, because
-doing so would require the outer $\mathbf{if}\ b_1\ \mathbf{then}\ M\ \mathbf{else}\ U$
-rule, which demands the \emph{then}-branch be a fully matched $M$ --- but
-$\mathbf{if}\ b_2\ \mathbf{then}\ S_1$ (with no \texttt{else}) is not a matched statement.
-The grammar itself rules out the second parse tree. That's the difference between ``we
-adopt the convention that else binds to the nearest if'' (a rule bolted onto an ambiguous
-grammar) and ``the grammar is unambiguous and only generates the intended structure''
-(the actual fix).
-\end{example}
-
-\subsection{Chomsky Normal Form}
-
-Some algorithms that operate on CFGs (notably the CYK parsing algorithm) need the grammar
-in a very restricted shape first.
+\subsection{Context-free grammars}
 
 \begin{definition}
-A CFG is in \textbf{Chomsky Normal Form} (CNF) if every production has one of two forms:
-$A \to BC$ (two nonterminals) or $A \to a$ (a single terminal) --- plus, optionally,
-$S \to \varepsilon$ if $\varepsilon \in L(G)$, with $S$ not appearing on the right of any
-rule.
+A \textbf{context-free grammar} (type 2) is a grammar in which the left side of
+every rule is a single nonterminal: every rule has the form $A ::= \beta$ with
+$A \in N$ and $\beta \in (N \cup \Sigma)^*$.
 \end{definition}
 
-\begin{theorem}
-Every context-free language is generated by some grammar in Chomsky Normal Form.
-\end{theorem}
+The name says that $A$ can be replaced by $\beta$ regardless of what surrounds
+$A$ in the sentential form. Context-free grammars are a subset of the
+context-sensitive grammars (type 1), and they allow $\beta = \lambda$. Unlike
+regular grammars, the right side can mix blocks of terminals and
+nonterminals in any order.
 
-The conversion algorithm runs in a few mechanical passes:
+\paragraph{Example: equal numbers of $a$'s and $b$'s.} The lecture's grammar
+$\mathcal{G}_{2'} = \langle \{S, A, B\}, \{a, b\}, S, P_{2'} \rangle$ has the rules
+\[
+S ::= aB \mid bA \mid \lambda \qquad A ::= aS \mid bAA \qquad B ::= bS \mid aBB.
+\]
+$A$ generates the words with one $a$ more than $b$'s, and $B$ those with one
+$b$ more. $S$ starts with one letter and asks for a word that compensates it.
+The word $abaabb$ has the derivation
+\[
+S \Rightarrow aB \Rightarrow abS \Rightarrow abaB \Rightarrow abaaBB \Rightarrow abaaBbS
+  \Rightarrow abaaBb \Rightarrow abaabSb \Rightarrow abaabb,
+\]
+where the sixth and the last step use $S ::= \lambda$. (The slides write the
+steps with \texttt{::=}; a derivation step is $\Rightarrow$.) The language of
+$\mathcal{G}_{2'}$ is the set of words with as many $a$'s as $b$'s, which the
+pumping lemma shows is not regular.
+
+\paragraph{Example: a grammar with three parts.} The second example is
+$\mathcal{G}_2$, with nonterminals $\{S, A, B, C\}$, terminals $\{a, b, c\}$,
+initial symbol $S$ and the rules
+\[
+S ::= ABC \qquad A ::= aAb \mid B \qquad B ::= bB \mid \lambda \qquad C ::= ccC \mid B.
+\]
+$A$ generates $a^n b^j b^n$, $B$ generates $b^*$ and $C$ generates $(cc)^k b^l$.
+The derivation of $aabbccccbbb$ in the lecture is
+\[
+\begin{array}{l}
+S \Rightarrow ABC \Rightarrow aAbBC \Rightarrow aaAbbBC \Rightarrow aaAbbBccC
+  \Rightarrow aaAbbBccccC \Rightarrow aaAbbccccC \\
+\phantom{S} \Rightarrow aaAbbccccB \Rightarrow aaBbbccccB \Rightarrow aabbccccB
+  \Rightarrow aabbccccbB \Rightarrow aabbccccbbB \Rightarrow aabbccccbbbB \\
+\phantom{S} \Rightarrow aabbccccbbb.
+\end{array}
+\]
+In Rascal both grammars can be written as given; an empty alternative is the
+rule with $\lambda$:
+\coderange{Rascal}{rascal/src/CFL.rsc}{g2prime}
+\coderange{Rascal}{rascal/src/CFL.rsc}{g2}
+\texttt{CFL.rsc} checks that $\mathcal{G}_{2'}$ generates exactly the words with
+equal numbers of $a$'s and $b$'s up to length 8, and that $\mathcal{G}_2$
+generates exactly the words $a^n b^m (cc)^k b^l$ with $m \ge n$ up to length 7.
+
+\subsection{Parse trees}
+
+\begin{definition}
+A \textbf{parse tree} for a context-free grammar $\mathcal{G} = \langle N, \Sigma,
+S_0, P \rangle$ satisfies three conditions:
 \begin{enumerate}
-  \item \textbf{Eliminate $\varepsilon$-productions} ($A \to \varepsilon$) other than
-    possibly $S \to \varepsilon$, by inlining: for every rule containing $A$ on the right,
-    add a version with $A$ removed (handling the case where $A$ appears multiple times by
-    considering all subsets to remove).
-  \item \textbf{Eliminate unit productions} ($A \to B$, a single nonterminal), by
-    replacing $A \to B$ with a copy of every rule $B \to \gamma$ as $A \to \gamma$.
-  \item \textbf{Break long right-hand sides}: any $A \to X_1 X_2 \cdots X_k$ with $k > 2$
-    gets split using fresh nonterminals: $A \to X_1 A_1$, $A_1 \to X_2 A_2$, \ldots,
-    $A_{k-2} \to X_{k-1} X_k$.
-  \item \textbf{Replace terminals mixed with nonterminals}: any rule with a terminal $a$
-    alongside another symbol (e.g.\ $A \to aB$) introduces a fresh nonterminal
-    $T_a \to a$ and rewrites as $A \to T_a B$.
+  \item interior nodes are nonterminals;
+  \item leaves are terminals or $\lambda$;
+  \item an interior node labeled $A$ has children $X_1, X_2, \dots, X_n$ only if
+    $A ::= X_1 X_2 \cdots X_n$ is a rule.
 \end{enumerate}
+The \textbf{yield} of the tree is the concatenation of its leaves from left to
+right; it is always a word.
+\end{definition}
 
-Why bother: CNF guarantees every derivation of a string of length $n$ takes exactly
-$2n - 1$ steps (each step either splits one nonterminal into two, or terminates one into a
-single terminal), which is exactly the uniform structure the CYK dynamic-programming parser
-needs to fill an $O(n^2)$ table of ``which nonterminals can derive this substring'' in
-$O(n^3)$ time overall. Without that uniformity, there's no clean way to bound the table-filling
-recursion.
+In a regular grammar the tree is a path with leaves on one side
+(Figure~\ref{fig:regular-trees}). In a context-free grammar a rule can create
+several nonterminals, and the tree branches. Figure~\ref{fig:abaabb} shows the
+tree of the derivation of $abaabb$; the rule $B ::= aBB$ is where it branches.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=4mm, l sep=3mm},
+  [S [a] [B [b] [S [a] [B [a] [B [b] [S [$\lambda$]]] [B [b] [S [$\lambda$]]]]]]]
+\end{forest}
+\caption{Parse tree of $abaabb$ in $\mathcal{G}_{2'}$. Its yield is $abaabb$.}
+\label{fig:abaabb}
+\end{figure}
+
+\paragraph{Example: Grace.} The lecture shows a fragment of the Grace language,
+a method that counts down and doubles a variable:
+\begin{lstlisting}
+method run {
+    var y := 1
+    var x := 4
+    while {x > 0} do {
+        x := x - 1
+        y := y + y
+    }
+    print(x)
+    print(y)
+}
+\end{lstlisting}
+with this grammar for methods:
+\begin{lstlisting}
+S     ::= method run { Stmts }
+Stmts ::= Stmt \n Stmts | λ
+Stmt  ::= var Ident := Exp
+Stmt  ::= Exp
+Stmt  ::= while { Exp } do { Stmts }
+Exp   ::= Exp + Exp | Exp - Exp | Exp > Exp
+Exp   ::= Ident | Num | print(Exp)
+Ident ::= x | y
+Num   ::= (0 | 1 | 4 | 3)+
+\end{lstlisting}
+The slide writes the second line of \texttt{Exp} as \texttt{Ident ::= Exp | Ident
+| Num | print(Exp)}; it has to be a rule of \texttt{Exp}, otherwise expressions
+could not contain variables, numbers or \texttt{print}. Two more rules are
+missing for the program to be generated: the assignment \texttt{x := x - 1}
+needs \texttt{Stmt ::= Ident := Exp}, and the line \texttt{run} that the slide
+writes after the method (a call) is not generated by \texttt{S}.
+Figure~\ref{fig:grace} shows the top of the parse tree.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=2mm, l sep=4mm},
+  [S
+    [method] [run] [\{]
+    [Stmts
+      [Stmt [var] [Ident [y]] [{:=}] [Exp [Num [1]]]]
+      [\textbackslash n]
+      [Stmts
+        [Stmt [var] [Ident [x]] [{:=}] [Exp [Num [4]]]]
+        [\textbackslash n]
+        [Stmts [Stmt [while] [\{] [Exp [Exp [Ident [x]]] [>] [Exp [Num [0]]]] [\}] [do] [\{] [Stmts] [\}]] [\dots]]
+      ]
+    ]
+    [\}]
+  ]
+\end{forest}
+\caption{The top of the parse tree of the Grace method. The body of the
+\texttt{while} and the two \texttt{print} statements are omitted.}
+\label{fig:grace}
+\end{figure}
+
+\subsection{Ambiguity}
+
+The lecture's expression language is
+\begin{lstlisting}
+Exp ::= Exp + Exp
+Exp ::= Exp * Exp
+Exp ::= ( Exp )
+Exp ::= (1 | 2 | 3 | 4)+
+\end{lstlisting}
+The word $2+3*1$ has two parse trees (Figure~\ref{fig:amb231}). The first
+treats it as a sum whose right operand is a product; the second as a product
+whose left operand is a sum. Each tree has its own leftmost derivation:
+\[
+\begin{array}{l}
+Exp \Rightarrow Exp + Exp \Rightarrow 2 + Exp \Rightarrow 2 + Exp * Exp \Rightarrow 2 + 3 * Exp \Rightarrow 2 + 3 * 1 \\
+Exp \Rightarrow Exp * Exp \Rightarrow Exp + Exp * Exp \Rightarrow 2 + Exp * Exp \Rightarrow 2 + 3 * Exp \Rightarrow 2 + 3 * 1
+\end{array}
+\]
+and its own rightmost derivation, for example for the first tree
+$Exp \Rightarrow Exp + Exp \Rightarrow Exp + Exp * Exp \Rightarrow Exp + Exp * 1
+\Rightarrow Exp + 3 * 1 \Rightarrow 2 + 3 * 1$. Leftmost and rightmost derivations of
+the same tree are different sequences of steps, but they build the same tree.
+Ambiguity is about trees: a grammar is ambiguous when one word has two trees,
+which is the same as having two leftmost derivations.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=3mm, l sep=3mm},
+  [Exp [Exp [2]] [+] [Exp [Exp [3]] [*] [Exp [1]]]]
+\end{forest}
+\hspace{2cm}
+\begin{forest}
+  for tree={font=\small, s sep=3mm, l sep=3mm},
+  [Exp [Exp [Exp [2]] [+] [Exp [3]]] [*] [Exp [1]]]
+\end{forest}
+\caption{Two parse trees for $2+3*1$.}
+\label{fig:amb231}
+\end{figure}
+
+Ambiguity is a problem for compilers: the tree decides what the program
+means, and a compiler has no fast, deterministic way to choose. In Rascal the
+grammar can be written as it is, and the parser returns both trees:
+\coderange{Rascal}{rascal/src/CFL.rsc}{ambiguous}
+
+\subsection{Removing ambiguity}
+
+For the common constructs of programming languages, ambiguity is removed with
+two kinds of rules: operator precedence and associativity.
+
+\paragraph{Precedence.} Precedence is enforced through the grammar by adding one
+nonterminal per level:
+\begin{lstlisting}
+Ident  ::= (0..9)+
+Factor ::= Ident | ( Exp )
+Term   ::= Factor | Term * Factor
+Exp    ::= Term | Exp + Term
+\end{lstlisting}
+Factors cannot be broken by \texttt{*} or \texttt{+}, and terms cannot be
+broken by \texttt{+}. A \texttt{+} can only appear at the \texttt{Exp} level, so
+in $2+3*4$ the product must be a \texttt{Term} inside the sum
+(Figure~\ref{fig:prec}).
+
+\paragraph{Associativity.} The rule \texttt{Exp ::= Exp + Term} has the recursion
+on the left, so in $1+2+3$ the left operand is $1+2$: the sum associates to
+the left. Writing \texttt{Exp ::= Term + Exp} would make it associate to the
+right.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=3mm, l sep=3mm},
+  [Exp
+    [Exp [Term [Factor [2]]]]
+    [+]
+    [Term [Term [Factor [3]]] [*] [Factor [4]]]
+  ]
+\end{forest}
+\hspace{2cm}
+\begin{forest}
+  for tree={font=\small, s sep=3mm, l sep=3mm},
+  [Exp
+    [Exp [Exp [Term [Factor [1]]]] [+] [Term [Factor [2]]]]
+    [+]
+    [Term [Factor [3]]]
+  ]
+\end{forest}
+\caption{The only parse tree of $2+3*4$ (left) and of $1+2+3$ (right) in the grammar with precedence.}
+\label{fig:prec}
+\end{figure}
+
+The grammar in Rascal, and an evaluator written with concrete syntax
+patterns, one equation per rule:
+\coderange{Rascal}{rascal/src/CFL.rsc}{precedence}
+\coderange{Rascal}{rascal/src/CFL.rsc}{eval}
+The tests check that $2+3*4$ has a single tree and evaluates to 14, that
+$(2+3)*4$ evaluates to 20, and that the left operand of the top \texttt{+} in
+$1+2+3$ is $1+2$.
+
+The lecture adds that LR parsers give deterministic and fast algorithms for
+context-free grammars. They read the input from left to right and produce a
+rightmost derivation in reverse (the slide says leftmost; top-down LL parsers
+are the ones that produce leftmost derivations). Both kinds of parser are the
+subject of the next block.
+
+\paragraph{Dangling else.} The word \texttt{if x then if y then z else w} has two
+trees in the grammar
+\begin{lstlisting}
+Stmt      ::= ... | Selection
+Selection ::= ... | if ( Exp ) Stmt | if ( Exp ) Stmt else Stmt
+\end{lstlisting}
+because the \texttt{else} can belong to either \texttt{if}
+(Figure~\ref{fig:dangling}). The ambiguity is removed by requiring that the
+\texttt{then} branch of an \texttt{if} with \texttt{else} is always closed (matched):
+\begin{lstlisting}
+Stmt       ::= OpenStmt | ClosedStmt
+OpenStmt   ::= if ( Exp ) Stmt
+             | if ( Exp ) ClosedStmt else OpenStmt
+ClosedStmt ::= NonIfStmt
+             | if ( Exp ) ClosedStmt else ClosedStmt
+NonIfStmt  ::= ...
+\end{lstlisting}
+A closed statement has an \texttt{else} for every \texttt{if}. In the example,
+the inner \texttt{if y then z} has no \texttt{else} of its own, so it is open and
+cannot be the \texttt{then} branch of an \texttt{if} with \texttt{else}. The only
+tree left is the one where the \texttt{else} belongs to the inner \texttt{if}.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=2mm, l sep=3mm},
+  [Stmt [if] [x] [then] [Stmt [if] [y] [then] [Stmt [z]] [else] [Stmt [w]]]]
+\end{forest}
+\hspace{1cm}
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=2mm, l sep=3mm},
+  [Stmt [if] [x] [then] [Stmt [if] [y] [then] [Stmt [z]]] [else] [Stmt [w]]]
+\end{forest}
+\caption{The two trees of \texttt{if x then if y then z else w}. The grammar with open and closed statements only allows the left one.}
+\label{fig:dangling}
+\end{figure}
+
+In Rascal, without parentheses around the condition:
+\coderange{Rascal}{rascal/src/CFL.rsc}{openclosed}
+
+\subsection{Left recursion}
+
+Generating words of the precedence grammar from the left shows a problem:
+\[
+Exp \Rightarrow Exp + Term \Rightarrow Exp + Term + Term \Rightarrow Exp + Term + Term + Term \Rightarrow \cdots
+\]
+The leftmost symbol stays \texttt{Exp}, and a procedure that always expands it
+first never reads a terminal. Left recursion is difficult to manage for
+top-down parsers. It is eliminated by moving the recursion to the right with
+a new nonterminal: $A ::= A\gamma \mid \delta$ becomes $A ::= \delta A'$ and
+$A' ::= \gamma A' \mid \lambda$. For the expression grammar:
+\begin{lstlisting}
+Exp    ::= Term Exp'
+Exp'   ::= + Term Exp' | λ
+Term   ::= Factor Term'
+Term'  ::= * Factor Term' | λ
+Factor ::= ( Exp ) | Num
+Num    ::= (0..9)+
+\end{lstlisting}
+The language is the same; \texttt{CFL.rsc} checks it on every word of length up
+to 6 over $\{1, +, *, (, )\}$. The trees are different: in the new grammar the
+\texttt{+} hangs from \texttt{Exp'} on the right, so associativity has to be
+recovered when the tree is processed.
+
+The lecture also gives the general algorithm, for recursion through several
+nonterminals ($A_1 \Rightarrow A_2\gamma \Rightarrow A_1\gamma'\gamma$). Sort the
+nonterminals as $A_1, \dots, A_n$. For each $i$ and each $j < i$, replace every
+rule $A_i ::= A_j\gamma$ by $A_i ::= \delta_1\gamma \mid \cdots \mid \delta_k\gamma$, where
+$A_j ::= \delta_1 \mid \cdots \mid \delta_k$ are the current rules of $A_j$; then
+eliminate the immediate left recursion of $A_i$. If the grammar has no cycles
+($A \Rightarrow^+ A$) and no $\lambda$-rules, left recursion can always be eliminated.
 
 \subsection{Pushdown automata}
 
-A DFA/NFA (file 03) has no memory beyond its current state, which is precisely why it can't
-recognize $a^nb^n$ (file 04). A \textbf{pushdown automaton} (PDA) fixes this by adding a
-single unbounded stack --- the minimal amount of extra memory that gets you from regular to
-context-free.
+A DFA cannot recognize $a^n b^n$: to check that there are exactly $n$
+characters of each kind, it has to remember how many $a$'s it has read, and
+it has finitely many states. The lecture extends automata with memory: a stack.
+While reading $aaaabbbb$ the automaton pushes one symbol per $a$ and pops one
+per $b$. If the stack is empty exactly when the word ends, the counts are
+equal. Figure~\ref{fig:anbn} shows the automaton and Table~\ref{tab:anbn} the
+run.
 
-Informally: a PDA reads input left to right, like an NFA, but at each step it may also pop
-a symbol off the stack, and push zero or more symbols onto it, and its transitions can be
-conditioned on what's currently on top of the stack. Acceptance is either by ending in an
-accepting state, or (an equivalent convention) by emptying the stack.
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=3.5cm, auto]
+  \node[state, initial] (A) {A};
+  \node[state, accepting, right=of A] (B) {B};
+  \path[->]
+    (A) edge[loop above] node {$a$, push($a$)} ()
+    (A) edge node {$\lambda$, ignore} (B)
+    (B) edge[loop above] node {$b$, pop($a$)} ();
+\end{tikzpicture}
+\caption{Pushdown automaton for $\{a^n b^n \mid n \ge 0\}$.}
+\label{fig:anbn}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l l}
+  \toprule
+  State & Stack (top first) & Input left & Transition \\
+  \midrule
+  A & empty     & $aaabbb$ & $a$, push($a$) \\
+  A & $a$       & $aabbb$  & $a$, push($a$) \\
+  A & $aa$      & $abbb$   & $a$, push($a$) \\
+  A & $aaa$     & $bbb$    & $\lambda$, ignore \\
+  B & $aaa$     & $bbb$    & $b$, pop($a$) \\
+  B & $aa$      & $bb$     & $b$, pop($a$) \\
+  B & $a$       & $b$      & $b$, pop($a$) \\
+  B & empty     & empty    & accept \\
+  \bottomrule
+\end{tabular}
+\caption{Run of the automaton of Figure~\ref{fig:anbn} on $aaabbb$.}
+\label{tab:anbn}
+\end{table}
 
 \begin{definition}
-A \textbf{pushdown automaton} is a 7-tuple $M = (Q, \Sigma, \Gamma, \delta, q_0, Z_0, F)$
-where $Q, \Sigma, q_0, F$ are as for an NFA, $\Gamma$ is the \textbf{stack alphabet},
-$Z_0 \in \Gamma$ is the initial stack symbol, and
-$\delta: Q \times (\Sigma \cup \{\varepsilon\}) \times \Gamma \to \mathcal{P}(Q \times
-\Gamma^*)$ maps a state, an input symbol (or $\varepsilon$), and the top-of-stack symbol to
-a set of (next state, string to push in place of the popped symbol) pairs.
+A \textbf{pushdown automaton} (PDA) is a 6-tuple $\mathcal{A} = \langle Q, \Sigma,
+\Gamma, q_I, F, \Delta \rangle$ where $Q$ is a set of states, $\Sigma$ is the input
+alphabet, $\Gamma$ is the stack alphabet, $q_I$ is the initial state, $F
+\subseteq Q$ is the set of final states and $\Delta$ is a transition relation.
+A transition $((q, \sigma, \beta), (p, \varphi))$ reads: in state $q$, with
+$\beta$ on top of the stack, reading $\sigma \in \Sigma \cup \{\lambda\}$ from the
+input, move to state $p$ and leave $\varphi$ on top of the stack instead of
+$\beta$.
 \end{definition}
 
-\begin{example}
-A PDA for $\{a^nb^n \mid n \ge 0\}$: push an $A$ marker for every $a$ read, then pop one
-marker for every $b$ read, and accept exactly when the stack is back to just $Z_0$ and
-input is exhausted.
-\[
-\delta(q_0, a, Z_0) = \{(q_0, AZ_0)\}, \qquad
-\delta(q_0, a, A) = \{(q_0, AA)\}
-\]
-\[
-\delta(q_0, b, A) = \{(q_1, \varepsilon)\}, \qquad
-\delta(q_1, b, A) = \{(q_1, \varepsilon)\}
-\]
-with $q_0$ the start state ($q_0 \in F$, to accept $n=0$) and $q_1 \in F$ accepting once all
-the $A$'s pushed for the $a$'s have been popped by matching $b$'s. Reading $aabb$: push
-$A$, push $A$ (stack: $AAZ_0$, top to bottom), then pop $A$ on the first $b$ (state
-switches to $q_1$), pop $A$ on the second $b$; stack is back to $Z_0$, input exhausted,
-accept. Try $aaab$: after three pushes the stack has three $A$'s, but only one $b$ pops one
-$A$, leaving two $A$'s on the stack when input runs out --- not accepted, correctly.
-\end{example}
+The lecture names the stack operations that a transition can perform:
+\begin{center}
+\small
+\begin{tabular}{l l}
+  \toprule
+  Operation & Effect \\
+  \midrule
+  push($e$)          & put $e$ on top of the stack \\
+  pop($e$)           & take $e$ off the top of the stack (only if $e$ is on top) \\
+  ignore             & leave the stack as it is \\
+  changeTop($e$, $e'$) & replace the top $e$ by $e'$ \\
+  pushOn($e$, $e'$)  & put $e$ on top if the current top is $e'$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\begin{definition}
+A \textbf{configuration} of a PDA is a triple $(q, \sigma, \omega)$: the current
+state, the contents of the stack and the input still to read. A configuration
+$(q', \sigma', \omega')$ is reached from $(q, \sigma, \omega)$, written
+$(q, \sigma, \omega) \vdash (q', \sigma', \omega')$, if a transition from $q$ to
+$q'$ reads the first symbol of $\omega$ (or nothing) and its stack operation
+turns $\sigma$ into $\sigma'$. A word $\omega$ is \textbf{recognized} if
+$(q_I, \emptyset, \omega) \vdash^* (f, \emptyset, \lambda)$ for some $f \in F$:
+starting with an empty stack, the automaton reads the whole word and ends in
+a final state with an empty stack.
+\end{definition}
+
+So three conditions must hold at the end: the word has been read completely,
+a final state has been reached, and the stack is empty. In Rascal a
+transition records what it reads, what it expects on top of the stack and
+what it puts there instead; each operation of the table is a special case:
+\coderange{Rascal}{rascal/src/PDA.rsc}{types}
+A PDA is nondeterministic, so recognizing a word is a search over
+configurations:
+\coderange{Rascal}{rascal/src/PDA.rsc}{run}
+The automaton of Figure~\ref{fig:anbn}:
+\coderange{Rascal}{rascal/src/PDA.rsc}{anbn}
+
+\paragraph{From a grammar to a PDA.} Context-free languages are exactly the
+languages recognized by pushdown automata, and every context-free grammar
+induces a PDA for its language. The automaton builds the word and recognizes
+it at the same time. The stack holds the part of the sentential form that
+still has to be matched against the input:
+\begin{enumerate}
+  \item push a bottom marker \$ and the initial symbol;
+  \item if a nonterminal $A$ is on top, replace it by the right side of one of
+    its rules, $\lambda$, changeTop($A$, $\beta$), with the first symbol of $\beta$
+    on top;
+  \item if a terminal $a$ is on top and $a$ is the next input symbol, read it
+    and pop it;
+  \item if \$ is on top, pop it and go to the final state.
+\end{enumerate}
+All the work happens in one state $q$. Table~\ref{tab:aSb} runs the automaton
+for $S ::= aSb \mid ab$ on $aabb$. The choice in the second row is
+nondeterministic: replacing $S$ by $ab$ there would fail at the next $a$.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l}
+  \toprule
+  Stack (top first) & Input left & Step \\
+  \midrule
+  $S\,\$$       & $aabb$ & changeTop($S$, $aSb$) \\
+  $aSb\,\$$     & $aabb$ & read $a$, pop($a$) \\
+  $Sb\,\$$      & $abb$  & changeTop($S$, $ab$) \\
+  $abb\,\$$     & $abb$  & read $a$, pop($a$) \\
+  $bb\,\$$      & $bb$   & read $b$, pop($b$) \\
+  $b\,\$$       & $b$    & read $b$, pop($b$) \\
+  $\$$          & empty  & pop(\$), accept \\
+  \bottomrule
+\end{tabular}
+\caption{The PDA of $S ::= aSb \mid ab$ on $aabb$.}
+\label{tab:aSb}
+\end{table}
+
+In Rascal the construction is a few lines:
+\coderange{Rascal}{rascal/src/PDA.rsc}{fromgrammar}
+
+The lecture shows the construction for the grammar
+$I ::= 1 \mid 2 \mid I1 \mid I2$, $E ::= E + E \mid E * E \mid (E)$ (plus $E ::= I$)
+in Figure~\ref{fig:ie-pda}. The slide is not consistent about which end of the
+string is the top: it writes changeTop($I$, $I1$) with the top on the left and
+changeTop($E$, $)E($) with the top on the right. The figure uses the first
+convention throughout.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=4.2cm, auto]
+  \node[state, initial] (p) {$p$};
+  \node[state, right=of p] (q) {$q$};
+  \node[state, accepting, right=of q] (f) {$f$};
+  \path[->]
+    (p) edge node {$\lambda$, push($E\,\$$)} (q)
+    (q) edge node {$\lambda$, pop(\$)} (f)
+    (q) edge[loop above] node[align=center, font=\small] {
+      $\lambda$, changeTop($E$, $E{+}E$) \quad $\lambda$, changeTop($E$, $E{*}E$)\\
+      $\lambda$, changeTop($E$, $(E)$) \quad $\lambda$, changeTop($E$, $I$)\\
+      $\lambda$, changeTop($I$, $1$) \quad $\lambda$, changeTop($I$, $2$)\\
+      $\lambda$, changeTop($I$, $I1$) \quad $\lambda$, changeTop($I$, $I2$)} ()
+    (q) edge[loop below] node[align=center, font=\small] {
+      $1$, pop($1$) \quad $2$, pop($2$) \quad $+$, pop($+$)\\
+      $*$, pop($*$) \quad $($, pop($($) \quad $)$, pop($)$)} ();
+\end{tikzpicture}
+\caption{PDA induced by the grammar of $I$ and $E$.}
+\label{fig:ie-pda}
+\end{figure}
+
+The slide called ``Working automaton'' writes the same construction for
+$S ::= aSb \mid ab$ in Gold, but its first expansion is changeTop(\$, $bSa$). With
+the definition of changeTop, that removes the bottom marker \$, so the final
+pop(\$) can never happen and the automaton recognizes no word. (The test
+\texttt{slideWorkingRejects} checks this for $ab$ and $aabb$.) The construction
+above keeps \$ at the bottom and puts $S$ on top of it.
+
+\subsection{Chomsky normal form}
 
 \begin{theorem}
-A language is context-free if and only if some pushdown automaton accepts it.
+Every context-free language $L$ without $\lambda$ is generated by a context-free
+grammar in which every rule has the form $A ::= BC$ or $A ::= a$, with $A, B,
+C \in N$ and $a \in \Sigma$. Such a grammar is in \textbf{Chomsky normal form}.
 \end{theorem}
 
-We state this without proof (the constructions in both directions --- CFG-to-PDA via a
-generic ``simulate a leftmost derivation using the stack to hold the pending sentential
-form'' recipe, and PDA-to-CFG via a construction with nonterminals indexed by pairs of
-states --- are standard but mechanical). The practical upshot mirrors file 03's NFA/DFA
-story exactly: PDAs are the ``machine'' view of context-free languages, CFGs are the
-``generative'' view, and they describe the same class.
-
-\subsection{The pumping lemma for context-free languages}
-
-Just as DFAs have bounded memory (finitely many states), PDAs have a stack whose
-\emph{depth} is bounded by a function of the parse tree's height for CNF grammars --- which
-gives a pumping lemma with \emph{two} pumped pieces instead of one.
-
-\begin{theorem}[Pumping lemma for CFLs]
-If $L$ is context-free, there is a constant $p \ge 1$ such that every $z \in L$ with
-$|z| \ge p$ can be split $z = uvwxy$ with:
+The lecture lists the first three steps to get there:
 \begin{enumerate}
-  \item $|vx| \ge 1$ (at least one of $v, x$ is nonempty),
-  \item $|vwx| \le p$,
-  \item $uv^iwx^iy \in L$ for every $i \ge 0$.
+  \item eliminate useless symbols, the terminals and nonterminals that are not
+    part of any word of the language;
+  \item eliminate $\lambda$-productions, rules $A ::= \lambda$, by adding to every
+    rule that uses $A$ a copy without it;
+  \item eliminate unit productions, rules $A ::= B$, by copying the rules of $B$
+    into $A$.
 \end{enumerate}
-\end{theorem}
+Two more steps complete the form: a terminal that appears next to other
+symbols is replaced by a new nonterminal ($A ::= aB$ becomes $A ::= T_a B$
+with $T_a ::= a$), and a long right side is split into pairs ($A ::= BCD$
+becomes $A ::= BX$, $X ::= CD$).
 
-The proof idea: take a CNF grammar for $L$ with $p'$ nonterminals; any parse tree of height
-$> p'$ must, by pigeonhole, repeat some nonterminal $A$ along its longest root-to-leaf path.
-The subtree between the two occurrences of $A$ produces the ``middle'' pumped piece $v \dots
-x$, and it can be spliced in or cut out repeatedly because both occurrences of $A$ derive
-in the same way.
-
-\subsubsection{Using it: proving $\{a^nb^nc^n \mid n \ge 0\}$ is not context-free}
-
-Same adversary structure as file 04's regular pumping lemma, just with two pieces to track
-instead of one.
-
-\begin{example}
-Let $L = \{a^nb^nc^n \mid n \ge 0\}$. Suppose $L$ is context-free with pumping length $p$.
-
-\textbf{Choose the string.} Pick $z = a^pb^pc^p \in L$, $|z| = 3p \ge p$.
-
-\textbf{The split is out of your control}, but condition 2 constrains it usefully: since
-$|vwx| \le p$, the substring $vwx$ cannot span all three blocks ($a$'s, $b$'s, $c$'s) at
-once --- $p$ symbols aren't enough to reach from the first $a$-block into the $c$-block,
-since the $b$-block alone has length $p$ and sits between them. So $vwx$ touches \emph{at
-most two} of the three distinct letters.
-
-\textbf{Pump it.} Take $i = 2$: $uv^2wx^2y$ increases the total length of the letters
-touched by $v$ and $x$ combined, while condition 1 guarantees $|vx| \ge 1$ so \emph{some}
-letter's count strictly increases. Because $vwx$ touches at most two of $\{a,b,c\}$, at
-least one letter's count is left completely unchanged by pumping, while at least one other
-letter's count strictly grows. So $uv^2wx^2y$ no longer has equal numbers of $a$'s, $b$'s,
-and $c$'s --- contradicting condition 3.
-
-This holds for every possible split satisfying conditions 1--2, so no valid $p$ exists, and
-$L$ is not context-free. $\blacksquare$
-\end{example}
-
-Intuitively: a PDA's single stack can enforce \emph{one} equality constraint (match $a$'s
-against $b$'s, using the stack as a counter) but has no second independent counter left over
-to also match against $c$'s. This is exactly the sense in which context-free languages are
-one step more powerful than regular languages, but still bounded.
-
-\subsection{Closure properties of CFLs}
-
-\begin{proposition}
-Context-free languages are closed under union, concatenation, and Kleene star.
-\end{proposition}
-
-All three constructions are direct grammar surgery: given CFGs $G_1, G_2$ (with disjoint
-nonterminal sets, and start symbols $S_1, S_2$) for $L_1, L_2$, add a fresh start symbol $S$
-and:
-\begin{itemize}
-  \item \textbf{Union}: $S \to S_1 \mid S_2$.
-  \item \textbf{Concatenation}: $S \to S_1 S_2$.
-  \item \textbf{Star}: $S \to S_1 S \mid \varepsilon$.
-\end{itemize}
-Each is a one-line addition to the grammar, which is why CFLs are so easy to combine
-compared to what's coming next.
-
-\begin{proposition}
-Context-free languages are \textbf{not}, in general, closed under intersection or
-complement.
-\end{proposition}
-
-\begin{example}
-Let $L_1 = \{a^nb^nc^m \mid n, m \ge 0\}$ and $L_2 = \{a^mb^nc^n \mid n, m \ge 0\}$. Both
-are context-free: $L_1$'s grammar matches $a$'s against $b$'s with a stack and then just
-appends arbitrarily many $c$'s ($S \to AC$, $A \to aAb \mid \varepsilon$, $C \to cC \mid
-\varepsilon$); $L_2$ is symmetric, matching $b$'s against $c$'s and prefixing arbitrary
-$a$'s. But
+For $S ::= aSb \mid ab$ the result is
 \[
-L_1 \cap L_2 = \{ a^nb^nc^n \mid n \ge 0 \},
+S ::= A_a X \mid A_a B_b \qquad X ::= S B_b \qquad A_a ::= a \qquad B_b ::= b.
 \]
-exactly the language we just proved is \emph{not} context-free. So the intersection of two
-CFLs need not be a CFL --- closure under intersection fails, and this single example is the
-standard counterexample cited for exactly this fact.
-\end{example}
+\coderange{Rascal}{rascal/src/CFL.rsc}{cnf}
+In Chomsky normal form every derivation of a word of length $n$ takes exactly
+$2n - 1$ steps: $n - 1$ rules of the form $A ::= BC$ and $n$ of the form
+$A ::= a$. Parsing algorithms such as CYK use this uniform shape (this
+remark goes beyond the slides).
 
-Non-closure under intersection then immediately forces non-closure under complement too, by
-De Morgan: if CFLs were closed under complement, they'd also be closed under intersection
-via $L_1 \cap L_2 = \overline{\overline{L_1} \cup \overline{L_2}}$ (union is closed, so this
-identity would make intersection closed too) --- contradicting the example above. This is
-the mirror image of file 03's regular-language closure properties: regular languages got
-all three (union, intersection, complement) essentially for free via the product
-construction; CFLs only get the ``easy'' three (union, concatenation, star) and lose the
-other two, because a single stack can't be duplicated and run ``in parallel'' against a
-second stack the way two DFAs' finite states can.
+\subsection{A context-free DSL: LDBL}
 
-\subsection{Forward pointer: this is exactly what parsers handle}
+Many programming languages have a context-free structure: markup languages
+nest elements (\texttt{<xml> \dots{} </xml>}), imperative languages nest blocks
+(\texttt{\{ \dots{} \}}) and functional languages nest expressions in
+parentheses. The lecture's example is LDBL, a small language to manage the
+database of an image marketplace. Each entry of the database is an image
+file. The commands are
+\begin{itemize}
+  \item \texttt{ADD}, to add an image with its file and its characteristics
+    (attributes and values);
+  \item \texttt{REMOVE}, to delete an image given its identifier;
+  \item \texttt{SEARCH}, to find images by a list of characteristics combined
+    with logical operators;
+  \item \texttt{VIEW}, to see an image;
+  \item assignment of an image variable, which gives a name to an image built
+    from others;
+  \item \texttt{ADD IMAGE} and \texttt{SUBTRACT IMAGE}, to combine two images;
+  \item \texttt{HALT}, to stop.
+\end{itemize}
+A statement is the selector of the operation followed by its parameters,
+each with a name and a value:
+\begin{lstlisting}
+ADD file image1.img name image properties [[c1, 1], [c2,2]]
+\end{lstlisting}
+There are also an \texttt{if} with both branches,
+\texttt{if condition then body else body fi}, and a loop with an optional
+condition, \texttt{loop condition do body od}. The slide's grammar is
+\begin{lstlisting}
+Command   ::= (Operation | Statement)*
+Operation ::= Add | Remove | Search | View | Assign | AddImage
+            | SubtractImage | Halt | AssignImageVariable
+Statement ::= If | Loop
+Add       ::= ADD file Name image Name properties [Pairs]
+...
+If        ::= if Condition then Command else Command fi
+Loop      ::= loop [Condition]? do Command od
+Name      ::= (a..z)
+Pairs     ::= [Name [Value]?, Name|Value]
+Condition ::= Name|Value (>,<,==) Name|Value
+Value     ::= (0..9)
+\end{lstlisting}
+The nesting of \texttt{if} and \texttt{loop} inside \texttt{Command} is what
+makes the language context-free and not regular. The grammar does not
+generate its own example, though. \texttt{Name ::= (a..z)} is one letter and
+\texttt{Value ::= (0..9)} one digit, while the example has \texttt{image1.img}
+and \texttt{c1}; the rule \texttt{Add} expects the word \texttt{image} where the
+example has \texttt{name}; and \texttt{Pairs} has no repetition, so it cannot
+produce a list of two pairs. A version in Rascal that follows the description
+and accepts the example:
+\coderange{Rascal}{rascal/src/LDBL.rsc}{grammar}
+Assignment is written \texttt{Name := Image}, where an image is a name or the
+combination of two images with \texttt{ADDIMAGE} or \texttt{SUBTRACTIMAGE}. The
+slide leaves these operations as ``\dots'', so their concrete syntax here is a
+choice.
 
-Context-free grammars are, almost without exception, the grammar class used to describe
-real programming language syntax --- arithmetic expressions, statements, function
-definitions, all of it. The next block of this course is about turning a CFG into a working
-parser: recursive-descent (top-down, LL) and shift-reduce (bottom-up, LR) algorithms that
-build the parse tree efficiently, the precedence and ambiguity-removal techniques from this
-file and file 02 applied for real, and what happens when a language's true syntax rules
-(``this identifier must already be declared'') fall outside what any CFG can express at
-all --- pushed, as mentioned back in file 02, into a semantic-analysis phase that runs after
-the parser has already built its tree.
+\subsection{Languages that are not context-free}
+
+\begin{lemma}[Pumping lemma for context-free languages]
+Let $L$ be an infinite context-free language. There is a constant $k$, which
+depends on $L$, such that every $\omega \in L$ with $|\omega| \ge k$ can be split
+as $\omega = \alpha\nu\beta\mu\gamma$ with $|\nu\beta\mu| \le k$ and $\nu\mu \ne \lambda$,
+and $\alpha\nu^n\beta\mu^n\gamma \in L$ for every $n \ge 0$.
+\end{lemma}
+
+The idea comes from the parse tree. A long enough word has a path from the
+root to a leaf where some nonterminal $A$ appears twice. The subtree of the
+upper $A$ yields $\nu\beta\mu$ and that of the lower $A$ yields $\beta$; replacing
+one by the other, or repeating the upper one, pumps $\nu$ and $\mu$ together.
+The game is the same as for regular languages, except that the opponent now
+splits the word into five parts, in every possible way.
+
+\paragraph{Example: $L = \{a^m b^m c^m \mid m \ge 0\}$ is not context-free.}
+Suppose $L$ is context-free and let $k$ be the constant of the lemma. Take
+$\omega = a^k b^k c^k \in L$. Since $|\nu\beta\mu| \le k$, the part $\nu\beta\mu$ cannot
+touch both the $a$'s and the $c$'s: between them there are $k$ $b$'s. There
+are five cases (Figure~\ref{fig:pumping-cfl}): $\nu\beta\mu$ lies inside the
+$a$'s, inside the $b$'s or inside the $c$'s, or it overlaps the boundary
+between $a$'s and $b$'s, or the boundary between $b$'s and $c$'s. In every
+case $\nu$ and $\mu$ together contain at least one symbol, and at most two of
+the three letters. Take $n = 0$. The word $\alpha\beta\gamma$ has fewer of the
+letters that appear in $\nu\mu$ and the same number of the letter that does
+not, so the three counts are no longer equal and $\alpha\beta\gamma \notin L$. (If
+$\nu$ or $\mu$ itself contains two different letters, $n = 2$ also works: the
+letters come out of order.) This contradicts the lemma, so $L$ is not
+context-free.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[x=0.5cm, y=0.5cm, font=\small]
+  \foreach \row/\from/\to/\txt in {0/1/3/{inside the $a$'s}, 1/6/8/{inside the $b$'s}, 2/11/13/{inside the $c$'s}, 3/4/7/{over $a$'s and $b$'s}, 4/9/12/{over $b$'s and $c$'s}} {
+    \begin{scope}[yshift=-\row*1.5cm]
+      \foreach \i in {1,...,5} { \node at (\i,0) {$a$}; }
+      \foreach \i in {6,...,10} { \node at (\i,0) {$b$}; }
+      \foreach \i in {11,...,15} { \node at (\i,0) {$c$}; }
+      \draw[decorate, decoration={brace, mirror}] (\from-0.4,-0.6) -- (\to+0.4,-0.6) node[midway, below=2pt] {$\nu\beta\mu$};
+      \node[anchor=west] at (16,0) {case \the\numexpr\row+1\relax: \txt};
+    \end{scope}
+  }
+\end{tikzpicture}
+\caption{Where $\nu\beta\mu$ can fall in $a^k b^k c^k$ (here $k = 5$). It never
+reaches both the $a$'s and the $c$'s.}
+\label{fig:pumping-cfl}
+\end{figure}
+
+The proof on the slide starts with ``Suppose $L$ is regular'' and repeats the
+statement of the lemma for regular languages; it also claims that $\nu\beta\mu$
+lies inside one block of letters, which leaves out cases 4 and 5 of its own
+figure. The argument above covers the five cases.
+
+The consequence is that context-free languages cannot count several things at
+once. A larger class is needed for that: context-sensitive languages, and in
+general the languages recognized by Turing machines.
+
+\subsection{Closure properties}
+
+This subsection goes beyond the slides. Context-free languages are closed
+under union, concatenation and Kleene star: given grammars with initial
+symbols $S_1$ and $S_2$, the rules $S ::= S_1 \mid S_2$, $S ::= S_1 S_2$ and
+$S ::= S_1 S \mid \lambda$ do it. They are not closed under intersection:
+$\{a^m b^m c^n\}$ and $\{a^n b^m c^m\}$ are both context-free, and their
+intersection is $\{a^m b^m c^m\}$. Since $L_1 \cap L_2 = \overline{\overline{L_1}
+\cup \overline{L_2}}$, they are not closed under complement either. The
+intersection of a context-free language with a regular language is
+context-free: run the PDA and the DFA side by side, as in the product
+construction.
 
 \subsection{Exercises}
 
-\begin{itemize}
-  \item Convert the grammar $S \to aSb \mid ab \mid \varepsilon$ into Chomsky Normal Form,
-    showing each of the four passes (eliminate $\varepsilon$-productions, eliminate unit
-    productions, break long right-hand sides, isolate terminals).
-  \item Draw the two distinct parse trees for
-    $\mathbf{if}\ b_1\ \mathbf{then}\ \mathbf{if}\ b_2\ \mathbf{then}\ S_1\ \mathbf{else}\
-    S_2$ under the \emph{original ambiguous} dangling-else grammar from file 02, then
-    confirm by hand that only one of those two trees is derivable under the fixed
-    $M$/$U$ grammar in this file.
-  \item Extend the $a^nb^n$ PDA in this section to a PDA for $\{a^nb^{2n} \mid n \ge 0\}$
-    (hint: push two markers per $a$, or otherwise adjust how many pops each $b$ performs).
-  \item Use the CFL pumping lemma to show $\{ a^ib^jc^k \mid i < j < k \}$ is not
-    context-free. Follow the adversary structure explicitly.
-  \item $L_1 \cap L_2$ can fail to be context-free even when $L_1, L_2$ are, but what if
-    one of the two languages is \emph{regular} instead of merely context-free? Look up (or
-    conjecture and then check) whether CFLs are closed under intersection with a regular
-    language, and sketch why the product-construction idea from file 03 does or doesn't
-    carry over.
-  \item Is every context-free language also context-sensitive (Type 1 in the Chomsky
-    hierarchy from file 02)? Justify your answer by relating the CNF production shapes to
-    the context-sensitive production shape $\alpha A \beta \to \alpha\gamma\beta$.
-\end{itemize}
+\begin{exercise}
+Write a context-free grammar for well-formed logical formulas (WFF):
+propositional letters ($p, q, r, s, \dots$) are WFF; if $\alpha$ is a WFF, so is
+$\neg\alpha$; if $\alpha$ and $\beta$ are WFF, so is $\alpha \star \beta$ with $\star \in
+\{\vee, \Rightarrow, \wedge\}$; if $\alpha$ is a WFF, so is $(\alpha)$. Is the grammar
+ambiguous?
+\end{exercise}
+
+\paragraph{Solution.} The lecture's grammar follows the four cases:
+\coderange{Rascal}{rascal/src/CFL.rsc}{wff}
+It is ambiguous: $p \wedge q \vee r$ has a tree with $p \wedge q$ as the left
+operand of $\vee$ and another with $q \vee r$ as the right operand of $\wedge$. To
+remove the ambiguity, give the operators levels as in the expression grammar
+(for example $\neg$, then $\wedge$, then $\vee$, then $\Rightarrow$), or require
+parentheses around every binary formula.
+
+\begin{exercise}
+Write a pushdown automaton for the language of WFF. Use the symbols of the
+lecture's Gold code: $p$ to $s$ for letters, \texttt{N} for $\neg$ and
+\texttt{A}, \texttt{O}, \texttt{I} for $\wedge$, $\vee$, $\Rightarrow$.
+\end{exercise}
+
+\paragraph{Solution.} Two states are enough (Figure~\ref{fig:wff-pda}). In E the
+automaton expects a formula: a letter completes one, \texttt{N} expects
+another, and \texttt{(} pushes a marker and expects the formula inside. In F a
+formula has just been completed: an operator expects the right operand, and
+\texttt{)} closes a parenthesis by popping its marker. F is final, so a word is
+recognized when it ends after a complete formula with all parentheses closed.
+\coderange{Rascal}{rascal/src/PDA.rsc}{wff}
+The tests compare this PDA with a direct recognizer of the grammar on every
+word of length up to 5 over $\{p, \texttt{N}, \texttt{A}, (, )\}$.
+
+The lecture's automaton has four states, and D, the state reached after an
+operator, is final. It accepts \texttt{A} (the operator alone) and \texttt{pA}
+($p \wedge$ with no right operand), which are not formulas. It also handles only
+the letter $p$ and the operator \texttt{A}.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=4cm, auto]
+  \node[state, initial] (E) {E};
+  \node[state, accepting, right=of E] (F) {F};
+  \path[->]
+    (E) edge[bend left] node {$p..s$, ignore} (F)
+    (F) edge[bend left] node {\texttt{A}, \texttt{O}, \texttt{I}, ignore} (E)
+    (E) edge[loop above] node[align=center] {\texttt{N}, ignore\\ \texttt{(}, push(P)} ()
+    (F) edge[loop above] node {\texttt{)}, pop(P)} ();
+\end{tikzpicture}
+\caption{PDA for well-formed formulas.}
+\label{fig:wff-pda}
+\end{figure}
+
+\begin{exercise}
+Write a pushdown automaton for the expressions of the grammar
+\texttt{Exp ::= Exp + Term | Term}, \texttt{Term ::= Term * Fact | Fact},
+\texttt{Fact ::= ( Exp ) | (0..9)+}.
+\end{exercise}
+
+\paragraph{Solution.} Apply the construction from grammars: one state $q$ with a
+transition $\lambda$, changeTop($A$, $\beta$) for each rule $A ::= \beta$ and a
+transition $a$, pop($a$) for each terminal. With numbers written as the single
+digit 1:
+\coderange{Rascal}{rascal/src/PDA.rsc}{expgrammar}
+\texttt{fromGrammar(exp, "Exp")} is the automaton. The left recursion is not a
+problem for the PDA because it is nondeterministic, but a deterministic
+top-down parser would loop on \texttt{Exp ::= Exp + Term}, which is why the
+next block removes it.
+
+\begin{exercise}
+Which words of length at most 4 does $\mathcal{G}_{2'}$ generate? Give a parse
+tree for $baab$.
+\end{exercise}
+
+\paragraph{Solution.} The words with as many $a$'s as $b$'s: $\lambda$, $ab$, $ba$,
+$aabb$, $abab$, $abba$, $baab$, $baba$, $bbaa$. For $baab$:
+$S \Rightarrow bA \Rightarrow baS \Rightarrow baaB \Rightarrow baabS \Rightarrow baab$, so the
+tree is $S(b, A(a, S(a, B(b, S(\lambda)))))$.
+
+\begin{exercise}
+Fix the Grace grammar so that it generates the method of the lecture,
+including the assignment \texttt{x := x - 1}.
+\end{exercise}
+
+\paragraph{Solution.} Make the second line a rule of \texttt{Exp},
+\texttt{Exp ::= Ident | Num | print(Exp)}, and add
+\texttt{Stmt ::= Ident := Exp}. To generate the final call \texttt{run}, add a
+rule for programs, \texttt{Program ::= S \textbackslash n Ident}, and make
+\texttt{Program} the initial symbol.
+
+\begin{exercise}
+Use the pumping lemma to show that $\{a^m b^n c^m d^n \mid m, n \ge 0\}$ is not
+context-free.
+\end{exercise}
+
+\paragraph{Solution.} Take $\omega = a^k b^k c^k d^k$. Since $|\nu\beta\mu| \le k$, the
+part $\nu\beta\mu$ touches at most two adjacent blocks. If it touches the $a$'s
+(or the $c$'s) but not the $c$'s (or the $a$'s), pumping with $n = 0$ changes
+the number of $a$'s without changing the number of $c$'s, or the other way
+around. The same holds for $b$'s and $d$'s. In every case the pumped word is
+not in the language.

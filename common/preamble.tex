@@ -14,7 +14,7 @@
 \usepackage{caption}
 \usepackage{forest}
 \usepackage{tikz}
-\usetikzlibrary{automata, positioning, arrows.meta, calc, fit, shapes.geometric, shapes.multipart, matrix}
+\usetikzlibrary{automata, positioning, arrows.meta, calc, fit, shapes.geometric, shapes.multipart, matrix, decorations.pathreplacing}
 \usepackage{listings}
 \usepackage[hidelinks]{hyperref}
 
@@ -53,7 +53,9 @@
   xrightmargin=1em,
   captionpos=b,
   upquote=true,
-  rangeprefix={<<},
+  literate={¬}{{$\neg$}}1 {λ}{{$\lambda$}}1 {→}{{$\to$}}1 {∨}{{$\vee$}}1
+    {∧}{{$\wedge$}}1 {⇒}{{$\Rightarrow$}}1 {♭}{{$\flat$}}1 {♯}{{$\sharp$}}1
+    {≤}{{$\le$}}1 {≥}{{$\ge$}}1 {⊢}{{$\vdash$}}1 {α}{{$\alpha$}}1 {β}{{$\beta$}}1,
   rangesuffix={>>},
   includerangemarker=false,
 }
@@ -92,7 +94,18 @@
 }
 
 % \codefile{lenguaje}{archivo} incluye un archivo completo de code/.
-% \coderange{lenguaje}{archivo}{marca} incluye solo el bloque entre
-% las líneas "<<marca>>" y "<<marca-end>>" del archivo.
+% \coderange{lenguaje}{archivo}{marca} incluye solo las líneas entre los
+% comentarios "<<marca>>" y "<<marca.end>>" (la marca sin guiones) del archivo. El prefijo del
+% comentario depende del lenguaje.
+\lstdefinestyle{range-Rascal}{rangeprefix=//\ <<}
+\lstdefinestyle{range-Scheme}{rangeprefix=;;\ <<}
+\lstdefinestyle{range-CommonLisp}{rangeprefix=;;\ <<}
+\lstdefinestyle{range-Python}{rangeprefix=\#\ <<}
+\lstdefinestyle{range-Haskell}{rangeprefix=--\ <<}
+\lstdefinestyle{range-SQL}{rangeprefix=--\ <<}
+\lstdefinestyle{range-C}{rangeprefix=//\ <<}
+\lstdefinestyle{range-Java}{rangeprefix=//\ <<}
+\lstdefinestyle{range-bash}{rangeprefix=\#\ <<}
 \newcommand{\codefile}[2]{\lstinputlisting[language=#1]{code/#2}}
-\newcommand{\coderange}[3]{\lstinputlisting[language=#1, linerange={#3-#3-end}]{code/#2}}
+\newcommand{\coderange}[3]{%
+  \lstinputlisting[language=#1, style=range-#1, linerange={#3-#3.end}]{code/#2}}
