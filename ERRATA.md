@@ -32,6 +32,14 @@ La numeración de diapositivas es la que aparece impresa en cada diapositiva, qu
 | 6-context_free_languages, diap. 55 | "Working automaton": `changeTop("$", "bSa")` | Con la definición de changeTop, eso quita el `$` del fondo y el `pop("$")` final nunca ocurre: el autómata no reconoce ninguna palabra. |
 | 6-context_free_languages, diap. 64 | Gramática LDBL | No genera su propio ejemplo: `Name ::= (a..z)` y `Value ::= (0..9)` son de un solo carácter, la regla `Add` dice `image` donde el ejemplo dice `name`, y `Pairs` no tiene repetición. |
 | 6-context_free_languages, diap. 69 | Prueba de que a^m b^m c^m no es libre de contexto | Empieza con "Suppose L is regular", repite el lema regular y dice que νβμ cae dentro de un solo bloque, lo que deja por fuera los casos 4 y 5 de su propia figura. |
+| 7-lexers, diap. 48 | Scanning de Wilhelm: `... Aop("")Intconst("7") ...` | El operador es la resta: `Aop("-")`. |
+| 8-parsing, diap. 19 | "The first function of a string α ∈ (N ∪ Σ)" y "λ ∈ first(α1), … , first(Xi−1)" | El argumento es una cadena, α ∈ (N ∪ Σ)*, y el índice es α_{i−1}. |
+| 8-parsing, diap. 20 | "For productions A::=αBβ or A::=αBβ such that λ ∈ first(β)" | El primer caso es A ::= αB. |
+| 8-parsing, diap. 26 | "add A::=α to M[A, α]" | M[A, σ]: la columna es el terminal σ ∈ first(α). |
+| 9-semantic_analysis, diap. 17 (pág. 29) | `Exp ::= Term Terms` con `Terms.ptr := Term.ptr` | `Terms.st := Term.ptr`: el operando izquierdo va en el atributo heredado. |
+| 9-semantic_analysis, diap. 17 | `FafctTerm.ptr := Fact.ptr` | `FactTerm.st := Fact.ptr`. |
+| 9-semantic_analysis, diap. 17 | `FactTerm1.st := make_bin_op("*", Fact.st, FactTerm2.ptr)` (igual para `/`) | `FactTerm2.st := make_bin_op("*", FactTerm1.st, Fact.ptr)`, como en las reglas de `Terms`. |
+| 9-semantic_analysis, diap. 17 | `Fact ::= Exp` | `Fact ::= (Exp)`. |
 
 ## Repo
 

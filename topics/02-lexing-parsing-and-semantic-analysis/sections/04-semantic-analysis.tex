@@ -1,271 +1,307 @@
 % !TeX root = ../main.tex
 \section{Semantic analysis}
+\label{sec:semantic}
 
-The parser gives you a tree that's syntactically valid --- it obeys the grammar. That's a
-much weaker guarantee than most people assume. \texttt{y = x + 1} parses perfectly fine
-whether or not \texttt{x} was ever declared, and \texttt{f(1, 2, 3)} parses fine whether
-\texttt{f} takes three arguments or none. \textbf{Semantic analysis} is the compiler phase
-that sits between parsing and code generation (or, for an interpreter, between parsing and
-evaluation) and catches everything the grammar structurally cannot express.
+Semantic analysis checks the rules that the grammar cannot express. Some
+checks happen when the program is compiled (static analysis) and others when
+it runs (dynamic analysis).
 
-\subsection{why the grammar isn't enough}
+\subsection{Static analysis}
 
-A context-free grammar describes \emph{shape}: sequences, nesting, which tokens can follow
-which. It has no memory of what happened earlier in the program beyond the shape of the
-tree so far. ``This identifier must have appeared in an earlier declaration'' is not a
-shape constraint --- it requires comparing this use of \texttt{x} against every declaration
-that came before it, across arbitrarily much of the program. That's exactly what makes it
-a \textbf{context-sensitive} check rather than a context-free one: whether \texttt{x = 1}
-is legal depends on context (was \texttt{x} declared?) that the grammar has no way to
-smuggle into a production rule. The same is true for ``this call must supply the right
-number of arguments'' and ``this operator's operands must have compatible types.'' None of
-these can be written as $A ::= \alpha$ productions over a finite alphabet of token kinds;
-they need auxiliary data structures that persist across the whole tree. That auxiliary
-data structure is the \textbf{symbol table}.
+Static analysis enforces semantic rules at compile time. Violating one of
+these rules usually produces a compile error. Typical rules are the
+visibility of variables, the checks on identifiers and other context
+conditions, such as the number and types of the arguments of a call.
 
-\subsection{symbol tables}
+\paragraph{Validity and visibility rules.} When the compiler finds a variable,
+as in \texttt{x = x + 1;}, it has to determine which declaration the name
+refers to and whether that declaration is accessible at that point. In
+\begin{lstlisting}
+... {
+  x = 5;
+  x;
+}
+\end{lstlisting}
+the question is whether a declaration of \texttt{x} is visible inside the
+block. The lecture's harder case is a loop inside a loop with the same
+variable:
+\coderange{C}{c/nested_for.c}{nested}
+In C and C++ each \texttt{for} opens a block, and the inner \texttt{int i}
+declares a new variable that hides the outer one inside the inner loop. The
+program prints $0, 1, \dots, 19$ ten times: 200 lines. The file
+\texttt{nested\_for.c} checks the count. In Java the same code does not compile:
+\texttt{variable i is already defined in method main(String[])}. Java forbids
+a local variable from hiding another local variable of the same method. The
+syntax is the same in both languages; the visibility rules are different.
 
-\begin{definition}[Symbol table]
-A \emph{symbol table} maps names to the information declarations attach to them: at
-minimum, a \emph{kind} (variable, function, type), a \emph{type}, and the \emph{location}
-where it was declared (for error messages). Symbol tables are organized as a chain (or
-stack) of \emph{scopes}, one per nested block, function, or module.
+\paragraph{Symbol tables chained by blocks.} The compiler keeps one table per
+block and chains each table to the table of the enclosing block. In the
+lecture's C example
+\begin{lstlisting}[language=C]
+int a; int b;                 // block 1
+void p(); void q();
+void p()
+{ int a; int c; }             // block 2
+int c; int d;
+void q()
+{ int a; int d;               // block 3
+  void r()
+  { int a; int c; }           // block 4
+}
+\end{lstlisting}
+at the point inside block 4 the chain is the one of Figure~\ref{fig:chain}.
+Block 2 is not in it: it was closed before block 3 started. A name is
+searched from the innermost table outward, so \texttt{a} refers to the
+declaration in block 4, \texttt{d} to the one in block 3 and \texttt{b} to
+the global one.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[tab/.style={draw, rectangle split, rectangle split parts=#1, font=\small\ttfamily, minimum width=1.2cm}]
+  \node[draw, font=\small] (b4) at (0,0) {4};
+  \node[draw, font=\small] (b3) at (3,0) {3};
+  \node[draw, font=\small] (b1) at (6,0) {1};
+  \node[tab=2, below=0.4cm of b4] (t4) {a\nodepart{two}c};
+  \node[tab=3, below=0.4cm of b3] (t3) {a\nodepart{two}d\nodepart{three}r};
+  \node[tab=6, below=0.4cm of b1] (t1) {a\nodepart{two}b\nodepart{three}c\nodepart{four}d\nodepart{five}p\nodepart{six}q};
+  \draw[flecha] (b4) -- (b3);
+  \draw[flecha] (b3) -- (b1);
+  \draw (b4) -- (t4);
+  \draw (b3) -- (t3);
+  \draw (b1) -- (t1);
+\end{tikzpicture}
+\caption{The chain of symbol tables inside block 4.}
+\label{fig:chain}
+\end{figure}
+
+\subsection{Identification of identifiers}
+
+\begin{definition}
+The \textbf{identification of identifiers} links each applied occurrence of
+an identifier (a use) to a defining occurrence (its declaration), or finds
+that no such link exists or that more than one exists.
 \end{definition}
 
-Lookup walks the chain from the innermost scope outward and returns the first match ---
-which is precisely how \textbf{shadowing} works: an inner declaration of \texttt{x} hides
-an outer one for the rest of the inner scope, and the outer \texttt{x} reappears once the
-inner scope ends.
+Identification is based on six operations on the symbol table
+(Table~\ref{tab:symtab-ops}).
 
-\begin{lstlisting}[language=Python]
-class SymbolTable:
-    def __init__(self):
-        self.scopes = [{}]          # a stack of dicts; scopes[-1] is innermost
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l p{0.62\textwidth}}
+  \toprule
+  Operation & Meaning \\
+  \midrule
+  \texttt{create\_table()}      & creates an empty symbol table \\
+  \texttt{enter\_block()}       & registers the opening of a new block \\
+  \texttt{exit\_block()}        & resets the table to its state before the last \texttt{enter\_block} \\
+  \texttt{enter\_id(id, ref)}   & enters \texttt{id} in the current block, with the reference \texttt{ref} to its declaration node \\
+  \texttt{search\_id(id)}       & searches the defining occurrence of \texttt{id} in all the open blocks, innermost first; returns the reference or null \\
+  \texttt{search\_block\_id(id)} & searches \texttt{id} only in the current block; returns the reference or null \\
+  \bottomrule
+\end{tabular}
+\caption{Operations on the symbol table.}
+\label{tab:symtab-ops}
+\end{table}
 
-    def enter_scope(self):
-        self.scopes.append({})
+In Rascal, with the table as a list of maps (the head is the current block):
+\coderange{Rascal}{rascal/src/Scopes.rsc}{table}
 
-    def exit_scope(self):
-        self.scopes.pop()
+The lecture's language is
+\coderange{Rascal}{rascal/src/Scopes.rsc}{grammar}
+and the word is \texttt{int a; \{ a = 4; int bar; \}}. Its parse tree is in
+Figure~\ref{fig:scopes-tree}. In the attribute grammar of the lecture each
+identifier leaf is a record $\langle \mathit{identifier}, \mathit{name}, \mathit{ref},
+\mathit{succs}\rangle$ with the concrete name, a reference to its declaration and
+the list of successors, and each interior node is $\langle \mathit{succs}, \mathit{rhs}\rangle$,
+its children and the right side of the rule that produced it. The lexer
+gives the identifier tokens their position: \texttt{<Id, bar, (l,c)>}.
 
-    def declare(self, name, kind, type_, line):
-        current = self.scopes[-1]
-        if name in current:
-            raise SemanticError(
-                f"line {line}: '{name}' is already declared in this scope "
-                f"(first declared at line {current[name]['line']})"
-            )
-        current[name] = {"kind": kind, "type": type_, "line": line}
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=2mm, l sep=4mm},
+  [Block
+    [Decl [Type [int]] [id\textsubscript{a}] [;]]
+    [Block
+      [Stat
+        [\{]
+        [Block
+          [Stat [id\textsubscript{a}] [=] [E [4]] [;]]
+          [Block [Decl [Type [int]] [id\textsubscript{bar}] [;]] [Block [$\lambda$]]]
+        ]
+        [\}]
+      ]
+      [Block [$\lambda$]]
+    ]
+  ]
+\end{forest}
+\caption{Parse tree of \texttt{int a; \{ a = 4; int bar; \}}.}
+\label{fig:scopes-tree}
+\end{figure}
 
-    def lookup(self, name):
-        for scope in reversed(self.scopes):   # innermost first: shadowing
-            if name in scope:
-                return scope[name]
-        return None   # not found in any enclosing scope
+Each node has a procedure \texttt{process()} that does its part of the
+identification, according to the rule of the node:
+\begin{lstlisting}
+process() {
+  Decl ref;
+  switch (rhs) {
+    case "Type id;":
+      ref := table.search_block_id(succs[1].id);
+      if (ref != null) error();               // declared twice in this block
+      else table.enter_id(succs[1].id, this);
+      return;
+    case "id = E;":
+      ref := table.search_id(succs[0].id);
+      if (ref == null) error();               // not declared
+      else succs[0].ref := ref;
+      return;
+    case "{ Block }":
+      table.enter_block();
+      succs[1].process();
+      table.exit_block();
+      return;
+  }
+}
 \end{lstlisting}
+A declaration uses \texttt{search\_block\_id}: a name may be declared again in
+an inner block (it hides the outer one), but not twice in the same block. A
+use must use \texttt{search\_id}, because the declaration may be in any
+enclosing block. On slide 37 the case \texttt{"id=E;"} uses
+\texttt{search\_block\_id}; with that version the use of \texttt{a} inside the
+block finds nothing, because \texttt{a} is declared in the outer block, and the
+correct program is reported as wrong. Table~\ref{tab:process} follows the
+corrected version on the lecture's word.
 
-Two things to notice. First, \texttt{declare} only checks the \emph{current} (innermost)
-scope for a conflict --- redeclaring a name that exists in an \emph{outer} scope is legal
-shadowing, not an error. Second, \texttt{lookup} iterates \texttt{reversed(self.scopes)},
-innermost first, which is the entire implementation of shadowing: the first match wins,
-and the first match is always the closest enclosing declaration.
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l}
+  \toprule
+  Node processed & Operation & Table after (current block first) \\
+  \midrule
+  start              & \texttt{create\_table()}                 & [ \{\} ] \\
+  \texttt{int a;}    & \texttt{search\_block\_id(a)} = null, \texttt{enter\_id(a, 1)} & [ \{a$\mapsto$1\} ] \\
+  \texttt{\{}        & \texttt{enter\_block()}                  & [ \{\}, \{a$\mapsto$1\} ] \\
+  \texttt{a = 4;}    & \texttt{search\_id(a)} = 1, so \texttt{a.ref := 1} & [ \{\}, \{a$\mapsto$1\} ] \\
+  \texttt{int bar;}  & \texttt{search\_block\_id(bar)} = null, \texttt{enter\_id(bar, 2)} & [ \{bar$\mapsto$2\}, \{a$\mapsto$1\} ] \\
+  \texttt{\}}        & \texttt{exit\_block()}                   & [ \{a$\mapsto$1\} ] \\
+  \bottomrule
+\end{tabular}
+\caption{Identification on \texttt{int a; \{ a = 4; int bar; \}}.}
+\label{tab:process}
+\end{table}
 
-\subsection{name resolution}
+In Rascal, \texttt{process} walks the items of each block. The option
+\texttt{slideVersion} switches the search of uses to \texttt{search\_block\_id},
+and the test \texttt{slideError} shows the false error it produces:
+\coderange{Rascal}{rascal/src/Scopes.rsc}{process}
 
-\textbf{Name resolution} is the process of deciding, for every use of an identifier, which
-declaration it refers to. This is essentially the same problem $\alpha$-equivalence solves
-in the lambda calculus (see the Type Systems block): there, a bound variable's identity is
-determined by which $\lambda$ encloses it, and renaming a bound variable consistently
-changes nothing. Here, we don't get to work purely syntactically --- programs have
-non-nested constructs like assignment and separately-compiled modules --- so we resolve
-names against an explicit symbol table instead of by counting enclosing binders. But the
-question being answered is the same one: \emph{which binding does this occurrence of
-\texttt{x} refer to?} Once that question is answered for every occurrence, you can (at
-least conceptually) replace every name with a direct pointer to its declaration, exactly
-as $\alpha$-renaming replaces a variable name with a canonical one.
+\paragraph{Decorated ASTs.} This paragraph goes beyond the slides. The result
+of semantic analysis is the same tree with more information: the \texttt{ref}
+of each use, the type of each expression, the kind of each operator (integer
+or floating-point addition). Later phases read these annotations instead of
+computing them again.
 
-\subsection{type checking as a semantic pass}
+\subsection{Dynamic analysis}
 
-Type checking is semantic analysis too --- it's simply the specific pass that computes a
-type for every expression node and rejects the program if any operator is applied to
-operands it doesn't accept. The Type Systems block develops the rules for \emph{what}
-counts as well-typed in detail (judgments of the form $\Gamma \vdash e : \tau$, and how
-$\Gamma$ itself is built up); what matters here is where those rules get applied: as a
-walk over the very same AST that parsing built, consulting the very same symbol table that
-name resolution uses (in most implementations $\Gamma$ \emph{is} the symbol table, or a
-thin wrapper around it). Name resolution and type checking are often done in the same
-tree walk, since resolving a name and asking for its declared type are two questions the
-symbol table answers with one lookup.
+Some rules can only be checked while the program runs: division by zero,
+array indices out of bounds. Dynamic analysis is code that the compiler
+generates, or that the programmer writes, to enforce them at run time. The
+lecture names three forms.
 
-\subsection{decorated ASTs}
+\paragraph{Assertions.} A condition checked at a point of the program:
+\coderange{C}{c/division.c}{division}
+If the condition is false the program stops with a message that says where.
 
-Semantic analysis doesn't build a new tree; it \textbf{decorates} (or \emph{attributes})
-the one the parser already produced, attaching derived information to nodes so that later
-phases don't have to recompute it. Take the assignment $\assign{x}{\deref{x}+1}$ from the
-previous section's AST: after semantic analysis, the \textsc{Assign} node might carry an
-extra field recording that $x$ has type $\tyint$, the \textsc{Deref} node might carry a
-resolved reference to $x$'s exact symbol-table entry (which scope, which slot), and the
-$+$ node might carry the fact that it's specifically \emph{integer} addition, as opposed
-to whatever overload string concatenation would use. Code generation (or, for an
-interpreter, evaluation) then never has to re-derive any of this --- it just reads the
-annotations off the tree.
+\paragraph{Invariants.} A condition that must hold every time the program
+passes through a point, for example at the start of each iteration of a
+loop. For a loop that adds the first $n$ numbers, $s = 0 + 1 + \dots + (i - 1)$
+holds at the start of every iteration.
 
-\subsection{a glance at data-flow analysis}
+\paragraph{Pre- and postconditions.} Conditions that must hold before and after
+a piece of code. In the lecture's example
+\[
+\{x \le 10\}\ \ \texttt{while (x < 10) x = x + 1;}\ \ \{x = 10\}
+\]
+if $x \le 10$ before the loop, then $x = 10$ after it. The semantics block
+returns to this notation (Hoare triples), where these conditions are proven
+instead of checked.
 
-Symbol tables and type checking answer questions about individual declarations and uses.
-A broader family of techniques, \textbf{data-flow analysis}, answers questions about how
-values move through a program's control flow. Two examples, kept deliberately informal ---
-the full lattice-theoretic machinery for these is out of scope here:
+\subsection{More static analyses}
 
-\textbf{Reaching definitions.} A definition (an assignment to a variable) \emph{reaches} a
-point in the program if there's a control-flow path from the definition to that point
-along which the variable is never reassigned. In
+This subsection goes beyond the slides.
+
+\paragraph{Kinds of semantic errors.} Besides undeclared names and names
+declared twice in a block, which the identification above detects, static
+analysis reports arity mismatches (a call with a different number of
+arguments than the declaration) and type mismatches (\texttt{3 + true}). The
+lookup of a name can be written as two rules over the symbol table $\Gamma$:
+\begin{mathpar}
+\inferrule*[right=Found]{(x : \tau) \in \Gamma}{\Gamma \vdash x \Rightarrow \tau}
+\and
+\inferrule*[right=Undeclared]{x \notin \mathrm{dom}(\Gamma)}{\Gamma \vdash x \Rightarrow \textsc{undeclared}}
+\end{mathpar}
+When $\Gamma$ is a chain $\Gamma_{\mathit{inner}} :: \Gamma_{\mathit{outer}}$, the search
+looks at $\Gamma_{\mathit{inner}}$ first, which gives shadowing.
+
+\paragraph{Data-flow analysis.} Other analyses follow how values move through
+the program. A definition (an assignment) \emph{reaches} a point if some path
+goes from the definition to the point without reassigning the variable. In
 \begin{lstlisting}
 x = 1;
 y = x;
 x = 2;
 print(x);
 \end{lstlisting}
-the definition \texttt{x = 1} reaches \texttt{y = x} (nothing reassigns \texttt{x} in
-between) but does \emph{not} reach \texttt{print(x)}, because \texttt{x = 2} overwrites it
-first. This is the analysis that underlies ``use of possibly-uninitialized variable''
-warnings: if \emph{no} definition of \texttt{x} reaches a use, that use is definitely
-reading garbage.
-
-\textbf{Liveness.} A variable is \emph{live} at a point if its current value might still
-be read later, along some execution path, before being overwritten. In
-\begin{lstlisting}
-x = 1;
-y = 2;
-print(x);
-\end{lstlisting}
-\texttt{y} is never live after its own assignment --- nothing ever reads it before the
-program ends, so a compiler is free to report ``unused variable'' or simply not allocate a
-register for it. \texttt{x}, by contrast, is live between its assignment and the
-\texttt{print}.
-
-Both analyses are computed by propagating facts along the control-flow graph until nothing
-changes (a fixpoint), and both are used constantly in real compilers for dead-code
-elimination, register allocation, and uninitialized-variable warnings. Scott's
-\emph{Programming Language Pragmatics} gives a good survey-level treatment if you want to
-go further than this course does.
-
-\subsection{a taxonomy of semantic errors}
-
-\begin{itemize}
-  \item \textbf{Undeclared variable use}: a name is read or assigned without ever being
-    declared in an enclosing scope. \texttt{lookup} returns nothing for every scope on the
-    chain.
-  \item \textbf{Redeclaration conflict}: a name is declared twice in the \emph{same}
-    scope (not shadowing --- an actual conflict within one scope). \texttt{declare} finds
-    the name already present in \texttt{self.scopes[-1]}.
-  \item \textbf{Arity mismatch}: a call supplies a different number of arguments than the
-    callee's declaration specifies. \texttt{f(1, 2, 3)} against a declaration
-    \texttt{f(a, b)} of two parameters.
-  \item \textbf{Type mismatch}: an operator or call is applied to operands of the wrong
-    type, e.g.\ passing a string where an \texttt{int} parameter is declared, or writing
-    \texttt{3 + true}.
-\end{itemize}
-
-The lookup rules driving the first two can be stated as inference rules over an
-environment $\Gamma$ (the symbol table), in the same style used for the operational
-semantics elsewhere in these notes:
-\[
-\infer[\textsc{Lookup-Found}]
-  {\Gamma \vdash x \Rightarrow \tau}
-  {(x : \tau) \in \Gamma}
-\qquad
-\infer[\textsc{Lookup-Error}]
-  {\Gamma \vdash x \Rightarrow \textsc{undeclared}}
-  {x \notin \mathrm{dom}(\Gamma)}
-\]
-and shadowing is simply what happens when $\Gamma$ is a \emph{chain} of environments
-$\Gamma_{\mathrm{inner}} :: \Gamma_{\mathrm{outer}}$ and lookup searches
-$\Gamma_{\mathrm{inner}}$ before $\Gamma_{\mathrm{outer}}$: the same rule
-\textsc{Lookup-Found} applies, just to whichever link in the chain has $x$ in its domain
-first.
-
-\subsection{a worked example}
-
-Take the following snippet, in the toy language from the lexing/parsing sections, and run
-it through a symbol-table-driven checker:
-
-\begin{lstlisting}
-def add(a, b) {
-  return a + b;
-}
-
-def add(x, y) {        # (1)
-  return x - y;
-}
-
-x = 5;
-result = add(x, z);    # (2)
-bad = add(x);          # (3)
-\end{lstlisting}
-
-Walking the program top to bottom against the machinery above:
-
-\begin{enumerate}
-  \item The first \texttt{def add(a, b)} calls \texttt{declare("add", "function", \ldots)}
-    in the global scope; nothing is there yet, so it succeeds and \texttt{add} now maps to
-    an entry recording arity 2.
-  \item The second \texttt{def add(x, y)} calls \texttt{declare("add", \ldots)} again, in
-    the \emph{same} (global) scope. \texttt{"add"} is already a key in
-    \texttt{self.scopes[-1]}, so this raises the \textbf{redeclaration} error:
-    \texttt{'add' is already declared in this scope (first declared at line 1)}.
-  \item \texttt{x = 5;} declares \texttt{x} in the global scope; this succeeds, no
-    conflict.
-  \item \texttt{result = add(x, z);}: resolving \texttt{x} walks the scope chain and finds
-    it (declared two lines above). Resolving \texttt{z} walks the \emph{entire} chain ---
-    global scope, no enclosing scopes above it --- and finds nothing. That's an
-    \textbf{undeclared variable} error on \texttt{z}.
-  \item \texttt{bad = add(x);}: \texttt{add}'s symbol-table entry (from its first, valid
-    declaration) records arity 2. This call site supplies 1 argument. That mismatch is an
-    \textbf{arity} error: \texttt{'add' expects 2 arguments, got 1}.
-\end{enumerate}
-
-Three genuinely different problems, caught by three different pieces of the same symbol
-table --- a name conflict inside one scope, a lookup that fails across the whole chain,
-and a mismatch between a call site and a declaration's recorded shape. None of these are
-expressible as ``the token sequence doesn't match a production,'' which is exactly why
-they need their own compiler phase instead of living in the grammar.
+\texttt{x = 1} reaches \texttt{y = x} but not \texttt{print(x)}. If no definition
+of a variable reaches a use, the use reads an uninitialized variable. A
+variable is \emph{live} at a point if its current value may be read later
+before being overwritten; a variable that is never live after an assignment
+was assigned for nothing. Both analyses propagate facts along the
+control-flow graph until nothing changes, like FIRST and FOLLOW.
 
 \subsection{Exercises}
-\begin{itemize}
-  \item Given
-    \begin{lstlisting}
-x = 1;
-{
-  x = 2;
-  y = x + 1;
-}
-z = y;
-    \end{lstlisting}
-    assuming \texttt{\{ \}} introduces a new scope, list every declaration, every
-    shadowing event, and every semantic error a checker like the one above would report.
-  \item Try to write a context-free production that enforces ``every variable must be
-    declared before its first use.'' Explain concretely where the attempt breaks down,
-    and connect that to why this check needs a symbol table instead.
-  \item Extend the \textsc{Lookup-Found}/\textsc{Lookup-Error} rules with an explicit
-    third rule, \textsc{Lookup-Shadow}, for a two-level chain
-    $\Gamma_{\mathrm{inner}} :: \Gamma_{\mathrm{outer}}$, making precise that a hit in
-    $\Gamma_{\mathrm{inner}}$ is used even when $x$ is also bound in $\Gamma_{\mathrm{outer}}$.
-  \item For
-    \begin{lstlisting}
-a = 1;
-b = 2;
-a = b + 1;
-print(a);
-    \end{lstlisting}
-    compute, for the final \texttt{print(a)}, which earlier definition of \texttt{a}
-    reaches it, and identify the point (if any) after which \texttt{b} is no longer live.
-  \item Design the decorated fields you'd attach to a \textsc{Call} node and to an
-    \textsc{Index} (array-access) node in a language with functions and arrays --- what
-    does each node need to remember after semantic analysis so that code generation never
-    has to look anything up again?
-  \item Two of the four errors in the worked example above (redeclaration, undeclared
-    variable) can be detected with the symbol table alone, no type information needed.
-    Which of the remaining two categories in the taxonomy requires type checking
-    specifically, and why can't a bare symbol table (name $\to$ location) catch it?
-\end{itemize}
+
+\begin{exercise}
+What does the nested \texttt{for} of this section print in C? What happens in
+Java? Change the Java version so that it prints the same as the C one.
+\end{exercise}
+
+\paragraph{Solution.} In C, the numbers 0 to 19, ten times. Java rejects the
+program because the inner \texttt{i} would hide a local variable of the same
+method. Renaming the inner variable to \texttt{j} and printing \texttt{j} gives
+the same output.
+
+\begin{exercise}
+For the C program with blocks 1 to 4, give the chain of symbol tables at a
+point inside block 2, and say which declaration each of \texttt{a}, \texttt{b},
+\texttt{c} and \texttt{d} refers to there.
+\end{exercise}
+
+\paragraph{Solution.} The chain is block 2 $\to$ block 1. At that point block 1
+only contains \texttt{a}, \texttt{b}, \texttt{p} and \texttt{q}, because
+\texttt{c} and \texttt{d} are declared later in the text. So \texttt{a} and
+\texttt{c} refer to block 2, \texttt{b} to block 1, and \texttt{d} is not
+declared yet: using it there is an error.
+
+\begin{exercise}
+Run \texttt{process()} on \texttt{int a; \{ int a; a = 1; \} a = 2; b = a;}. Which
+declaration does each use of \texttt{a} refer to, and which errors are
+reported?
+\end{exercise}
+
+\paragraph{Solution.} The inner \texttt{int a;} is allowed: \texttt{search\_block\_id}
+only looks at the inner block. The use \texttt{a = 1} finds declaration 2. After
+\texttt{exit\_block()}, \texttt{a = 2} finds declaration 1. In \texttt{b = a},
+\texttt{search\_id(b)} returns null and an error is reported; \texttt{a} refers to
+declaration 1.
+
+\begin{exercise}
+In the program \texttt{x = 1; y = 2; if (y > 0) x = 3; print(x);}, which
+definitions of \texttt{x} reach \texttt{print(x)}?
+\end{exercise}
+
+\paragraph{Solution.} Both. If the condition is false, \texttt{x = 1} reaches the
+\texttt{print}; if it is true, \texttt{x = 3} does. A static analysis does not
+know the value of \texttt{y} in general, so it keeps both.

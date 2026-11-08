@@ -1,320 +1,559 @@
 % !TeX root = ../main.tex
-\section{Lexical Analysis}
+\section{Lexical analysis}
+\label{sec:lexing}
 
-This is where the pipeline actually starts. Everything in the previous block was about
-languages as sets of strings, recognized by grammars and automata. Now we build the first
-real piece of a language implementation: the component that reads raw text and turns it
-into something a parser can work with.
+A compiler reads a program as a sequence of characters. The first phase, the
+lexical analyzer or lexer, groups the characters into tokens and passes them
+to the parser. This section follows Aho et al.~\cite[Ch.~3]{aho2007compilers},
+Wilhelm, Seidl and Hack~\cite[Ch.~2--3]{wilhelm2013compiler} and
+Nystrom~\cite[Ch.~4--5]{nystrom2021crafting}.
 
-\subsection{what a lexer does}
+\subsection{The lexer in a compiler}
 
-A \textbf{lexer} (also called a \emph{scanner} or \emph{tokenizer}) takes a raw stream of
-characters and groups it into a stream of \textbf{tokens}, discarding anything that isn't
-meaningful --- whitespace, comments, the exact number of spaces you used to indent a line.
-It's the first phase of any compiler or interpreter, and everything downstream (parsing,
-semantic analysis, code generation) works on tokens, never on raw characters again.
+Figure~\ref{fig:compiler} shows where the lexer sits. The parser asks for one
+token at a time (\texttt{getNextToken}); the lexer reads as many characters as
+it needs and returns the next token. Both phases use the symbol table, which
+keeps information about the names of the program. The later phases
+(semantic analysis, optimization and code generation) work on what the parser
+produces.
 
-\begin{definition}[Token]
-A \emph{token} is a pair $(\mathit{kind}, \mathit{lexeme})$, where $\mathit{kind}$ is the
-category of the token (e.g.\ \texttt{NUMBER}, \texttt{IDENT}, \texttt{PLUS}) and
-$\mathit{lexeme}$ is the exact substring of the source text that produced it. Two tokens
-of the same kind can have different lexemes: \texttt{NUMBER(3)} and \texttt{NUMBER(42)}
-are both \texttt{NUMBER} tokens.
-\end{definition}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=1.2cm and 1.6cm, box/.style={draw, minimum width=2.2cm, minimum height=8mm, font=\small}]
+  \node (src) {program text};
+  \node[box, right=of src] (lex) {Lexer};
+  \node[box, right=2.6cm of lex] (par) {Parser};
+  \node[box, right=of par] (rest) {\begin{tabular}{c}semantic analysis,\\optimizer,\\code generation\end{tabular}};
+  \node[box, below=1.3cm of $(lex)!0.5!(par)$] (st) {Symbol table};
+  \draw[flecha] (src) -- (lex);
+  \draw[flecha] ([yshift=2mm]lex.east) -- node[above, font=\small] {token} ([yshift=2mm]par.west);
+  \draw[flecha] ([yshift=-2mm]par.west) -- node[below, font=\small] {getNextToken} ([yshift=-2mm]lex.east);
+  \draw[flecha] (par) -- (rest);
+  \draw[<->, thick] (lex) -- (st);
+  \draw[<->, thick] (par) -- (st);
+\end{tikzpicture}
+\caption{The lexer and the parser in a compiler.}
+\label{fig:compiler}
+\end{figure}
 
-Concretely, given the input
-\begin{lstlisting}
-x = 3 + 42
-\end{lstlisting}
-a lexer produces something like
-\[
-\texttt{IDENT(x)} \;\; \texttt{ASSIGN(=)} \;\; \texttt{NUMBER(3)} \;\;
-\texttt{PLUS(+)} \;\; \texttt{NUMBER(42)} \;\; \texttt{EOF}
-\]
-Five tokens from eleven characters. The spaces are gone, and so is any trace that they
-were ever there --- which is exactly the point. The parser that consumes this stream
-doesn't care how many spaces separated \texttt{x} and \texttt{=}; it only cares about the
-sequence of token kinds.
-
-\subsection{tokens are regular languages, lexers are DFAs}
-
-This is the connection back to the previous block, and it's not a metaphor: it's literally
-the same machinery. Each token category is defined by a regular expression --- identifiers
-match \texttt{[a-zA-Z\_][a-zA-Z0-9\_]*}, integer literals match \texttt{[0-9]+}, the keyword
-\texttt{if} matches the literal string \texttt{if}. A regular expression can be compiled
-into a DFA (via Thompson's construction and then subset construction, if you did that
-exercise in the previous block), and a DFA can decide in one linear pass over the input
-whether a string belongs to the language it recognizes.
-
-A lexer is what you get when you run \emph{all} of these DFAs at once, character by
-character, and at each point ask ``which of these automata are still alive, and which one
-(if any) is in an accepting state right now?'' Lexer generators like \texttt{lex}/\texttt{flex}
-build exactly this: they take a list of regular expressions, one per token kind, and
-compile them into a single combined DFA via a product construction. Wilhelm and Seidel's
-\emph{Compiler Design: Syntactic and Semantic Analysis} works through this construction in
-detail if you want the automaton-theoretic view all the way down; Aho, Lam, Sethi and
-Ullman's \emph{Compilers: Principles, Techniques, and Tools} (the ``Dragon Book'') covers
-the same ground in its lexical analysis chapter.
-
-\subsection{maximal munch}
-
-There's one rule that makes all of this work when several DFAs could match a prefix of
-the input: \textbf{longest match}, also called \textbf{maximal munch}.
-
-\begin{definition}[Maximal munch]
-When more than one prefix of the remaining input matches some token pattern, the lexer
-picks the \emph{longest} one. If two patterns match the same longest prefix, the pattern
-listed first (usually: keywords before identifiers, specific operators before their
-prefixes) wins.
-\end{definition}
-
-The classic example is why \texttt{<=} is one token and not two. Suppose your language has
-both \texttt{<} (less-than) and \texttt{<=} (less-or-equal). When the lexer sees the
-character \texttt{<}, it does \emph{not} immediately emit an \texttt{LT} token. It looks
-one character ahead: if the next character is \texttt{=}, both characters together form a
-longer match (\texttt{<=}), so that's what gets emitted. Get this wrong and
-\texttt{x <= 10} tokenizes as \texttt{LT}, \texttt{ASSIGN}, \texttt{NUMBER} --- which is not
-even close to what the program means.
-
-The same principle governs identifiers versus keywords: \texttt{iffy} is one identifier
-token, not the keyword \texttt{if} followed by the identifier \texttt{fy}. Maximal munch
-says: keep consuming characters as long as the identifier pattern keeps matching. Only once
-you \emph{cannot} extend the match any further do you ask, ``is this exact lexeme one of the
-reserved keywords?''
-
-\subsection{keywords are identifiers with a special case}
-
-This gives the standard recipe for handling keywords, and it's worth stating explicitly
-because it's easy to get backwards. You do \emph{not} write a separate regular expression
-per keyword and try to match those first. Instead:
-
-\begin{enumerate}
-  \item Match the longest possible identifier-shaped lexeme (letters, digits, underscores,
-    not starting with a digit).
-  \item Look the resulting lexeme up in a fixed table of reserved words.
-  \item If it's in the table, emit the corresponding keyword token
-    (\texttt{IF}, \texttt{WHILE}, \texttt{PRINT}, \ldots). Otherwise, emit \texttt{IDENT}.
-\end{enumerate}
-
-This is simpler than it sounds, and it composes correctly with maximal munch: since
-identifiers and keywords share exactly the same character pattern, there is never a
-question of which pattern is ``longer.'' You match once, then classify.
-
-\subsection{whitespace, comments, and position tracking}
-
-Whitespace and comments are recognized and then thrown away; they never become tokens.
-A lexer typically has a small loop that runs before scanning each token: skip spaces,
-tabs, and newlines; if you see a comment marker, skip to the end of the comment (end of
-line, for a line comment; the matching closer, for a block comment) and then go back to
-skipping whitespace, since comments and whitespace can alternate.
-
-Newlines deserve special mention: even though they're discarded like other whitespace,
-the lexer must \emph{count} them, along with columns, to support error messages like
-\texttt{line 4, column 12: unexpected character '\$'}. Without position tracking, every
-error message you produce is useless for anyone actually trying to fix their program ---
-imagine a 200-line file and the only feedback is ``syntax error somewhere.''
-
-\subsection{lexical errors}
-
-A lexical error happens when the current character doesn't start \emph{any} valid token
-pattern --- an illegal character. In most languages this is things like a stray \texttt{\$}
-or \texttt{\textbackslash} that isn't part of any operator, or an unterminated string
-literal that runs off the end of the file before its closing quote. Note the scope of what
-a lexer can catch: it only knows about individual characters and local patterns. It has no
-idea whether \texttt{x} was declared, or whether \texttt{3 + true} type-checks. Those are
-problems for later phases (parsing catches structural nonsense; semantic analysis, covered
-later in this block, catches everything context-dependent).
-
-\subsection{a hand-written lexer}
-
-Let's build one. The toy language has integers, identifiers, the keywords \texttt{if},
-\texttt{else}, \texttt{while}, \texttt{print}, the operators
-\texttt{+ - * / = == != < <= > >=}, punctuation \texttt{( ) \{ \} ; ,}, and \texttt{\#}-style
-line comments.
-
-\begin{lstlisting}[language=Python]
-KEYWORDS = {"if", "else", "while", "print"}
-
-class Token:
-    def __init__(self, kind, lexeme, line, col):
-        self.kind, self.lexeme = kind, lexeme
-        self.line, self.col = line, col
-
-    def __repr__(self):
-        return f"{self.kind}({self.lexeme!r})"
-
-
-class LexError(Exception):
-    def __init__(self, message, line, col):
-        super().__init__(f"line {line}, col {col}: {message}")
-
-
-class Lexer:
-    def __init__(self, source):
-        self.src = source
-        self.pos = 0
-        self.line, self.col = 1, 1
-
-    def peek(self, ahead=0):
-        i = self.pos + ahead
-        return self.src[i] if i < len(self.src) else "\0"
-
-    def advance(self):
-        ch = self.src[self.pos]
-        self.pos += 1
-        if ch == "\n":
-            self.line += 1
-            self.col = 1
-        else:
-            self.col += 1
-        return ch
-
-    def scan(self):
-        tokens = []
-        while True:
-            self._skip_whitespace_and_comments()
-            if self.peek() == "\0":
-                break
-            tokens.append(self._scan_token())
-        tokens.append(Token("EOF", "", self.line, self.col))
-        return tokens
-
-    def _skip_whitespace_and_comments(self):
-        while True:
-            c = self.peek()
-            if c in " \t\r\n":
-                self.advance()
-            elif c == "#":
-                while self.peek() not in ("\n", "\0"):
-                    self.advance()
-            else:
-                return
-
-    def _scan_token(self):
-        line, col = self.line, self.col
-        c = self.advance()
-
-        # --- maximal munch for numbers ---
-        if c.isdigit():
-            lexeme = c
-            while self.peek().isdigit():
-                lexeme += self.advance()
-            return Token("NUMBER", lexeme, line, col)
-
-        # --- maximal munch for identifiers/keywords ---
-        if c.isalpha() or c == "_":
-            lexeme = c
-            while self.peek().isalnum() or self.peek() == "_":
-                lexeme += self.advance()
-            kind = lexeme.upper() if lexeme in KEYWORDS else "IDENT"
-            return Token(kind, lexeme, line, col)
-
-        # --- maximal munch for two-character operators: try the ---
-        # --- two-character form BEFORE falling back to one char ---
-        two_char = {"<=": "LE", ">=": "GE", "==": "EQ", "!=": "NE"}
-        two = c + self.peek()
-        if two in two_char:
-            self.advance()
-            return Token(two_char[two], two, line, col)
-
-        one_char = {
-            "+": "PLUS", "-": "MINUS", "*": "STAR", "/": "SLASH",
-            "=": "ASSIGN", "<": "LT", ">": "GT",
-            "(": "LPAREN", ")": "RPAREN",
-            "{": "LBRACE", "}": "RBRACE",
-            ";": "SEMI", ",": "COMMA",
-        }
-        if c in one_char:
-            return Token(one_char[c], c, line, col)
-
-        raise LexError(f"unexpected character {c!r}", line, col)
-\end{lstlisting}
-
-The whole design is the maximal-munch loop in \texttt{\_scan\_token}: for each category,
-keep consuming characters as long as the category's pattern is still satisfiable, and only
-stop once extending the lexeme by one more character would break the match. The two-char
-operator check is the clearest instance --- it explicitly tries the longer match
-(\texttt{c + peek()}) before falling back to the single character, which is maximal munch
-written out as an \texttt{if} statement.
-
-\subsection{generated vs.\ hand-written lexers}
-
-You didn't have to write that loop by hand. Tools like \texttt{lex} and its modern
-descendant \texttt{flex} take a list of regular expressions with associated actions and
-generate the scanning code (typically a table-driven DFA in C) for you. This is the
-industrial approach: fast, consistent, and mechanically correct once your regular
-expressions are right, because the tool is doing the DFA construction that you'd otherwise
-have to do by hand.
-
-The trade-off is control. A generated lexer is a black box that implements ``longest
-match, first rule wins on ties'' uniformly; if your language needs something irregular ---
-Python's indentation-sensitive blocks, for instance, which need a stack of indent levels
-that isn't expressible as a single DFA --- you end up hand-patching the generated code
-anyway. Robert Nystrom's \emph{Crafting Interpreters} makes the case for writing the lexer
-by hand even for a real language (Lox): the code is short, it's exactly as fast as you need
-for a tree-walking interpreter, and you get precise control over error messages and edge
-cases like indentation or string interpolation. For a small DSL --- the kind you build once
-and iterate on constantly --- hand-written usually wins for the same reason: you'll want to
-tweak error messages and add odd little rules more often than you'll want raw scanning
-throughput.
-
-\begin{example}[Lexing a program by hand]
-Take the following short program in the toy language above:
-\begin{lstlisting}
-x = 3
-if x <= 10 {
-  print x  # done
+The lecture starts from this C program:
+\begin{lstlisting}[language=C]
+int a = 10;
+int b = 20;
+int c = 20;
+float f = 928.2332;
+char b = 'b';
+if(a == b){
+  printf("Hello, World! \"");
+}else if(b!=c){
+  printf("Hello, World! \n Hello, World!");
+}else{
+  printf("Hello\n");
 }
 \end{lstlisting}
-Running it through the lexer produces:
+The lexer does two things with it. The \textbf{scanner} part removes the
+characters that do not matter for the structure: spaces, line breaks used as
+separators, and comments such as \texttt{// first condition} or
+\texttt{/* \dots{} */}. The second part recognizes tokens: \texttt{int} is a type,
+\texttt{a} is an identifier, \texttt{10} is a number, \texttt{"Hello, World! \textbackslash""}
+is a string (the escaped quote does not end it). The first line becomes
+\texttt{int Identifier = Number ;}.
 
+The lexer also detects lexical errors: characters that do not start any token.
+In the lecture's example \texttt{char b = 'b';} is fine, but the next line mixes
+letters and digits with symbols that are not in the alphabet of C. No pattern
+starts with those symbols, so the lexer reports an error there. A lexer only sees characters and local patterns; it
+does not know whether \texttt{b} was declared twice (it was) or whether
+\texttt{a == b} compares values of compatible types. Those are problems for
+the parser and for semantic analysis.
+
+\subsection{Lexemes, patterns and tokens}
+
+\begin{definition}
+A \textbf{lexeme} is a sequence of characters that matches a pattern useful for
+the language. A \textbf{pattern} is a specification of the form that lexemes
+take. A \textbf{token} is a pair $\langle$\textit{token\_name}, \textit{value}$\rangle$,
+where the token name represents a pattern.
+\end{definition}
+
+In the WFF language of the previous block, the rule
+\texttt{Operator ::= $\vee$ | $\wedge$ | $\Rightarrow$} describes the pattern of the token
+\texttt{operator}. The formula
+$(p \vee q) \Rightarrow (p \wedge q) \Rightarrow (\neg q \wedge \neg p)$
+becomes
+\[
+(p\ \mathit{operator}\ q)\ \mathit{operator}\ (p\ \mathit{operator}\ q)\ \mathit{operator}\ (\neg q\ \mathit{operator}\ \neg p).
+\]
+Here the token name alone loses information: to execute the program later,
+the compiler needs to know which operator each one was. The value of the
+token keeps it, and the lexer also records where the token appears.
+Table~\ref{tab:wff-tokens} lists the operators of the formula, written without
+spaces, with their position and their type.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{c c c l}
+  \toprule
+  Lexeme & Row & Column & Type \\
+  \midrule
+  $\vee$        & 1 & 3  & BinOp \\
+  $\Rightarrow$ & 1 & 6  & BinOp \\
+  $\wedge$      & 1 & 9  & BinOp \\
+  $\Rightarrow$ & 1 & 12 & BinOp \\
+  $\wedge$      & 1 & 16 & BinOp \\
+  \bottomrule
+\end{tabular}
+\caption{Operator tokens of $(p{\vee}q){\Rightarrow}(p{\wedge}q){\Rightarrow}(\neg q{\wedge}\neg p)$.}
+\label{tab:wff-tokens}
+\end{table}
+
+Most languages use the same token classes (Table~\ref{tab:token-classes}).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l p{0.68\textwidth}}
+  \toprule
+  Class & Content \\
+  \midrule
+  Identifier & sequences of letters and digits not otherwise recognized \\
+  Number     & numeric constants, usually refined by their type \\
+  String     & string literals, delimited by \texttt{"\dots"} \\
+  Operators  & comparison, arithmetic and boolean operators, usually refined by their type \\
+  Control    & control structures such as \texttt{if} and loops, refined by their kind \\
+  Delimiters & parentheses and punctuation, usually each its own token \\
+  \bottomrule
+\end{tabular}
+\caption{Token classes.}
+\label{tab:token-classes}
+\end{table}
+
+In Rascal a token can be a constructor with its name, its lexeme and its
+position:
+\coderange{Rascal}{rascal/src/Lexer.rsc}{token}
+
+\subsection{Symbol tables}
+
+\begin{definition}
+A \textbf{symbol table} is a data structure used by the compiler to associate
+the symbols of the program with information about their declaration: the
+name, the type, the scope, the memory address, the location in the source,
+the value and any additional information.
+\end{definition}
+
+For \texttt{Area = pi * r ** 2} the lexer produces
+\texttt{<Identifier, 1> <Equal> <Identifier, 2> <Star> <Identifier, 3> <DoubleStar> <Number, 2>},
+where the value of each identifier token is its entry in the symbol table:
 \begin{center}
-\begin{tabular}{lll}
-\hline
-Token & Lexeme & Line \\
-\hline
-\texttt{IDENT}  & \texttt{x}     & 1 \\
-\texttt{ASSIGN} & \texttt{=}     & 1 \\
-\texttt{NUMBER} & \texttt{3}     & 1 \\
-\texttt{IF}     & \texttt{if}    & 2 \\
-\texttt{IDENT}  & \texttt{x}     & 2 \\
-\texttt{LE}     & \texttt{<=}    & 2 \\
-\texttt{NUMBER} & \texttt{10}    & 2 \\
-\texttt{LBRACE} & \texttt{\{}    & 2 \\
-\texttt{PRINT}  & \texttt{print} & 3 \\
-\texttt{IDENT}  & \texttt{x}     & 3 \\
-\texttt{RBRACE} & \texttt{\}}    & 4 \\
-\texttt{EOF}    &                & 5 \\
-\hline
+\small
+\begin{tabular}{c l l l}
+  \toprule
+  Entry & Name & Value & Location \\
+  \midrule
+  1 & \texttt{Area} &                & line 1, column 1 \\
+  2 & \texttt{pi}   & 3.1416         & line 1, column 8 \\
+  3 & \texttt{r}    & reference      & line 1, column 13 \\
+  \bottomrule
 \end{tabular}
 \end{center}
+\texttt{**} is a single token, not two \texttt{*}: the lexer takes the longest
+lexeme that matches a pattern.
 
-Notice three things at once: \texttt{<=} survived as a single \texttt{LE} token (maximal
-munch), \texttt{if} and \texttt{print} became keyword tokens rather than
-\texttt{IDENT}s (the keyword table lookup), and the comment \texttt{\# done} disappeared
-entirely, along with all the indentation --- it never influenced the token stream because
-this toy language doesn't give whitespace any meaning.
-\end{example}
+Symbol tables are usually implemented as a linear structure (a list, an array
+or a stack) of hash tables, one per scope:
+\texttt{symbolTables = [st$_1$, st$_2$, \dots, st$_n$]}. Figure~\ref{fig:symtab-stack}
+shows the tables for the lecture's example:
+\begin{lstlisting}[language=C]
+// Declare an external function
+extern double bar(double x);
+// Define a public function
+double foo(int count) {
+  double sum = 0.0;
+  // Sum all the values bar(1) to bar(count)
+  for (int i = 1; i <= count; i++)
+    sum += bar((double) i);
+  return sum;
+}
+\end{lstlisting}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[tab/.style={draw, rectangle split, rectangle split parts=2, font=\small\ttfamily, minimum width=3.6cm, align=left}]
+  \node[tab] (g) {\textrm{st$_1$: global}\nodepart{second}bar : double $\to$ double\\foo : int $\to$ double};
+  \node[tab, right=0.8cm of g] (f) {\textrm{st$_2$: foo}\nodepart{second}count : int\\sum : double};
+  \node[tab, right=0.8cm of f] (l) {\textrm{st$_3$: for}\nodepart{second}i : int};
+  \draw[flecha] (l) -- (f);
+  \draw[flecha] (f) -- (g);
+\end{tikzpicture}
+\caption{One table per scope. A name is looked up from the innermost table outward.}
+\label{fig:symtab-stack}
+\end{figure}
+
+The parameter \texttt{x} of \texttt{bar} only appears in a declaration, so it
+needs no entry of its own in this example. Section~\ref{sec:semantic} uses the
+same structure to resolve names during semantic analysis.
+
+\subsection{Recognizing tokens}
+
+\paragraph{Lookahead.} The lexer cannot always decide where a token ends when it
+reads the last character of the token; sometimes it needs the next one. The
+usual algorithm keeps the input in a buffer with two pointers
+(Figure~\ref{fig:buffer}). \textit{beginning} marks the start of the current
+lexeme and \textit{forward} advances until a pattern is matched. Then the token
+is generated, \textit{beginning} moves to \textit{forward}, and the process
+continues with the next lexeme.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[cell/.style={draw, minimum width=7mm, minimum height=7mm, font=\small\ttfamily}]
+  \foreach \c [count=\i] in {i,f, ,x,<,=,1,0, ,t,h,e,n,eof} {
+    \node[cell] (c\i) at (\i*0.7,0) {\c};
+  }
+  \draw[flecha] (c5.north) ++(0,0.8) node[above, font=\small] {beginning} -- (c5.north);
+  \draw[flecha] (c7.south) ++(0,-0.8) node[below, font=\small] {forward} -- (c7.south);
+  \draw[decorate, decoration={brace}] (c1.north west) ++(0,0.1) -- ($(c4.north east)+(0,0.1)$) node[midway, above=2pt, font=\small] {already processed};
+\end{tikzpicture}
+\caption{The two pointers while reading \texttt{<=}. \textit{forward} is one position past the end of the lexeme: the lexer read \texttt{1} to know that \texttt{<=} was finished.}
+\label{fig:buffer}
+\end{figure}
+
+\paragraph{From patterns to one automaton.} Token patterns form regular
+languages, so DFAs recognize them. The construction combines the automata of
+all patterns:
+\begin{enumerate}
+  \item build a DFA $\mathcal{A}_i = \langle Q_i, \Sigma, q_{0_i}, F_i, \delta_i \rangle$ for
+    each regular expression $r_i$ that specifies a pattern;
+  \item join them with a new initial state $q_0$ and $\lambda$-transitions to the
+    initial state of each $\mathcal{A}_i$: $Q = \{q_0\} \cup Q_1 \cup \dots \cup Q_n$,
+    $F = F_1 \cup \dots \cup F_n$, $\Delta = \{(q_0, \lambda, q_{0_i}) \mid 1 \le i \le n\}
+    \cup \delta_1 \cup \dots \cup \delta_n$;
+  \item apply the set construction to get a DFA. A word belongs to the class
+    $i$ when it leads to a final state of $\mathcal{A}_i$.
+\end{enumerate}
+This is the union construction of the previous block. When a word reaches
+final states of two classes at once, a priority decides, and the lexer always
+keeps reading while the word can still grow (longest match).
+
+\paragraph{Example.} The lecture's grammar
+\begin{lstlisting}
+Stmt ::= if Expr then Stmt | if Expr then Stmt else Stmt
+Expr ::= Term Op Term | Term
+Term ::= id | number
+Op   ::= = | <> | <= | >= | < | >
+\end{lstlisting}
+has the tokens \texttt{if}, \texttt{then}, \texttt{else}, \texttt{id},
+\texttt{number} and \texttt{Op}. The program
+\begin{lstlisting}
+if iffyNum <> elsewhereNum then
+   iffyNum
+else
+   elsewhereNum
+\end{lstlisting}
+becomes \texttt{IF ID OP\_NE ID THEN ID ELSE ID}. Two details matter. The
+identifier \texttt{iffyNum} starts with \texttt{if} and \texttt{elsewhereNum} with
+\texttt{else}, and the lexer must not split them. And \texttt{<>} is one token,
+not \texttt{<} followed by \texttt{>}.
+
+\paragraph{Identifiers and reserved words.} The pattern of identifiers also
+matches \texttt{if}. The lecture gives two ways to separate them. The first
+recognizes reserved words with their own states: after \texttt{i} and
+\texttt{f}, if the next character is not a letter or digit, return
+\texttt{<IF>}; otherwise continue as an identifier
+(Figure~\ref{fig:if-dfa}). The second installs the reserved words in the
+symbol table before scanning, as \texttt{<IF, if\_value>}. The lexer reads the
+longest identifier-shaped lexeme and looks it up: a reserved word becomes its
+own token, any other name is installed as an identifier
+(\texttt{return(installId())}). The second way keeps the automaton small, and
+it is what the Rascal lexer below does.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.2cm, auto]
+  \node[state, initial] (0) {0};
+  \node[state, right=of 0] (1) {1};
+  \node[state, right=of 1] (2) {2};
+  \node[state, accepting, right=of 2] (3) {3};
+  \node[state, below=1.4cm of 2] (id) {id};
+  \node[state, accepting, right=of id] (4) {4};
+  \path[->]
+    (0) edge node {i} (1)
+    (1) edge node {f} (2)
+    (2) edge node {non-letter} (3)
+    (0) edge[bend right=20] node[swap] {letter $\ne$ i} (id)
+    (1) edge node[swap, pos=0.3] {letter $\ne$ f} (id)
+    (2) edge node[swap] {letter} (id)
+    (id) edge[loop below] node {letter, digit} ()
+    (id) edge node {other} (4);
+  \node[right=0.2cm of 3, font=\small] {return(\texttt{<IF>}, --)};
+  \node[right=0.2cm of 4, font=\small] {return(installId())};
+\end{tikzpicture}
+\caption{Recognizing \texttt{if} and identifiers with separate states. In states 3 and 4 the last character read is not part of the token and goes back to the input.}
+\label{fig:if-dfa}
+\end{figure}
+
+\paragraph{Relational operators.} Figure~\ref{fig:relop} is the lecture's
+automaton for \texttt{<}, \texttt{<=}, \texttt{<>}, \texttt{=}, \texttt{>} and
+\texttt{>=}. After reading \texttt{<} the automaton only knows that the token is
+\texttt{<} when it reads the following character and sees that it is not
+\texttt{=} or \texttt{>}. The states marked with $*$ return that extra
+character to the input.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=1.6cm and 2.4cm, auto, every state/.style={draw, minimum size=7mm, font=\small}]
+  \node[state, initial] (0) {0};
+  \node[state, right=of 0] (1) {1};
+  \node[state, accepting, above right=0.6cm and 2.4cm of 1] (2) {2};
+  \node[state, accepting, right=of 1] (3) {3};
+  \node[state, accepting, below right=0.6cm and 2.4cm of 1] (4) {4$^*$};
+  \node[state, accepting, below left=1.2cm and 1.6cm of 0] (5) {5};
+  \node[state, below=3cm of 0] (6) {6};
+  \node[state, accepting, right=of 6] (7) {7};
+  \node[state, accepting, below=1.2cm of 7] (8) {8$^*$};
+  \path[->]
+    (0) edge node {$<$} (1)
+    (1) edge node {$=$} (2)
+    (1) edge node {$>$} (3)
+    (1) edge node[swap] {other} (4)
+    (0) edge node[swap] {$=$} (5)
+    (0) edge node {$>$} (6)
+    (6) edge node {$=$} (7)
+    (6) edge node[swap] {other} (8);
+  \node[right=0.2cm of 2, font=\small] {return(\texttt{<Op, LE>})};
+  \node[right=0.2cm of 3, font=\small] {return(\texttt{<Op, NE>})};
+  \node[right=0.2cm of 4, font=\small] {return(\texttt{<Op, LT>})};
+  \node[left=0.2cm of 5, font=\small] {return(\texttt{<Op, EQ>})};
+  \node[right=0.2cm of 7, font=\small] {return(\texttt{<Op, GE>})};
+  \node[right=0.2cm of 8, font=\small] {return(\texttt{<Op, GT>})};
+\end{tikzpicture}
+\caption{The automaton for relational operators. $*$ marks the states that read one character too many.}
+\label{fig:relop}
+\end{figure}
+
+The automaton becomes code by giving each state a case. The lecture writes it
+as a \texttt{switch} on the state inside a loop; the version below collapses
+the states into the checks they make:
+\coderange{Rascal}{rascal/src/Lexer.rsc}{relop}
+
+\subsection{A lexer in Rascal}
+
+Putting the pieces together gives a hand-written lexer in the style of
+Nystrom's \texttt{scanTokens}. Each iteration of the loop matches one lexeme at
+the beginning of the remaining input, from the most specific pattern to the
+least specific, and advances the position. Separators and comments are
+matched and dropped; reserved words are looked up in a set; any other
+character is a lexical error.
+\coderange{Rascal}{rascal/src/Lexer.rsc}{scan}
+Each regular expression in the \texttt{if} chain is one pattern. The pattern for
+identifiers takes the longest run of letters and digits, so \texttt{iffyNum} is
+one lexeme, and only then is it compared with the reserved words. The tests in
+\texttt{Lexer.rsc} check the \texttt{iffyNum} program, the relational operators,
+the positions in \texttt{Area = pi * r ** 2} and the WFF operators of
+Table~\ref{tab:wff-tokens}.
+
+\paragraph{Generated lexers.} This paragraph goes beyond the slides. Tools such
+as \texttt{lex} and \texttt{flex} take the list of regular expressions with an
+action for each and generate the combined DFA automatically, with the same
+rules: longest match, and the first pattern wins when two match the same
+lexeme. In Rascal, \texttt{lexical} definitions play this role, as in the
+grammars of the previous block. A hand-written lexer gives more control over
+error messages and over irregular rules, such as indentation in Python.
+
+\subsection{Token implementation and screening}
+
+Lexers usually give each token name a number, so that tokens are compared as
+integers. For the \texttt{if} grammar the lecture uses
+\begin{center}
+\small
+\begin{tabular}{l l l l l l l l l l l}
+  \toprule
+  ELSE & EQ & G & GE & ID & IF & L & LE & NE & NUM & THEN \\
+  260 & 261 & 262 & 263 & 264 & 265 & 266 & 267 & 269 & 270 & 273 \\
+  \bottomrule
+\end{tabular}
+\end{center}
+Numbers above 255 leave room for single characters, which can be their own
+token with their character code.
+
+Wilhelm, Seidl and Hack split the lexer into two steps. \textbf{Scanning} cuts
+the input into lexemes and classifies all of them, separators included.
+\textbf{Screening} drops the separators and comments, recognizes reserved
+words and replaces each identifier with its index in the symbol table. For
+\begin{lstlisting}[language=C]
+int a, b;
+a = 42;
+b = a * a - 7;
+\end{lstlisting}
+scanning gives
+\begin{lstlisting}
+Int("int") Sep(" ") Id("a") Com(",") Sep(" ") Id("b") Sem(";") Sep("\n") ...
+\end{lstlisting}
+and screening gives
+\begin{lstlisting}
+Int() Id(1) Com() Id(2) Sem()
+Id(1) Bec() Intconst(42) Sem()
+Id(2) Bec() Id(1) Mop(Mul) Id(1) Aop(Sub) Intconst(7) Sem()
+\end{lstlisting}
+(The slide writes \texttt{Aop("")} for the minus sign in the scanning line;
+it is \texttt{Aop("-")}.) A screening step on top of the Rascal lexer:
+\coderange{Rascal}{rascal/src/Lexer.rsc}{screen}
+
+\paragraph{Responsibilities of the lexer.} To summarize the lecture's list: the
+lexer generates tokens; it detects errors in the characters of the program,
+not in its structure or meaning; it recognizes patterns while scanning the
+text (separators, comments, pragmas, reserved symbols, constants, strings,
+identifiers); and it classifies symbols, places them in the right table and
+associates them with their value.
 
 \subsection{Exercises}
-\begin{itemize}
-  \item Lex the string \texttt{y != 4 \# stop} by hand, listing every token with its kind
-    and lexeme, the way the worked example above does.
-  \item Add support for \texttt{:=} as an alternative assignment operator, sitting
-    alongside \texttt{=}. What does maximal munch have to say about the input
-    \texttt{x := 3} versus \texttt{x : = 3}? Would your lexer accept the second one, and
-    should it?
-  \item Extend the \texttt{NUMBER} rule to accept a single decimal point (\texttt{3.14}).
-    What ambiguity shows up if the input is \texttt{3.} followed immediately by
-    \texttt{foo} with no space -- i.e., \texttt{3.foo}? How would you resolve it?
-  \item Explain, in your own words, why the keyword check has to happen \emph{after}
-    matching the full identifier pattern rather than before. Construct a concrete input
-    that a ``keywords-first'' lexer would tokenize incorrectly.
-  \item Modify \texttt{\_skip\_whitespace\_and\_comments} to support block comments
-    delimited by \texttt{/* ... */} in addition to \texttt{\#} line comments. What happens
-    if a block comment is never closed before end of file --- where should that error be
-    reported?
-  \item A generated lexer (flex-style) and the hand-written one above will tokenize any
-    valid input identically. Describe one concrete situation where they would
-    \emph{disagree} on how to report an error, and explain why.
-\end{itemize}
+
+\begin{exercise}
+Generate the tokens of this JavaScript program:
+\begin{lstlisting}
+let boolean = true;
+let antiboolean = !true;
+if(boolean !== antiboolean) {
+  true;
+  if(antiboolean != boolean) {
+    false;
+  }
+}
+\end{lstlisting}
+\end{exercise}
+
+\paragraph{Solution.}
+\begin{lstlisting}
+Let Identifier Equal Bool ;
+Let Identifier Equal Not Bool ;
+If ( Identifier SInequality Identifier ) {
+  Bool ;
+  If ( Identifier LInequality Identifier ) {
+    Bool ;
+  }
+}
+\end{lstlisting}
+\texttt{boolean} is an identifier, not a type: JavaScript has no reserved word
+\texttt{boolean}. \texttt{!==} (strict inequality) and \texttt{!=} (loose
+inequality) are different tokens, and by longest match the lexer reads
+\texttt{!==} whole instead of \texttt{!=} followed by \texttt{=}.
+
+\begin{exercise}
+Generate the tokens of this Python program:
+\begin{lstlisting}[language=Python]
+price_list = dict(milk=23.25, bread=340, eggs=1)
+shopping_cart = {'eggs':5, 'bread':170}
+for item in shopping_cart:
+  if(price_list.get(item)):
+    cost = price_list[item]
+    quantity = shopping_cart[item] / price_list[item]
+    print(quantity)
+  else:
+    print(f'Item {item} from another store')
+\end{lstlisting}
+\end{exercise}
+
+\paragraph{Solution.} The lecture's answer:
+\begin{lstlisting}
+Identifier Equal Identifier(Identifier Equal Float, Identifier Equal Integer, Identifier Equal Integer)
+Identifier Equal {String : Integer, String : Integer}
+For Identifier In Identifier :
+  If(Identifier.Identifier(Identifier)) :
+    Identifier Equal Identifier[Identifier]
+    Identifier Equal Identifier[Identifier] Slash Identifier[Identifier]
+    Identifier(Identifier)
+  Else :
+    Identifier(String Identifier String)
+\end{lstlisting}
+\texttt{dict} and \texttt{print} are identifiers: in Python they are built-in
+functions, not reserved words. The indentation is also significant in Python,
+so a real Python lexer emits \texttt{INDENT} and \texttt{DEDENT} tokens where the
+level changes. The f-string can be one token or, as in the answer, split into
+its literal parts and the identifier inside the braces.
+
+\begin{exercise}
+Generate the tokens of the two Fortran statements \texttt{DO 5 I = 1.25} and
+\texttt{DO 5 I = 1,25}.
+\end{exercise}
+
+\paragraph{Solution.} Fortran ignores blanks, so the first statement is an
+assignment to the variable \texttt{DO5I}, with the tokens
+\texttt{Identifier Equal Float}. The second is a
+loop that ends at label 5 with \texttt{I} from 1 to 25. Its tokens are
+\lstinline{Do Int Identifier Equal Int , Int}. The two statements are the same up
+to the comma, so the lexer cannot classify \texttt{DO} until it has looked
+ahead past the \texttt{=}:
+\coderange{Rascal}{rascal/src/Lexer.rsc}{fortran}
+
+\begin{exercise}
+Tokenize the following inputs and draw the automaton that recognizes the
+reserved words in each one: (a) the C declaration
+\texttt{struct myStructure \{ int myNum; char myLetter; \};}; (b) the XML
+document
+\begin{lstlisting}
+<?xml version="1.0" encoding="UTF-8"?>
+<note>
+<to>Tove</to>
+<from>Jani</from>
+<heading>Reminder</heading>
+<body>Don't forget me this weekend!</body>
+</note>
+\end{lstlisting}
+(c) the SQL query \texttt{SELECT CustomerName, City FROM Customers;}; (d) the
+Racket expression
+\texttt{(match \#(1 2) [(list 1 2) 'list] [(vector 1 2) 'vector])}, whose value
+is \texttt{'vector}.
+\end{exercise}
+
+\paragraph{Solution.}
+(a) \texttt{Struct Identifier \{ Int Identifier ; Char Identifier ; \} ;}. The
+automaton for \texttt{struct} is a chain $0 \xrightarrow{s} 1 \xrightarrow{t} 3
+\xrightarrow{r} 4 \xrightarrow{u} 5 \xrightarrow{c} 6 \xrightarrow{t} 7$, and state 7
+returns \texttt{<STRUCT>} only if the next character cannot continue an
+identifier (here it is a space before \texttt{myStructure}).
+(b) The lexer recognizes the declaration \texttt{<?xml \dots ?>}, start tags
+(\texttt{<} name \texttt{>}), end tags (\texttt{</} name \texttt{>}), attributes with
+their string values, and text between tags: \texttt{Decl StartTag(note)
+StartTag(to) Text(Tove) EndTag(to) \dots}. The text \texttt{Don't forget me this
+weekend!} is one token even though it contains spaces, because inside an
+element the lexer is in a different mode.
+(c) \texttt{Select Identifier , Identifier From Identifier ;}.
+(d)
+\begin{lstlisting}
+( Identifier VectorStart Number Number )
+  [ ( Identifier Number Number ) Quote Identifier ]
+  [ ( Identifier Number Number ) Quote Identifier ] )
+\end{lstlisting}
+\texttt{\#(} is one token that opens a vector, and \texttt{'} is the quote.
+\texttt{match}, \texttt{list} and \texttt{vector} are identifiers.
+
+\begin{exercise}
+The grammar
+\texttt{E ::= (a..z)+ | (0..9)+ | (sum L) | (times L)},
+\texttt{L ::= E | L E}
+describes S-expressions with two operators. Which tokens does it need, and
+which prefixes must the lexer recognize to tell the reserved words apart from
+identifiers?
+\end{exercise}
+
+\paragraph{Solution.} The tokens are numbers, identifiers, the two operators
+and the parentheses. The words \texttt{sum} and \texttt{times} are also
+identifiers, so the lexer needs states for all their prefixes:
+s, su, sum, t, ti, tim, time and times. On a character that cannot
+continue the word (a space or a parenthesis), a state that holds a complete
+reserved word returns \texttt{<Op, +>} or \texttt{<Op, *>}; any other state
+returns an identifier. With the operators recognized, the grammar can be
+rewritten over tokens as
+\begin{lstlisting}
+E ::= v | n | (+ L) | (* L)
+\end{lstlisting}
+
+\begin{exercise}
+Lex \texttt{y != 4 // stop} by hand with the lexer of this section. What does
+it do with \texttt{!}?
+\end{exercise}
+
+\paragraph{Solution.} \texttt{ID(y)}, then \texttt{!} matches no pattern and becomes
+\texttt{ERROR(!)}, then \texttt{=} is \texttt{OP\_EQ}, \texttt{4} is \texttt{NUM}, and the
+comment is dropped. To support \texttt{!=} the relational automaton needs a
+state after \texttt{!} that returns \texttt{<Op, NE>} on \texttt{=}.
