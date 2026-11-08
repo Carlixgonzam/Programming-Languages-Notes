@@ -40,6 +40,8 @@ La numeración de diapositivas es la que aparece impresa en cada diapositiva, qu
 | 9-semantic_analysis, diap. 17 | `FafctTerm.ptr := Fact.ptr` | `FactTerm.st := Fact.ptr`. |
 | 9-semantic_analysis, diap. 17 | `FactTerm1.st := make_bin_op("*", Fact.st, FactTerm2.ptr)` (igual para `/`) | `FactTerm2.st := make_bin_op("*", FactTerm1.st, Fact.ptr)`, como en las reglas de `Terms`. |
 | 9-semantic_analysis, diap. 17 | `Fact ::= Exp` | `Fact ::= (Exp)`. |
+| 10-type_systems, diap. 54 (pág. 73) | Tipo de `proc (f) proc(x) -((f 3),(f x))`: `t0 = Int → Int → Int → Int` | `t0 = (Int → Int) → Int → Int`. Como la flecha asocia a la derecha, la versión sin paréntesis es una función de tres enteros. |
+| 10-type_systems, diap. 61 (pág. 93) | `substitution`: `case tvar-type(sn): if (t1 = tvar) then t1 else t0` | Se compara la variable encontrada con la que se reemplaza: `if (t0 == tvar) then t1 else t0`. |
 
 ## Repo
 

@@ -1,0 +1,120 @@
+% !TeX root = ../main.tex
+\section{Lambda calculus}
+\label{sec:lambda}
+
+This section and the next go beyond the slides; they give the formal basis
+for the rule \textsc{Abs} and for Section~\ref{sec:safety}. The lambda
+calculus is a formal system in which everything is a function. A LETREC
+\texttt{proc (x) body} is a lambda abstraction $\lambda x.\, \mathit{body}$, and the
+application \texttt{(f e)} is the application $f\ e$.
+
+\subsection{Syntax}
+
+There are three constructs: variables $x, y, z, \dots$; abstraction
+$\lambda x.\, e$, a function with parameter $x$ and body $e$; and application
+$e_1\, e_2$, which applies $e_1$ to $e_2$. Application associates to the left
+($f\,a\,b$ is $(f\,a)\,b$), and the body of an abstraction extends as far to
+the right as possible. Figure~\ref{fig:lambda-ast} shows the abstract syntax
+tree of $(\lambda x.\, x\, x)\,(\lambda y.\, y)$.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=5mm, l sep=4mm},
+  [app
+    [$\lambda x$ [app [$x$] [$x$]]]
+    [$\lambda y$ [$y$]]
+  ]
+\end{forest}
+\caption{Abstract syntax tree of $(\lambda x.\, x\, x)\,(\lambda y.\, y)$.}
+\label{fig:lambda-ast}
+\end{figure}
+
+\paragraph{Free and bound variables.} In $\lambda x.\, M$ the variable $x$ is
+\textbf{bound}: the abstraction is its scope. A variable that is not inside an
+abstraction for it is \textbf{free}. In $\lambda x.\, x\, y$, $x$ is bound and
+$y$ is free. The name of a bound variable does not matter, as long as renaming
+does not capture another variable: $\lambda x.\, x \equiv_\alpha \lambda y.\, y$
+($\alpha$-equivalence).
+
+\subsection{Reduction}
+
+Computation is one rule, $\beta$-reduction, which substitutes the argument into
+the body:
+\[
+(\lambda x.\, e)\, v \;\to_\beta\; e[x := v].
+\]
+A second rule, $\eta$-reduction, says that a function that only passes its
+argument on is the function itself: $\lambda x.\, (f\, x) \to_\eta f$ when $x$ is
+not free in $f$.
+
+For $(\lambda x.\, x\, x)\,(\lambda y.\, y)$:
+\[
+(\lambda x.\, x\, x)\,(\lambda y.\, y) \;\to_\beta\; (\lambda y.\, y)\,(\lambda y.\, y)
+\;\to_\beta\; \lambda y.\, y.
+\]
+The result has no more redexes (subterms of the form $(\lambda x.\, e)\, v$); it is
+in normal form.
+
+\paragraph{Evaluation strategies.} When a term has several redexes, the order
+matters. Normal order reduces the leftmost, outermost redex first, and finds
+a normal form whenever one exists. Call by value evaluates the argument before
+the call, as C, Java and Python do. Call by name passes the argument
+unevaluated, which is the basis of lazy evaluation. The runtime block
+returns to these strategies with the lecture's examples.
+
+\subsection{Church encodings}
+
+The pure calculus has no numbers or booleans, but they can be encoded as
+functions. A boolean chooses between two alternatives:
+\[
+\mathit{TRUE} \equiv \lambda t.\, \lambda f.\, t \qquad
+\mathit{FALSE} \equiv \lambda t.\, \lambda f.\, f \qquad
+\mathit{AND} \equiv \lambda p.\, \lambda q.\, p\, q\, p.
+\]
+A Church numeral $n$ applies a function $n$ times:
+\[
+0 \equiv \lambda f.\, \lambda x.\, x \qquad
+1 \equiv \lambda f.\, \lambda x.\, f\, x \qquad
+2 \equiv \lambda f.\, \lambda x.\, f\,(f\, x) \qquad
+\mathit{SUCC} \equiv \lambda n.\, \lambda f.\, \lambda x.\, f\,(n\, f\, x).
+\]
+
+\subsection{Recursion}
+
+Abstractions are anonymous, so a function cannot call itself by name. LETREC
+solves this with \texttt{letrec}, which puts the function in its own scope.
+The pure calculus uses a fixed-point combinator:
+\[
+Y = \lambda f.\, (\lambda x.\, f\,(x\, x))\,(\lambda x.\, f\,(x\, x)).
+\]
+One step of reduction shows that $Y\, g \to_\beta (\lambda x.\, g\,(x\, x))\,(\lambda x.\, g\,(x\, x)) \to_\beta g\,((\lambda x.\, g\,(x\, x))\,(\lambda x.\, g\,(x\, x)))$,
+and the argument of $g$ is again the term that $Y\, g$ reduced to. So
+$Y\, g$ behaves as $g\,(Y\, g)$: it gives $g$ a copy of itself.
+
+\subsection{Exercises}
+
+\begin{exercise}
+Define $\mathit{OR}$ and $\mathit{NOT}$ with Church booleans and check that
+$\mathit{OR}\ \mathit{TRUE}\ \mathit{FALSE}$ reduces to $\mathit{TRUE}$.
+\end{exercise}
+
+\paragraph{Solution.} $\mathit{OR} \equiv \lambda p.\, \lambda q.\, p\, p\, q$ and
+$\mathit{NOT} \equiv \lambda p.\, p\, \mathit{FALSE}\, \mathit{TRUE}$. Then
+$\mathit{OR}\ \mathit{TRUE}\ \mathit{FALSE} \to_\beta \mathit{TRUE}\ \mathit{TRUE}\ \mathit{FALSE}
+\to_\beta \mathit{TRUE}$, because $\mathit{TRUE}$ returns its first argument.
+
+\begin{exercise}
+Show that $\mathit{SUCC}\ 1$ reduces to $2$.
+\end{exercise}
+
+\paragraph{Solution.} $\mathit{SUCC}\ 1 \to_\beta \lambda f.\, \lambda x.\, f\,(1\, f\, x)$,
+and $1\, f\, x = (\lambda f.\, \lambda x.\, f\, x)\, f\, x \to_\beta f\, x$, so the result is
+$\lambda f.\, \lambda x.\, f\,(f\, x) = 2$.
+
+\begin{exercise}
+Which variables are free in $\lambda x.\, (\lambda y.\, x\, y\, z)\, y$?
+\end{exercise}
+
+\paragraph{Solution.} $z$, and the last $y$, which is outside the abstraction
+$\lambda y$. The first $y$ and $x$ are bound.

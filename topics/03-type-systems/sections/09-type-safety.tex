@@ -1,0 +1,86 @@
+% !TeX root = ../main.tex
+\section{Type safety}
+\label{sec:safety}
+
+This section goes beyond the slides. Type safety is the formal version of
+``well-typed programs cannot go wrong'': a well-typed program never reaches a
+state where no rule applies. It is proved as two theorems.
+
+\begin{theorem}[Progress]
+If $\vdash e : \tau$, then $e$ is a value or there is an $e'$ with $e \reduces e'$.
+\end{theorem}
+
+\begin{theorem}[Preservation]
+If $\vdash e : \tau$ and $e \reduces e'$, then $\vdash e' : \tau$.
+\end{theorem}
+
+Together they give safety: start from a well-typed term; progress says it is a
+value or it can take a step, and preservation says that after the step it is
+still well typed with the same type, so progress applies again
+(Figure~\ref{fig:safety}). The evaluation either ends in a value of type
+$\tau$ or runs forever, as in the \texttt{letrec} loop of
+Section~\ref{sec:types}; it never gets stuck.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.2cm, box/.style={draw, rounded corners=2pt, font=\small, minimum height=7mm}]
+  \node[box] (e0) {$e_0 : \tau$};
+  \node[box, right=of e0] (e1) {$e_1 : \tau$};
+  \node[box, right=of e1] (e2) {$e_2 : \tau$};
+  \node[right=0.6cm of e2] (dots) {$\cdots$};
+  \node[box, right=0.6cm of dots] (v) {$v : \tau$};
+  \draw[flecha] (e0) -- node[above, font=\footnotesize] {progress} node[below, font=\footnotesize] {preservation} (e1);
+  \draw[flecha] (e1) -- node[above, font=\footnotesize] {progress} node[below, font=\footnotesize] {preservation} (e2);
+\end{tikzpicture}
+\caption{Each step exists by progress and keeps the type by preservation.}
+\label{fig:safety}
+\end{figure}
+
+\subsection{Lemmas}
+
+\begin{lemma}[Canonical forms]
+If $v$ is a value and $\vdash v : \tau$, the form of $v$ is determined by $\tau$:
+if $\tau = \tybool$ then $v$ is $\mathit{true}$ or $\mathit{false}$; if $\tau = \tau_1 \to \tau_2$
+then $v = \lambda x{:}\tau_1.\, e$.
+\end{lemma}
+
+\begin{lemma}[Substitution]
+If $\Gamma, x : \tau' \vdash e : \tau$ and $\Gamma \vdash v : \tau'$, then
+$\Gamma \vdash e[x := v] : \tau$.
+\end{lemma}
+
+Canonical forms lets a proof split cases on the form of a value; substitution
+handles the $\beta$-reduction case of preservation: the body $e$ was typed
+assuming $x : \tau'$, and the argument has type $\tau'$.
+
+\subsection{Proof strategy}
+
+Both theorems are proved by induction on the typing derivation, with one case
+per rule. For progress with \textsc{T-App}, $e = e_1\, e_2$: by the induction
+hypothesis $e_1$ is a value or takes a step. If it takes a step, so does
+$e_1\, e_2$. If it is a value, its type is a function type, so by canonical
+forms it is a $\lambda$; then the same reasoning applies to $e_2$, and when both are
+values $e_1\, e_2$ is a $\beta$-redex and takes a step. The rules of LETREC
+(Section~\ref{sec:letrec}) are the cases a proof for LETREC would cover; the
+case \textsc{Diff}, for example, uses canonical forms to know that both
+operands of a difference are numbers when they are values.
+
+\subsection{Exercises}
+
+\begin{exercise}
+Prove progress for \textsc{T-If}, assuming it for the condition.
+\end{exercise}
+
+\paragraph{Solution.} Let $e = \ift{e_1}{e_2}{e_3}$ with $\vdash e_1 : \tybool$. By the
+induction hypothesis $e_1$ is a value or takes a step. If it takes a step,
+$e$ steps by reducing the condition. If it is a value, by canonical forms it
+is $\mathit{true}$ or $\mathit{false}$, and $e$ steps to $e_2$ or $e_3$.
+
+\begin{exercise}
+Give a term that is stuck and show which typing rule rejects it.
+\end{exercise}
+
+\paragraph{Solution.} $3\ 4$ (in LETREC, \texttt{(3 4)}) is not a value and no rule
+reduces it. \textsc{T-App} (\textsc{Reduc}) requires the operator to have a
+function type, and $3 : \tyint$, so the term is not well typed. The Rascal test
+\texttt{notProc} of \texttt{Letrec.rsc} checks this.

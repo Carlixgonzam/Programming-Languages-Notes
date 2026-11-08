@@ -86,6 +86,14 @@
   alsoletter={-,!,?,*},
 }
 
+\lstdefinelanguage{Swift}{
+  morekeywords={func, let, var, if, else, guard, return, print, nil, struct,
+    class, protocol, precondition, true, false},
+  sensitive=true,
+  morecomment=[l]{//},
+  morestring=[b]",
+}
+
 \lstdefinelanguage{CommonLisp}{
   morekeywords={defvar, defparameter, defun, defmacro, let, let*, lambda, if,
     cond, progn, setf, quote, function, funcall, eval},
@@ -108,6 +116,7 @@
 \lstdefinestyle{range-C}{rangeprefix=//\ <<}
 \lstdefinestyle{range-Java}{rangeprefix=//\ <<}
 \lstdefinestyle{range-bash}{rangeprefix=\#\ <<}
+\lstdefinestyle{range-Swift}{rangeprefix=//\ <<}
 \newcommand{\codefile}[2]{\lstinputlisting[language=#1]{code/#2}}
 \newcommand{\coderange}[3]{%
   \lstinputlisting[language=#1, style=range-#1, linerange={#3-#3.end}]{code/#2}}

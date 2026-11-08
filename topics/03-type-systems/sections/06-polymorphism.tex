@@ -1,0 +1,105 @@
+% !TeX root = ../main.tex
+\section{Polymorphism}
+\label{sec:polymorphism}
+
+This section goes beyond the slides. In STLC and in typed LETREC, the identity
+function has to be written once per type: \texttt{proc (x : int) x} and
+\texttt{proc (x : bool) x} are different programs. Section~\ref{sec:inference}
+showed that inference gives \texttt{proc (x) x} the type $t_0 \to t_0$, with a
+variable left over. \textbf{Polymorphism} is the name for the features that let
+one piece of code work at many types. There are three classical kinds:
+\begin{itemize}
+  \item parametric: one implementation that behaves the same at every type;
+  \item ad hoc: one name with a different implementation per type
+    (overloading, type classes);
+  \item subtype: one implementation usable at every subtype of the type it
+    expects (Section~\ref{sec:subtyping}).
+\end{itemize}
+
+\subsection{Parametric polymorphism}
+
+System F abstracts over types the same way $\lambda$ abstracts over values. It
+adds the type $\forall \alpha.\, \tau$, type abstraction $\Lambda \alpha.\, e$ and type
+application $e\,[\tau]$:
+\[
+\mathit{id} = \Lambda \alpha.\, \lambda x{:}\alpha.\, x \;:\; \forall \alpha.\, \alpha \to \alpha.
+\]
+$\mathit{id}\,[\tyint]\ 3$ reduces to $3$ and $\mathit{id}\,[\tybool]\ \mathit{true}$ to
+$\mathit{true}$: one term, instantiated twice (Figure~\ref{fig:instances}).
+Hindley--Milner, the system behind ML and Haskell, is the fragment of System F
+where $\forall$ only appears at the outside of a type and instantiation is
+implicit. That restriction is what makes the inference of
+Section~\ref{sec:inference} possible.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=10mm, l sep=8mm, edge={->}},
+  [$\forall \alpha.\, \alpha \to \alpha$
+    [$\tyint \to \tyint$, edge label={node[midway, left, font=\footnotesize]{$\alpha := \tyint$}}]
+    [$\tybool \to \tybool$, edge label={node[midway, right, font=\footnotesize]{$\alpha := \tybool$}}]
+  ]
+\end{forest}
+\caption{A polymorphic type and two of its instances.}
+\label{fig:instances}
+\end{figure}
+
+\paragraph{Generalization happens at \texttt{let}.} In Haskell
+\coderange{Haskell}{haskell/Polymorphism.hs}{letpoly}
+type checks: the \texttt{let}-bound \texttt{ident} gets the type
+$\forall \alpha.\, \alpha \to \alpha$, and each use instantiates it. The same thing with a
+parameter, \lstinline|(\i -> (i 3, i True)) (\x -> x)|, is rejected with
+\texttt{No instance for 'Num Bool'}: a parameter has one type in its whole
+body, so after \lstinline|i 3| fixes it to a function on numbers, \lstinline|i True|
+fails. Algorithm W quantifies the free type variables of a \texttt{let}-bound
+value (they cannot appear in the context), and never those of a parameter.
+ML restricts generalization further to values (the value restriction): a
+generalized mutable cell could store a value at one type and be read at
+another.
+
+\subsection{Ad hoc polymorphism}
+
+Overloading binds one name to unrelated implementations, chosen at compile
+time by the types of the arguments:
+\coderange{Java}{java/Overloading.java}{overload}
+Haskell's type classes give this a structure: a class declares operations
+and each instance implements them for one type. A function constrained by a
+class is parametric in the type and ad hoc in the operation it calls:
+\coderange{Haskell}{haskell/Polymorphism.hs}{classes}
+Java gets the same effect with an interface as a bound on a type parameter
+(Rust uses traits for this):
+\coderange{Java}{java/Overloading.java}{bounded}
+
+\subsection{Higher-rank polymorphism}
+
+Hindley--Milner only allows $\forall$ at the outside of a type. A function that
+receives a polymorphic function and uses it at two types needs a $\forall$
+inside the argument, a rank-2 type:
+\coderange{Haskell}{haskell/Polymorphism.hs}{rank2}
+Inference cannot find this type (the first use would fix the type of
+\texttt{f}), but checking against the written signature works. Haskell allows
+it with the \texttt{RankNTypes} extension.
+
+\subsection{Exercises}
+
+\begin{exercise}
+Write the System F term and type of \textit{const}, with
+$\mathit{const}\ x\ y = x$. What is the normal form of
+$\mathit{const}\,[\tyint]\,[\tybool]\ 3\ \mathit{true}$?
+\end{exercise}
+
+\paragraph{Solution.} $\Lambda \alpha.\, \Lambda \beta.\, \lambda x{:}\alpha.\, \lambda y{:}\beta.\, x : \forall \alpha.\, \forall \beta.\, \alpha \to \beta \to \alpha$.
+The application reduces to $3$.
+
+\begin{exercise}
+What does the inference of Section~\ref{sec:inference} say about
+\texttt{let i = proc (x) x in if (i zero?(0)) then (i 1) else 2}? Would the
+program type check with let-polymorphism?
+\end{exercise}
+
+\paragraph{Solution.} It fails. The inference of Section~\ref{sec:inference} does
+not generalize, so \texttt{i} has one type $t \to t$ in the whole body.
+\texttt{(i zero?(0))} gives $t = \mathit{Boolean}$ and \texttt{(i 1)} gives
+$t = \mathit{Int}$, and unification fails. With let-polymorphism \texttt{i} would get
+$\forall t.\, t \to t$, each use would have its own instance, and the program
+would have type $\mathit{Int}$.

@@ -1,0 +1,107 @@
+% !TeX root = ../main.tex
+\section{Recursive types}
+\label{sec:recursive}
+
+The inductive types of Section~\ref{sec:types} are defined by constants and
+constructors that refer to the type being defined: $0 : \mathbb{N}$ and
+$s : \mathbb{N} \to \mathbb{N}$. This section, which goes beyond the slides, shows how a
+type system expresses that self-reference. A list of integers is either empty
+or an integer followed by another list:
+\[
+\alpha = \unit + (\tyint \times \alpha).
+\]
+With the types of STLC this equation has no solution. Expanding it never ends,
+$\alpha = \unit + \tyint \times (\unit + \tyint \times (\dots))$, for the same reason that
+$t_f = t_f \to \mathit{Int}$ failed the occurs check in Section~\ref{sec:inference}.
+
+\subsection{$\mu$-types}
+
+A new type former names the solution: $\mu\alpha.\, \tau$ is the type $\alpha$ that
+satisfies $\alpha = \tau$, where $\tau$ may mention $\alpha$.
+\[
+\mathbf{List}\ \tyint = \mu\alpha.\, \unit + (\tyint \times \alpha)
+\qquad
+\mathbf{Tree} = \mu\alpha.\, \tyint + (\alpha \times \tyint \times \alpha)
+\qquad
+\mathbb{N} = \mu\alpha.\, \unit + \alpha
+\]
+In the last one, $\unit$ plays the role of $0$ and the right side of the sum
+the role of $s$.
+
+\paragraph{Fold and unfold.} The values of $\mu\alpha.\, \tau$ are related to its
+unfolding $\tau[\mu\alpha.\tau / \alpha]$ (the body with the whole type put back for
+$\alpha$) by two operations:
+\begin{mathpar}
+\inferrule*[right=T-Fold]{\Gamma \vdash e : \tau[\mu\alpha.\tau / \alpha]}{\Gamma \vdash \mathbf{fold}(e) : \mu\alpha.\, \tau}
+\and
+\inferrule*[right=T-Unfold]{\Gamma \vdash e : \mu\alpha.\, \tau}{\Gamma \vdash \mathbf{unfold}(e) : \tau[\mu\alpha.\tau / \alpha]}
+\end{mathpar}
+$\mathbf{fold}$ packages one layer (what a constructor such as \textit{cons}
+does) and $\mathbf{unfold}$ opens one layer (what a pattern match does).
+Figure~\ref{fig:folds} shows the list $[1, 2]$ built with three folds, one per
+constructor.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=4mm, l sep=4mm},
+  [fold
+    [{$\mathit{inr}$}
+      [$\times$ [1]
+        [fold
+          [{$\mathit{inr}$}
+            [$\times$ [2] [fold [{$\mathit{inl}$} [$()$]]]]
+          ]
+        ]
+      ]
+    ]
+  ]
+\end{forest}
+\caption{The list $[1, 2]$ as a value of $\mu\alpha.\, \unit + (\tyint \times \alpha)$. $\mathit{inl}$ and $\mathit{inr}$ choose a side of the sum.}
+\label{fig:folds}
+\end{figure}
+
+Languages with explicit fold and unfold, and a type equality that only
+compares syntax, are \emph{iso-recursive}; languages where $\mu\alpha.\, \tau$ and its
+unfolding are the same type are \emph{equi-recursive}, and need a more complex
+equality on infinite trees. ML-family languages are iso-recursive, which fits
+their inference.
+
+\subsection{Algebraic data types}
+
+The data types of Haskell are recursive types where the constructors are the
+folds and pattern matching is the unfold:
+\coderange{Haskell}{haskell/RecursiveTypes.hs}{types}
+\coderange{Haskell}{haskell/RecursiveTypes.hs}{functions}
+\texttt{Cons} takes an element and a list (one unfolding of the type) and
+returns a list; the equation \texttt{len (Cons \_ xs)} opens one layer.
+Recursive types do not reopen what the occurs check closed: ordinary type
+variables still cannot refer to themselves, and self-reference is allowed
+only where a $\mu$ (a \texttt{data} declaration) introduces it.
+
+\subsection{Exercises}
+
+\begin{exercise}
+Unfold $\mathbf{List}\ \tyint$ one level.
+\end{exercise}
+
+\paragraph{Solution.} $\unit + (\tyint \times \mu\alpha.\, \unit + (\tyint \times \alpha))$, that is,
+$\unit + (\tyint \times \mathbf{List}\ \tyint)$: empty, or an integer and a list.
+
+\begin{exercise}
+Give a $\mu$-type for nonempty lists of booleans.
+\end{exercise}
+
+\paragraph{Solution.} $\mu\alpha.\, \tybool + (\tybool \times \alpha)$: the base case is a single
+boolean instead of $\unit$.
+
+\begin{exercise}
+Why does Rust reject \texttt{enum List<T> \{ Nil, Cons(T, List<T>) \}} and
+accept \texttt{Cons(T, Box<List<T>>)}?
+\end{exercise}
+
+\paragraph{Solution.} Rust stores the fields of an \texttt{enum} inline, so a
+\texttt{List} would contain a \texttt{List} and have infinite size.
+\texttt{Box} stores a pointer, of fixed size, to a list on the heap. Haskell
+and ML represent recursive values with pointers by default, which is why
+they need no annotation.
