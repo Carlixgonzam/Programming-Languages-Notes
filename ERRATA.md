@@ -65,3 +65,4 @@ La numeración de diapositivas es la que aparece impresa en cada diapositiva, qu
 | `topics/01-.../references.bib`, `topics/05-.../references.bib` | *Foundations of Programming Languages* de John A. N. Lee (1989) | El libro que citan las diapositivas es de Kent D. Lee (Springer). |
 | `topics/03-type-systems/references.bib` | Entrada "Lee, Peter, Programming Languages course notes, syllabus §5.22" | No corresponde a ninguna referencia de las diapositivas; se quitó. |
 | `topics/02-.../references.bib` | Wilhelm y "Seidel" (2010) | Wilhelm, Seidl y Hack (2013). |
+| `topics/06-dsl-design/sections/01-what-is-a-dsl.tex` | Ejemplo del DSL de entrenamiento con `swim: 2000m steady` y `strength: upper-body` | La gramática del mismo archivo no genera esas líneas (la intensidad va con `@` y toda actividad lleva cantidad y unidad). El ejemplo quedó como `swim: 2000m @steady` y `strength: 30min`, y la gramática se probó en Rascal. |

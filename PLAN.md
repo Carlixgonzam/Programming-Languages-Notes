@@ -217,3 +217,5 @@ No hago push.
 - LETREC va en una sección nueva `02-typing-rules-and-letrec` del tema 03.
 - `list_length` de Prolog: no hay `swipl` y no instalo nada. El punto (el error de tipos aparece al ejecutar) se muestra en Scheme y la consulta de Prolog de la diapositiva se cita en la prosa.
 - Los archivos de repaso no se copian al repo.
+- Tema 05: la homoiconicidad usa el ejemplo de la diapositiva (`setf` y `eval` sobre una lista) en lugar de `defmacro`, que no aparece en las diapositivas.
+- Tema 06: la figura de varianza `Transformer[-In, +Out]` ya está en la sección de subtipos del tema 03; el tema 06 la referencia en vez de repetirla. El DSL de entrenamiento (extra) tiene gramática, chequeador y evaluador en Rascal probados, porque su ejemplo original no lo generaba su propia gramática.
