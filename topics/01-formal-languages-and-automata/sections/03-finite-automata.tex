@@ -1,282 +1,731 @@
-% !TeX root = ../main.tex
-\usetikzlibrary{automata}
 \section{Finite automata}
+\label{sec:automata}
 
-\subsection{Why automata at all}
+A grammar generates the words of a language. An automaton goes the other way:
+it reads a word and decides whether it belongs to the language. This section
+follows Hopcroft, Motwani and Ullman~\cite[Ch.~2]{hopcroft2007automata}. The
+lecture writes automata in the Gold language; here they are drawn as diagrams
+and, when they need to run, written in Rascal.
 
-Grammars \emph{generate} strings; automata \emph{recognize} them. Given a candidate string,
-a grammar doesn't directly tell you ``yes/no, is this in the language'' --- you'd have to
-search over all possible derivations. An automaton, by contrast, is a machine you run the
-string through, symbol by symbol, and it tells you yes or no at the end, deterministically
-and in linear time (for the finite automata in this file). The relationship between the two
-is the subject of the equivalence theorem later in this file, and it's the same duality
-you'll meet again with pushdown automata and context-free grammars in file 05: one
-formalism describes the language declaratively, the other gives you an algorithm to decide
-membership.
-
-\subsection{Deterministic finite automata (DFA)}
+\subsection{Labeled transition systems}
 
 \begin{definition}
-A \textbf{deterministic finite automaton} (DFA) is a 5-tuple $M = (Q, \Sigma, \delta, q_0, F)$
-where:
-\begin{itemize}
-  \item $Q$ is a finite set of \textbf{states},
-  \item $\Sigma$ is the input alphabet,
-  \item $\delta: Q \times \Sigma \to Q$ is the (total) \textbf{transition function},
-  \item $q_0 \in Q$ is the \textbf{start state},
-  \item $F \subseteq Q$ is the set of \textbf{accepting} (final) states.
-\end{itemize}
+A \textbf{labeled transition system} (LTS) is a triple $\mathcal{M} = \langle Q,
+\Sigma, \delta \rangle$ where $Q$ is the set of states of the system, $\Sigma$ is
+the set of actions (labels) and $\delta \subseteq Q \times \Sigma \times Q$ is the
+set of transitions. A transition $\langle q, \sigma, q' \rangle$ says that the
+system can move from $q$ to $q'$ when the action $\sigma$ happens.
 \end{definition}
 
-Extend $\delta$ to strings: $\hat\delta(q, \varepsilon) = q$, and
-$\hat\delta(q, wa) = \delta(\hat\delta(q, w), a)$ for $a \in \Sigma$. Then:
+An automaton is an LTS with a starting point and a notion of success. The
+lecture motivates it with a purchase. A customer pays the store; the store
+ships the goods; the store redeems the money at the bank; the bank transfers
+the money to the store. Shipping can happen before or after the money is
+redeemed or transferred, but the purchase is complete only when the goods
+have been shipped and the money transferred. Figure~\ref{fig:shopping} models
+this.
 
-\begin{definition}
-The \textbf{language accepted} by DFA $M$ is
-$L(M) = \{ w \in \Sigma^* \mid \hat\delta(q_0, w) \in F \}$.
-\end{definition}
-
-Because $\delta$ is total and a function (exactly one next state for every state/symbol
-pair), a DFA never has to guess and is never stuck --- it consumes every symbol of the
-input and lands in exactly one state at the end. That's what makes DFAs mechanically
-simple to run: no backtracking, no branching, one pass.
-
-\subsubsection{Worked example: strings over $\{0,1\}$ ending in \texttt{01}}
-
-\begin{example}
-Let $L$ = binary strings ending in \texttt{01}. The trick to designing this DFA by hand is
-to make each state track ``the longest suffix of the input read so far that is also a
-prefix of \texttt{01}.'' The prefixes of \texttt{01} are $\varepsilon$, \texttt{0}, and
-\texttt{01} itself, so three states suffice:
-\begin{itemize}
-  \item $A$: matched prefix $\varepsilon$ (the last symbol, if any, was not a \texttt{0}
-    that could start a fresh match),
-  \item $B$: matched prefix \texttt{0} (the last symbol read was \texttt{0}),
-  \item $C$ (accepting): matched prefix \texttt{01} (the last two symbols were exactly
-    \texttt{01}).
-\end{itemize}
-From each state, ask ``if I read a 0 next, what's the longest prefix of \texttt{01} that
-matches the new suffix? and if I read a 1?'' That question fills in every transition:
-\[
-\delta(A,0)=B,\quad \delta(A,1)=A,\quad
-\delta(B,0)=B,\quad \delta(B,1)=C,\quad
-\delta(C,0)=B,\quad \delta(C,1)=A.
-\]
-The two transitions worth double-checking are $\delta(C,0) = B$ (after accepting on
-\texttt{01}, a new \texttt{0} restarts the match at prefix \texttt{0}, it doesn't throw
-away the progress) and $\delta(C,1) = A$ (a new \texttt{1} after \texttt{01} matches no
-prefix of \texttt{01} at all, so we fall back to $\varepsilon$).
-
-\begin{center}
-\begin{tikzpicture}[shorten >=1pt, node distance=3cm, on grid, auto,
-                    every state/.style={draw, circle, minimum size=0.9cm}]
-  \node[state, initial] (A) {$A$};
-  \node[state] (B) [right of=A] {$B$};
-  \node[state, accepting] (C) [right of=B] {$C$};
-
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.3cm, auto]
+  \node[state, initial above] (A) {A};
+  \node[state, below=1.4cm of A] (B) {B};
+  \node[state, right=of B] (D) {D};
+  \node[state, right=of D] (F) {F};
+  \node[state, below=1.6cm of B] (C) {C};
+  \node[state, right=of C] (E) {E};
+  \node[state, accepting, right=of E] (G) {G};
   \path[->]
-    (A) edge [loop above] node {1} ()
-    (A) edge [bend left, above] node {0} (B)
-    (B) edge [loop above] node {0} ()
-    (B) edge [bend left, above] node {1} (C)
-    (C) edge [bend left=50, below] node {1} (A)
-    (C) edge [bend right, above] node {0} (B);
+    (A) edge node {pay} (B)
+    (B) edge node {redeem} (D)
+    (D) edge node {transfer} (F)
+    (B) edge node[swap] {ship} (C)
+    (D) edge node {ship} (E)
+    (F) edge node {ship} (G)
+    (C) edge node[swap] {redeem} (E)
+    (E) edge node[swap] {transfer} (G);
 \end{tikzpicture}
-\end{center}
+\caption{The purchase automaton. $\Sigma = \{\mathit{pay}, \mathit{ship},
+\mathit{redeem}, \mathit{transfer}\}$, the initial state is A and the only
+final state is G.}
+\label{fig:shopping}
+\end{figure}
 
-Trace $1001$: $A \xrightarrow{1} A \xrightarrow{0} B \xrightarrow{0} B \xrightarrow{1} C$.
-Final state $C \in F$, so $1001$ is accepted --- correctly, since its last two symbols are
-indeed \texttt{01}. The general lesson: build the DFA table \emph{as a table} (every state,
-every symbol, exactly one entry) by asking the ``longest matching prefix'' question
-systematically, rather than drawing arrows by intuition. It's mechanical, and it's much
-harder to get wrong.
-\end{example}
+Every path from A to G is a correct execution of the purchase. The word
+$\mathit{pay}\ \mathit{ship}\ \mathit{redeem}\ \mathit{transfer}$ reaches G, and so
+does $\mathit{pay}\ \mathit{redeem}\ \mathit{transfer}\ \mathit{ship}$. The word
+$\mathit{pay}\ \mathit{ship}\ \mathit{ship}$ does not: the goods cannot be
+shipped twice, so C has no transition for $\mathit{ship}$. In this example the
+symbols of the alphabet are whole actions, not characters.
 
-\subsection{Nondeterministic finite automata (NFA)}
+\subsection{Deterministic finite automata}
 
 \begin{definition}
-A \textbf{nondeterministic finite automaton} (NFA) is a 5-tuple
-$M = (Q, \Sigma, \delta, q_0, F)$ where everything is as in a DFA except
-$\delta: Q \times (\Sigma \cup \{\varepsilon\}) \to \mathcal{P}(Q)$ --- the transition
-function maps a state and a symbol (or $\varepsilon$, the empty string) to a \emph{set} of
-possible next states.
+A \textbf{deterministic finite automaton} (DFA) is a 5-tuple $\mathcal{A} =
+\langle Q, \Sigma, q_I, F, \delta \rangle$ where $Q$ is a finite set of states,
+$\Sigma$ is the input alphabet, $q_I \in Q$ is the initial state, $F \subseteq Q$
+is the set of final states and $\delta : Q \times \Sigma \to Q$ is the transition
+function.
 \end{definition}
 
-An NFA can have zero, one, or many transitions out of a state on a given symbol, and can
-also move to another state ``for free'' via an $\varepsilon$-transition, without consuming
-input. A string is accepted if \emph{some} sequence of choices leads to an accepting state.
-
-\begin{example}
-NFA for strings over $\{a,b\}$ containing the substring \texttt{ab}, built directly and
-loosely from the informal idea ``guess where the \texttt{ab} starts'':
-
-\begin{center}
-\begin{tikzpicture}[shorten >=1pt, node distance=3cm, on grid, auto,
-                    every state/.style={draw, circle, minimum size=0.9cm}]
-  \node[state, initial] (p0) {$p_0$};
-  \node[state] (p1) [right of=p0] {$p_1$};
-  \node[state, accepting] (p2) [right of=p1] {$p_2$};
-
-  \path[->]
-    (p0) edge [loop above] node {a,b} ()
-    (p0) edge node {a} (p1)
-    (p1) edge node {b} (p2)
-    (p2) edge [loop above] node {a,b} ();
-\end{tikzpicture}
-\end{center}
-
-From $p_0$, on symbol \texttt{a} there are \emph{two} outgoing choices: stay in $p_0$ (self
-loop, since \texttt{a} is also in the self-loop label) or move to $p_1$. That's exactly the
-nondeterminism: the machine doesn't commit to ``this \texttt{a} is the start of the
-\texttt{ab} substring'' until it sees whether a \texttt{b} follows, and formally it explores
-both possibilities at once.
-\end{example}
-
-\subsection{Subset construction: NFA $\to$ DFA}
-
-Since real hardware can't ``explore both possibilities at once,'' we need a way to convert
-any NFA into an equivalent DFA. The idea is simple once you see it: track the \emph{set} of
-all NFA states the machine could currently be in, and make each such set a single DFA
-state. This is the \textbf{subset construction} (also called the powerset construction).
+The automaton reads the word from an input tape, one symbol at a time, and
+each symbol moves it to the next state.
 
 \begin{definition}
-Given NFA $N = (Q, \Sigma, \delta, q_0, F)$, define $E(q)$ (the \textbf{$\varepsilon$-closure}
-of $q$) as the set of states reachable from $q$ using only $\varepsilon$-transitions
-(including $q$ itself). The equivalent DFA is $D = (Q', \Sigma, \delta', q_0', F')$ where:
-\begin{itemize}
-  \item $Q' = \mathcal{P}(Q)$ (in practice, only the reachable subsets),
-  \item $q_0' = E(q_0)$,
-  \item $\delta'(S, a) = \bigcup_{q \in S} E(\delta(q,a))$ for $S \subseteq Q$,
-  \item $F' = \{ S \subseteq Q \mid S \cap F \neq \emptyset \}$.
-\end{itemize}
+A word $\omega = \sigma_1 \cdots \sigma_n \in \Sigma^*$ is \textbf{accepted} by
+$\mathcal{A}$ if there are states $q_0, \dots, q_n$ such that $q_0 = q_I$,
+$q_n \in F$ and $\delta(q_{i-1}, \sigma_i) = q_i$ for every $i \in \{1, \dots, n\}$.
 \end{definition}
 
-\subsubsection{Worked example}
-
-\begin{example}
-Let's run subset construction on a small NFA (no $\varepsilon$-transitions, to keep it
-simple) over $\Sigma = \{a,b\}$ recognizing strings that end in \texttt{a}, but built
-nondeterministically: from $q_0$, reading \texttt{a} you can either stay in $q_0$ or guess
-you've hit the final \texttt{a} and move to $q_1$ (accepting); reading \texttt{b} only stays
-in $q_0$.
-
+The same idea can be packed into one function that processes a whole word.
+The \textbf{extended transition function} $\hat\delta : Q \times \Sigma^* \to Q$
+is defined by induction on the word:
 \[
-\delta(q_0, a) = \{q_0, q_1\}, \quad \delta(q_0, b) = \{q_0\}, \quad
-\delta(q_1, a) = \emptyset, \quad \delta(q_1, b) = \emptyset, \quad F = \{q_1\}
+  \hat\delta(q, \lambda) = q
+  \qquad\qquad
+  \hat\delta(q, \omega\sigma) = \delta(\hat\delta(q, \omega), \sigma).
 \]
+The empty word leaves the automaton where it is, and a word that ends in
+$\sigma$ is processed by first processing the prefix and then taking one more
+step.
 
-Start the subset construction from $\{q_0\}$ and only compute what's reachable:
+\begin{definition}
+The \textbf{language of a DFA} is $L(\mathcal{A}) = \{ \omega \in \Sigma^* \mid
+\hat\delta(q_I, \omega) \in F \}$.
+\end{definition}
 
-\begin{center}
-\begin{tabular}{lll}
-\hline
-\textbf{DFA state (subset)} & \textbf{on $a$} & \textbf{on $b$} \\
-\hline
-$\{q_0\}$ (start)             & $\{q_0,q_1\}$ & $\{q_0\}$ \\
-$\{q_0,q_1\}$ (accepting)     & $\{q_0,q_1\}$ & $\{q_0\}$ \\
-\hline
+\paragraph{Example: words that contain 01.} The lecture builds a DFA over
+$\{0, 1\}$ that accepts the words containing the substring $01$
+(Figure~\ref{fig:contains01}). The state names say what the automaton has
+seen. In \textit{Just1} it has seen only 1s (or nothing). A 0 moves it to
+\textit{Read0}, where further 0s change nothing because the last symbol is
+still 0. A 1 after that completes the pattern, and from \textit{Read01} every
+symbol keeps the word accepted.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=3cm, auto, every state/.style={draw, minimum size=11mm, font=\small}]
+  \node[state, initial] (J) {\textit{Just1}};
+  \node[state, right=of J] (R0) {\textit{Read0}};
+  \node[state, accepting, right=of R0] (R01) {\textit{Read01}};
+  \path[->]
+    (J) edge[loop above] node {1} ()
+    (J) edge node {0} (R0)
+    (R0) edge[loop above] node {0} ()
+    (R0) edge node {1} (R01)
+    (R01) edge[loop above] node {0, 1} ();
+\end{tikzpicture}
+\caption{DFA for the words over $\{0,1\}$ that contain $01$.}
+\label{fig:contains01}
+\end{figure}
+
+For the word $1010$:
+$\hat\delta(\mathit{Just1}, 1010) = \delta(\delta(\delta(\delta(\mathit{Just1}, 1), 0), 1), 0)
+= \delta(\delta(\delta(\mathit{Just1}, 0), 1), 0) = \delta(\delta(\mathit{Read0}, 1), 0)
+= \delta(\mathit{Read01}, 0) = \mathit{Read01}$, so $1010$ is accepted.
+Table~\ref{tab:contains01} gives the other words of the lecture.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l c}
+  \toprule
+  Word & States visited & Accepted \\
+  \midrule
+  $01$     & Just1, Read0, Read01                          & yes \\
+  $1010$   & Just1, Just1, Read0, Read01, Read01           & yes \\
+  $100011$ & Just1, Just1, Read0, Read0, Read0, Read01, Read01 & yes \\
+  $0$      & Just1, Read0                                  & no \\
+  $111000$ & Just1, Just1, Just1, Just1, Read0, Read0, Read0 & no \\
+  \bottomrule
 \end{tabular}
-\end{center}
+\caption{Runs of the automaton of Figure~\ref{fig:contains01}.}
+\label{tab:contains01}
+\end{table}
 
-Only two reachable subsets show up, not all $4 = 2^2$ possible subsets of $\{q_0,q_1\}$ ---
-in practice the reachable part of the powerset is usually far smaller than the full
-powerset, which is what keeps subset construction usable. The resulting DFA:
+\paragraph{Automata in Rascal.} In the code for this section an automaton is a
+set of initial states, a set of final states and a relation of transitions.
+The empty string \texttt{""} is used as the label of a $\lambda$-transition,
+which is needed in the next subsection. A DFA is the case with one initial
+state and one transition per state and symbol.
+\codelines{Rascal}{rascal/src/Automata.rsc}{7}{9}
+The automaton of Figure~\ref{fig:contains01} is written as
+\codelines{Rascal}{rascal/src/Automata.rsc}{58}{62}
+and \texttt{Automata.rsc} checks it against the words of
+Table~\ref{tab:contains01} and against every word of length up to 8.
 
-\begin{center}
-\begin{tikzpicture}[shorten >=1pt, node distance=3.6cm, on grid, auto,
-                    every state/.style={draw, circle, minimum size=1cm}]
-  \node[state, initial] (A) {$\{q_0\}$};
-  \node[state, accepting] (B) [right of=A] {$\{q_0,q_1\}$};
+\subsection{Nondeterministic finite automata}
 
+DFA definitions are restrictive: every state needs exactly one transition for
+every symbol, and there is one initial state. A nondeterministic automaton
+relaxes three things.
+\begin{enumerate}
+  \item Transitions may be over words, including the empty word $\lambda$.
+    A transition labeled $abb$ reads three symbols; a transition labeled
+    $\lambda$ reads nothing.
+  \item There is choice: a state may have several transitions with the same
+    label, or none.
+  \item There may be several initial states.
+\end{enumerate}
+
+\begin{definition}
+A \textbf{nondeterministic finite automaton} (NFA) is a 5-tuple $\mathcal{A} =
+\langle Q, \Sigma, I, F, \Delta \rangle$ where $I \subseteq Q$ is a set of
+initial states and $\Delta \subseteq Q \times (\Sigma \cup \{\lambda\}) \times Q$
+is a transition relation. Equivalently, $\Delta$ is a function from $Q \times
+(\Sigma \cup \{\lambda\})$ to $\mathcal{P}(Q)$, the set of subsets of $Q$.
+\end{definition}
+
+\begin{definition}
+A word $\omega = \sigma_1 \cdots \sigma_n$ is \textbf{recognized} by an NFA if
+there is a path from some initial state $q_I \in I$ to some final state
+$f \in F$ that reads all the symbols of $\omega$, in order, possibly taking
+$\lambda$-transitions in between. We write $q_I \stackrel{\omega}{\Longrightarrow} f$.
+\end{definition}
+
+The word is accepted if one path works; other paths may get stuck or end in
+non-final states. A DFA is an NFA with $I = \{q_I\}$, no $\lambda$-transitions
+and exactly one transition per state and symbol.
+
+\paragraph{Example: last symbol 0, or only a 1.} The lecture asks for an
+automaton over $\{0,1\}$ that recognizes the words whose last symbol is 0 and
+the word $1$. With $\lambda$-transitions the two cases can be built
+separately and joined at the start (Figure~\ref{fig:last0}). From A the
+automaton chooses, without reading anything, which case it is in. The
+branch through B reads exactly one 1. The branch through C reads any word and
+then guesses that the current 0 is the last symbol. If the guess is wrong,
+that path gets stuck in D, which has no outgoing transitions.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.2cm, auto]
+  \node[state, initial] (A) {A};
+  \node[state, above right=0.8cm and 2cm of A] (B) {B};
+  \node[state, below right=0.8cm and 2cm of A] (C) {C};
+  \node[state, accepting, below right=0.8cm and 2cm of B] (D) {D};
   \path[->]
-    (A) edge [loop above] node {b} ()
-    (A) edge [bend left, above] node {a} (B)
-    (B) edge [bend left, below] node {b} (A)
-    (B) edge [loop above] node {a} ();
+    (A) edge node {$\lambda$} (B)
+    (A) edge node[swap] {$\lambda$} (C)
+    (B) edge node {1} (D)
+    (C) edge node[swap] {0} (D)
+    (C) edge[loop below] node {0, 1} ();
 \end{tikzpicture}
-\end{center}
+\caption{NFA for the words that end in 0, plus the word 1.}
+\label{fig:last0}
+\end{figure}
 
-Notice the blow-up potential in general: an NFA with $n$ states can force a DFA with up to
-$2^n$ states in the worst case (this is a real, tight bound, not just a sloppy estimate) ---
-but as this example shows, the \emph{reachable} subsets are often far fewer in practice.
-This exponential worst case is the classic trade-off: NFAs are smaller and easier to
-construct (from a regex, say --- see file 04), DFAs are faster to run (no need to track
-sets, no backtracking) but can be exponentially larger.
-\end{example}
+\paragraph{Example: \texttt{cat} and \texttt{hat}.} Over $\{c, a, t, h\}$ the
+lecture defines the NFA of Figure~\ref{fig:cathat}. It has two branches
+joined by $\lambda$-transitions from A. The upper branch loops in B on every
+symbol, guesses where \texttt{hat} starts, reads it and stays in E. It
+accepts the words that contain \texttt{hat}. The lower branch is a DFA that
+remembers how much of \texttt{cat} it has just read: G after \texttt{c}, H
+after \texttt{ca}. A \texttt{t} in H means the word contains \texttt{cat}, and
+I is a trap state that is not final. F, G and H are final, so the lower branch
+accepts the words that do not contain \texttt{cat}.
 
-\subsection{DFAs and NFAs accept exactly the same languages}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.1cm, auto, every state/.style={draw, minimum size=7mm, inner sep=1pt, font=\small}]
+  \node[state, initial] (A) {A};
+  \node[state, above right=1.2cm and 1.6cm of A] (B) {B};
+  \node[state, right=of B] (C) {C};
+  \node[state, right=of C] (D) {D};
+  \node[state, accepting, right=of D] (E) {E};
+  \node[state, accepting, below right=1.2cm and 1.6cm of A] (F) {F};
+  \node[state, accepting, right=of F] (G) {G};
+  \node[state, accepting, right=of G] (H) {H};
+  \node[state, right=of H] (I) {I};
+  \path[->]
+    (A) edge node {$\lambda$} (B)
+    (A) edge node[swap] {$\lambda$} (F)
+    (B) edge[loop above] node {c, a, t, h} ()
+    (B) edge node {h} (C)
+    (C) edge node {a} (D)
+    (D) edge node {t} (E)
+    (E) edge[loop above] node {c, a, t, h} ()
+    (F) edge[loop below] node {a, t, h} ()
+    (F) edge[bend left=15] node {c} (G)
+    (G) edge[bend left=15] node {t, h} (F)
+    (G) edge[loop above] node {c} ()
+    (G) edge[bend left=15] node {a} (H)
+    (H) edge[bend left=15] node {c} (G)
+    (H) edge[bend left=50] node {a, h} (F)
+    (H) edge node {t} (I)
+    (I) edge[loop below] node {c, a, t, h} ();
+\end{tikzpicture}
+\caption{The NFA of the lecture over $\{c,a,t,h\}$.}
+\label{fig:cathat}
+\end{figure}
+
+Together, the automaton accepts the words that do not contain \texttt{cat}
+or that contain \texttt{hat}. The slide states the exercise as ``does not
+contain the string cat or the string hat'', which can also be read as
+``contains neither''. Under that reading the automaton is wrong, since it
+accepts \texttt{hat} and \texttt{cathat}. Exercise~\ref{ex:neither} builds
+the automaton for the second reading. In Rascal:
+\codelines{Rascal}{rascal/src/Automata.rsc}{98}{108}
+Running an NFA means keeping the set of states where some path could be.
+Before reading and after every symbol, the set is closed under
+$\lambda$-transitions:
+\codelines{Rascal}{rascal/src/Automata.rsc}{11}{27}
+
+\subsection{From NFA to DFA}
+
+Nondeterminism makes automata easier to write, but it does not let them
+recognize more languages.
 
 \begin{theorem}
-For every NFA $N$ there is a DFA $D$ with $L(D) = L(N)$ (via subset construction), and every
-DFA is trivially an NFA (one with no nondeterministic choices and no $\varepsilon$-moves).
-Hence the class of languages accepted by DFAs and the class accepted by NFAs coincide; this
-class is exactly the \textbf{regular languages}.
+Every NFA has an equivalent DFA.
 \end{theorem}
 
-The proof in the DFA-to-NFA direction is immediate (a DFA already satisfies the NFA
-definition, just with singleton transition sets and no $\varepsilon$-edges). The
-NFA-to-DFA direction is exactly the subset construction above, plus an induction on string
-length showing $\hat\delta'(q_0', w) = E(\hat\delta(q_0, w))$ for every $w$ (each side
-reaches, respectively, the DFA state and the exact set of NFA states reachable on $w$) ---
-we won't write out the induction symbol by symbol here, but it's a standard exercise once
-you trust the construction. The practical takeaway: nondeterminism doesn't buy you
-recognizing power, only convenience (an NFA is often much easier to build directly, e.g.\
-from a regular expression, than a DFA is).
+The construction removes the three relaxations one at a time. All three use
+the same idea: a state of the new automaton stands for a set of states of the
+old one, and it behaves like all of them together. A set is initial or final
+according to the states it contains.
 
-\subsection{Closure properties}
+\paragraph{Transitions over words.} A transition $\langle q, abb, q' \rangle$
+becomes a chain $q \xrightarrow{a} p_1 \xrightarrow{b} p_2 \xrightarrow{b} q'$
+through new states $p_1, p_2$.
 
-One of the most useful features of regular languages is that they're closed under several
-operations --- meaning if you start with regular languages, applying the operation gives you
-back a regular language, with a constructive proof that doubles as an algorithm.
+\paragraph{Eliminate $\lambda$-transitions.} The \textbf{$\lambda$-closure}
+$\mathit{cl}_\lambda(q)$ is the set of states reachable from $q$ using only
+$\lambda$-transitions, including $q$ itself. If the automaton can go from $u$
+to $q$ reading $a$, and $t \in \mathit{cl}_\lambda(q)$, then it can also go from
+$u$ to $t$ reading $a$: add $\langle u, a, t \rangle$. A state becomes final if
+its closure contains a final state, and the initial states are replaced by
+their closures. After that, the $\lambda$-transitions can be deleted.
 
-\begin{proposition}
-If $L_1, L_2$ are regular, so are $L_1 \cup L_2$, $L_1 \cap L_2$, and $\overline{L_1}$
-(complement, relative to $\Sigma^*$).
-\end{proposition}
+\paragraph{Eliminate choice.} If a state has several transitions with the same
+symbol, replace the targets by one state that stands for the set of them.
+This is the \textbf{set construction}. Starting from the set of initial
+states, for each set $S$ and symbol $\sigma$ the next set is
+\[
+  \delta'(S, \sigma) = \bigcup_{q \in S} \mathit{cl}_\lambda\big(\{ t \mid \langle q, \sigma, t \rangle \in \Delta \}\big),
+\]
+and $S$ is final if $S \cap F \ne \emptyset$. Only the sets reachable from the
+start are generated. The empty set appears when no state has a transition for
+$\sigma$; it is a trap state.
 
-\begin{itemize}
-  \item \textbf{Complement.} Take a DFA for $L_1$ (must be a complete DFA --- total
-    $\delta$, which we've required all along) and swap accepting and non-accepting states:
-    $F' = Q \setminus F$. Every string that used to be rejected is now accepted and vice
-    versa, so $L(D') = \overline{L_1}$. This is a one-line construction, and it's exactly
-    why we insist DFAs are total: an NFA can't be complemented this way, because ``not
-    accepting'' for an NFA isn't the same as ``all paths reject.''
-  \item \textbf{Intersection --- product construction.} Build DFAs $D_1 = (Q_1, \Sigma,
-    \delta_1, q_{0,1}, F_1)$ and $D_2 = (Q_2, \Sigma, \delta_2, q_{0,2}, F_2)$ for $L_1$
-    and $L_2$. Construct $D = (Q_1 \times Q_2, \Sigma, \delta, (q_{0,1}, q_{0,2}), F_1
-    \times F_2)$ with $\delta((p,q), a) = (\delta_1(p,a), \delta_2(q,a))$ --- run both
-    machines in lockstep, tracking a pair of states, and accept only when \emph{both}
-    component machines would accept. Since $F$ is exactly $F_1 \times F_2$, $D$ accepts $w$
-    iff both $D_1$ and $D_2$ accept $w$, i.e.\ $L(D) = L_1 \cap L_2$.
-  \item \textbf{Union.} Either use the same product construction with $F = (F_1 \times Q_2)
-    \cup (Q_1 \times F_2)$ (accept if \emph{either} component accepts), or note that
-    $L_1 \cup L_2 = \overline{\overline{L_1} \cap \overline{L_2}}$ by De Morgan and reuse
-    the two constructions above.
-\end{itemize}
+\paragraph{Remove additional initial states.} The set $I$ of initial states
+becomes a single initial state of the new automaton. In the set construction
+this happens by starting from $\mathit{cl}_\lambda(I)$ instead of from one
+state.
 
-These closure properties are exactly what make regular languages a well-behaved class to
-compute with: you can build small automata for simple sublanguages and combine them
-algorithmically into automata for more complex conditions, instead of building one giant
-automaton by hand for the whole condition at once. This is precisely what a lexer generator
-does under the hood when you give it a list of token patterns (each one a small regular
-language) and it produces a single combined DFA.
+In Rascal the whole construction is a search over sets of states. Each set
+is named by listing its states, so \texttt{\{A,S\}} is a state of the DFA:
+\codelines{Rascal}{rascal/src/Automata.rsc}{165}{186}
+
+\paragraph{Example.} Exercise~6 of the lecture asks to convert the NFA on the
+left of Figure~\ref{fig:ex6} to a DFA. S reads $a$ and may stay in S or go to
+A; it reads $b$ and may go to B or C. Table~\ref{tab:ex6} runs the set
+construction from $\{S\}$, and the DFA is on the right of the figure.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l c}
+  \toprule
+  Set & on $a$ & on $b$ & Final \\
+  \midrule
+  $\{S\}$       & $\{A, S\}$    & $\{B, C\}$ & no \\
+  $\{A, S\}$    & $\{A, C, S\}$ & $\{B, C\}$ & no \\
+  $\{B, C\}$    & $\{C\}$       & $\emptyset$ & yes \\
+  $\{A, C, S\}$ & $\{A, C, S\}$ & $\{B, C\}$ & yes \\
+  $\{C\}$       & $\{C\}$       & $\emptyset$ & yes \\
+  $\emptyset$   & $\emptyset$   & $\emptyset$ & no \\
+  \bottomrule
+\end{tabular}
+\caption{Set construction for the NFA of Figure~\ref{fig:ex6}.}
+\label{tab:ex6}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=1.8cm, auto]
+  \node[state, initial] (S) {S};
+  \node[state, right=2.2cm of S] (A) {A};
+  \node[state, accepting, below=1.6cm of A] (C) {C};
+  \node[state, below=1.6cm of S] (B) {B};
+  \path[->]
+    (S) edge[loop above] node {a} ()
+    (S) edge node {a} (A)
+    (S) edge node {b} (C)
+    (S) edge node[swap] {b} (B)
+    (A) edge node {a} (C)
+    (B) edge node[swap] {a} (C)
+    (C) edge[loop right] node {a} ();
+\end{tikzpicture}
+\hspace{1cm}
+\begin{tikzpicture}[node distance=2.2cm, auto, every state/.style={draw, minimum size=10mm, inner sep=1pt, font=\scriptsize}]
+  \node[state, initial] (s) {$\{S\}$};
+  \node[state, right=of s] (as) {$\{A,S\}$};
+  \node[state, accepting, right=of as] (acs) {$\{A,C,S\}$};
+  \node[state, accepting, below=1.5cm of as] (bc) {$\{B,C\}$};
+  \node[state, accepting, right=of bc] (c) {$\{C\}$};
+  \node[state, below=1.3cm of bc] (e) {$\emptyset$};
+  \path[->]
+    (s) edge node {a} (as)
+    (as) edge node {a} (acs)
+    (acs) edge[loop above] node {a} ()
+    (s) edge node[swap] {b} (bc)
+    (as) edge node[pos=0.4] {b} (bc)
+    (acs) edge node[pos=0.3] {b} (bc)
+    (bc) edge node {a} (c)
+    (c) edge[loop right] node {a} ()
+    (bc) edge node {b} (e)
+    (c) edge node {b} (e)
+    (e) edge[loop left] node {a, b} ();
+\end{tikzpicture}
+\caption{The NFA of exercise 6 (left) and the DFA produced by the set construction (right).}
+\label{fig:ex6}
+\end{figure}
+
+Six sets appear, out of the $2^4 = 16$ subsets of $\{S, A, B, C\}$. In the
+worst case an NFA with $n$ states needs a DFA with $2^n$ states, but usually
+only a few sets are reachable. The tests in \texttt{Automata.rsc} check that
+the construction produces exactly these six states and that both automata
+accept the same words.
+
+\subsection{Combining automata}
+
+Automata for simple languages can be combined into automata for more complex
+ones. The lecture uses two automata over $\{a, b\}$ as running examples
+(Figure~\ref{fig:lb-l2a}). $L_b$ recognizes the words that contain a $b$.
+$L_{2a}$ recognizes the words that end in $aa$: A loops on every symbol and
+guesses where the final $aa$ starts. The $\lambda$ back from C lets the
+automaton continue after an $aa$, but since only C is final, the word must
+end there.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.6cm, auto]
+  \node[state, initial] (W) {W};
+  \node[state, accepting, right=of W] (Z) {Z};
+  \node[above=0.9cm of W, xshift=-1.2cm] {$L_b$};
+  \path[->]
+    (W) edge[loop above] node {a, b} ()
+    (W) edge node {b} (Z)
+    (Z) edge[loop above] node {a, b} ();
+\end{tikzpicture}
+\hspace{1.2cm}
+\begin{tikzpicture}[node distance=2.2cm, auto]
+  \node[state, initial] (A) {A};
+  \node[state, right=of A] (B) {B};
+  \node[state, accepting, right=of B] (C) {C};
+  \node[above=0.9cm of A, xshift=-1.2cm] {$L_{2a}$};
+  \path[->]
+    (A) edge[loop above] node {a, b} ()
+    (A) edge[bend left=20] node {a} (B)
+    (B) edge[bend left=20] node {b} (A)
+    (B) edge node {a} (C)
+    (C) edge[bend left=40] node {$\lambda$} (A);
+\end{tikzpicture}
+\caption{The two automata used for the combinations.}
+\label{fig:lb-l2a}
+\end{figure}
+
+For $\mathcal{A}_1 = \langle Q_1, \Sigma, I_1, F_1, \Delta_1 \rangle$ and
+$\mathcal{A}_2 = \langle Q_2, \Sigma, I_2, F_2, \Delta_2 \rangle$ with disjoint
+sets of states:
+
+\paragraph{Union.} Add a new initial state $q$ with a $\lambda$-transition to
+every initial state of both automata:
+\[
+\mathcal{A}_1 \cup \mathcal{A}_2 = \langle Q_1 \cup Q_2 \cup \{q\}, \Sigma, \{q\}, F_1 \cup F_2, \Delta \rangle,
+\quad
+\Delta = \Delta_1 \cup \Delta_2 \cup \{ \langle q, \lambda, i \rangle \mid i \in I_1 \cup I_2 \}.
+\]
+From $q$ the automaton chooses which of the two to run.
+
+\paragraph{Concatenation.} Connect every final state of the first automaton
+to every initial state of the second:
+\[
+\mathcal{A}_1\mathcal{A}_2 = \langle Q_1 \cup Q_2, \Sigma, I_1, F_2, \Delta \rangle,
+\quad
+\Delta = \Delta_1 \cup \Delta_2 \cup \{ \langle f, \lambda, i \rangle \mid f \in F_1,\ i \in I_2 \}.
+\]
+For $L_b L_{2a}$ the automaton reads a prefix that contains a $b$, jumps from
+Z to A and then reads a suffix that ends in $aa$.
+
+\paragraph{Kleene star.} The star must accept the empty word and any sequence
+of words of $L(\mathcal{A}_1)$. The slide gives
+\[
+\mathcal{A}_1^* = \langle Q_1, \Sigma, I_1, F_1 \cup I_1, \Delta \rangle,
+\quad
+\Delta = \Delta_1 \cup \{ \langle f, \lambda, i \rangle \mid f \in F_1,\ i \in I_1 \}
+\]
+(the slide writes $F_2$ and $\Delta_2$, but there is only one automaton). The
+$\lambda$-transitions from the final states back to the initial states allow
+repetition. Making the initial states final, to accept $\lambda$, does not work
+in general. In $L_b$ the initial state W has a loop on $a$, so the word $a$
+would end in W and be accepted, but $a \notin L_b^*$: it is not empty and it
+contains no $b$. The safe construction adds a new initial state $q$ that is
+final, with $\lambda$-transitions from $q$ to the old initial states and from the
+old final states back to $q$:
+\[
+\mathcal{A}_1^* = \langle Q_1 \cup \{q\}, \Sigma, \{q\}, F_1 \cup \{q\}, \Delta \rangle,
+\quad
+\Delta = \Delta_1 \cup \{ \langle q, \lambda, i \rangle \mid i \in I_1 \} \cup \{ \langle f, \lambda, q \rangle \mid f \in F_1 \}.
+\]
+No old transition enters $q$, so only the empty word ends there without
+reading a word of $L(\mathcal{A}_1)$.
+
+The three constructions in Rascal (\texttt{rename} prefixes the states of each
+automaton so that they are disjoint):
+\codelines{Rascal}{rascal/src/Automata.rsc}{226}{242}
+
+\paragraph{Product construction.} Intersection and difference cannot be built
+with $\lambda$-transitions, because the automaton has to read the word with both
+automata at the same time. For two DFAs $\mathcal{A}_1 = \langle Q_1, \Sigma,
+q_{I_1}, F_1, \delta_1 \rangle$ and $\mathcal{A}_2 = \langle Q_2, \Sigma, q_{I_2},
+F_2, \delta_2 \rangle$, the product automaton has pairs of states:
+\[
+\langle Q_1 \times Q_2, \Sigma, (q_{I_1}, q_{I_2}), F, \delta \rangle,
+\qquad
+\delta((p, q), \sigma) = (\delta_1(p, \sigma), \delta_2(q, \sigma)).
+\]
+Only the final states change with the operation:
+\begin{center}
+\begin{tabular}{l l}
+  \toprule
+  Operation & $F$ \\
+  \midrule
+  $L_1 \cup L_2$          & $\{ (p, q) \mid p \in F_1 \text{ or } q \in F_2 \}$ \\
+  $L_1 \cap L_2$          & $\{ (p, q) \mid p \in F_1 \text{ and } q \in F_2 \}$ \\
+  $L_1 \setminus L_2$     & $\{ (p, q) \mid p \in F_1 \text{ and } q \notin F_2 \}$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+Both automata must be complete DFAs: if one of them got stuck, the pair would
+have no next state. That is why the set construction keeps the empty set as a
+trap state.
+
+Applying the set construction to $L_b$ gives two states: $N = \{W\}$ (no $b$
+yet) and $Y = \{W, Z\}$ (a $b$ was read). Applying it to $L_{2a}$ gives three:
+$s_0 = \{A\}$, $s_1 = \{A, B\}$ (the word ends in one $a$) and $s_2 = \{A, B,
+C\}$ (it ends in $aa$). Figure~\ref{fig:product} shows their product. For
+$L_b \cap L_{2a}$ the only final state is $(Y, s_2)$; for $L_{2a} \setminus L_b$
+it is $(N, s_2)$; for the union it is every pair with $Y$ or $s_2$.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.6cm, auto, every state/.style={draw, minimum size=11mm, inner sep=1pt, font=\small}]
+  \node[state, initial] (n0) {$N,s_0$};
+  \node[state, right=of n0] (n1) {$N,s_1$};
+  \node[state, right=of n1] (n2) {$N,s_2$};
+  \node[state, below=2cm of n0] (y0) {$Y,s_0$};
+  \node[state, right=of y0] (y1) {$Y,s_1$};
+  \node[state, accepting, right=of y1] (y2) {$Y,s_2$};
+  \path[->]
+    (n0) edge node {a} (n1)
+    (n1) edge node {a} (n2)
+    (n2) edge[loop right] node {a} ()
+    (y0) edge[bend left=15] node {a} (y1)
+    (y1) edge node {a} (y2)
+    (y2) edge[loop right] node {a} ()
+    (y0) edge[loop left] node {b} ()
+    (n0) edge node[swap] {b} (y0)
+    (n1) edge node[pos=0.25] {b} (y0)
+    (n2) edge node[pos=0.15, above] {b} (y0)
+    (y1) edge[bend left=15] node {b} (y0)
+    (y2) edge[bend left=35] node {b} (y0);
+\end{tikzpicture}
+\caption{Product of the DFAs for $L_b$ and $L_{2a}$. The final state shown is the one for $L_b \cap L_{2a}$.}
+\label{fig:product}
+\end{figure}
+
+In Rascal the product is built by searching the reachable pairs, and a
+function decides which pairs are final:
+\codelines{Rascal}{rascal/src/Automata.rsc}{248}{275}
+The tests compare each combination of $L_b$ and $L_{2a}$ with its definition
+on every word of length up to 8. They also confirm that the star from the
+slide accepts $a$ and the corrected one does not.
 
 \subsection{Exercises}
 
-\begin{itemize}
-  \item Build the DFA table (every state $\times$ every symbol, one entry each) for
-    strings over $\{0,1\}$ that contain \texttt{00} as a substring. Draw the corresponding
-    state diagram.
-  \item Take the NFA in this section for ``contains \texttt{ab}'' and run the full subset
-    construction (not just the reachable part --- compute all subsets that actually show
-    up, including any dead/trap state) to get an equivalent DFA. Draw the result.
-  \item Prove, using the product construction, that regular languages are closed under
-    set difference $L_1 \setminus L_2$ (hint: express set difference using intersection
-    and complement, both of which you already have constructions for).
-  \item Design a DFA that accepts binary strings representing a multiple of 3 (interpreting
-    the string as a binary number, most significant bit first). Explain what each state
-    represents (hint: the state should track the current value mod 3).
-  \item Think about why an NFA's ``exists an accepting path'' semantics does NOT let you
-    complement an NFA just by swapping $F$ and $Q \setminus F$. Construct a tiny NFA and a
-    string where swapping $F$ gives the wrong answer, to make the point concrete.
-\end{itemize}
+\begin{exercise}
+Define an automaton that accepts the words over $\{0, 1\}$ with an even number
+of 0s and an even number of 1s.
+\end{exercise}
+
+\paragraph{Solution.} The automaton has to remember two parities, so it needs
+four states: EE, OE, EO and OO, where the first letter is the parity of the
+0s and the second the parity of the 1s (Figure~\ref{fig:eveneven}). A 0
+flips the first letter and a 1 flips the second. EE is initial and final.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.8cm, auto]
+  \node[state, initial, accepting] (EE) {EE};
+  \node[state, right=of EE] (OE) {OE};
+  \node[state, below=1.8cm of EE] (EO) {EO};
+  \node[state, right=of EO] (OO) {OO};
+  \path[->]
+    (EE) edge[bend left=15] node {0} (OE)
+    (OE) edge[bend left=15] node {0} (EE)
+    (EO) edge[bend left=15] node {0} (OO)
+    (OO) edge[bend left=15] node {0} (EO)
+    (EE) edge[bend left=15] node {1} (EO)
+    (EO) edge[bend left=15] node {1} (EE)
+    (OE) edge[bend left=15] node {1} (OO)
+    (OO) edge[bend left=15] node {1} (OE);
+\end{tikzpicture}
+\caption{Even number of 0s and even number of 1s.}
+\label{fig:eveneven}
+\end{figure}
+
+\begin{exercise}
+Define an automaton that accepts the words of the language of lists of
+Section~\ref{sec:grammars}: \texttt{[]}, \texttt{1|[]}, \texttt{1|2|3|[]}, but not
+\texttt{[1,2,3]} or \texttt{1|[]|2|[]}.
+\end{exercise}
+
+\paragraph{Solution.} The lecture's automaton is in Figure~\ref{fig:lists-dfa}.
+From $q_0$ the word either starts the empty list with \texttt{[} or starts a
+number. In $q_3$ the automaton reads the rest of the number; \texttt{|} moves it
+to $q_4$, where another number or the final \texttt{[]} may follow. Only
+$q_2$ is final, and $q_2$ has no outgoing transitions, so nothing can follow
+\texttt{[]}. The second version on the slide adds a state \textit{err} and
+sends every missing transition there, which turns the automaton into a
+complete DFA.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.6cm, auto]
+  \node[state, initial] (q0) {$q_0$};
+  \node[state, right=of q0] (q1) {$q_1$};
+  \node[state, accepting, right=of q1] (q2) {$q_2$};
+  \node[state, below=1.8cm of q0] (q3) {$q_3$};
+  \node[state, right=of q3] (q4) {$q_4$};
+  \path[->]
+    (q0) edge node {[} (q1)
+    (q1) edge node {]} (q2)
+    (q0) edge node[swap] {0..9} (q3)
+    (q3) edge[loop left] node {0..9} ()
+    (q3) edge[bend left=15] node {|} (q4)
+    (q4) edge[bend left=15] node {0..9} (q3)
+    (q4) edge node[swap] {[} (q1);
+\end{tikzpicture}
+\caption{Automaton for the language of lists.}
+\label{fig:lists-dfa}
+\end{figure}
+
+The Rascal version builds the transitions on digits with a comprehension:
+\codelines{Rascal}{rascal/src/Automata.rsc}{81}{90}
+
+\begin{exercise}
+Write an NFA over $\{a, b\}$ that recognizes the words containing the pattern
+$bb$ or $bab$ exactly once (occurrences counted from left to right, without
+overlapping).
+\end{exercise}
+
+\paragraph{Solution.} The lecture's automaton has initial state E, which loops on
+$a$ until a $b$ arrives. From A, a second $b$ completes $bb$ (through B and a
+$\lambda$ to C) and $a$ then $b$ completes $bab$ (through D). From C on, the
+automaton accepts while no second pattern appears: C loops on $a$, a single
+$b$ goes to F, $bb$ ends in the trap state H, and $ba$ goes to G, where $b$
+would complete a second $bab$. The finals are C, F and G.
+
+The automaton on the slide is missing one transition. After $b$ and $a$ it is
+in D, and D only has a transition on $b$. On the word $baabb$ the run is
+E, A, D and then stuck, so the word is rejected even though it contains
+$bb$ exactly once. The fix is $\langle D, a, E \rangle$: after $baa$ no pattern has
+started, so the automaton goes back to the beginning (Figure~\ref{fig:bbbab}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.2cm, auto]
+  \node[state, initial] (E) {E};
+  \node[state, right=of E] (A) {A};
+  \node[state, right=of A] (B) {B};
+  \node[state, below=1.5cm of A] (D) {D};
+  \node[state, accepting, below=1.5cm of B] (C) {C};
+  \node[state, accepting, right=of C] (F) {F};
+  \node[state, right=of F] (H) {H};
+  \node[state, accepting, below=1.5cm of F] (G) {G};
+  \path[->]
+    (E) edge[loop above] node {a} ()
+    (E) edge node {b} (A)
+    (A) edge node {b} (B)
+    (A) edge node[swap] {a} (D)
+    (B) edge node {$\lambda$} (C)
+    (D) edge node[swap] {b} (C)
+    (D) edge[dashed] node {a} (E)
+    (C) edge[loop below] node {a} ()
+    (C) edge node {b} (F)
+    (F) edge node {b} (H)
+    (F) edge node {a} (G)
+    (G) edge node[swap] {b} (H)
+    (G) edge[bend left=20] node {a} (C);
+\end{tikzpicture}
+\caption{Exactly one $bb$ or $bab$. The dashed transition is missing on the slide.}
+\label{fig:bbbab}
+\end{figure}
+
+\begin{exercise}
+Write an NFA that recognizes $(ab \mid aab \mid aba)^*$.
+\end{exercise}
+
+\paragraph{Solution.} With transitions over words, the first step is a state E
+that is initial and final, with three loops labeled $ab$, $aab$ and $aba$.
+Splitting the words into single symbols and sharing the common prefix $a$
+gives Figure~\ref{fig:abstar}: from E an $a$ leads to X; from X, $b$ returns
+to E ($ab$), $a$ then $b$ returns to E ($aab$), and $b$ then $a$ returns to E
+($aba$). The automaton is nondeterministic only in X, which has two
+transitions on $b$.
+
+The automaton on the slide puts a loop on $a$ and $b$ in E, makes C the only
+final state and adds $\lambda$-transitions from A and D to C. With that loop the
+automaton accepts every word that ends in $b$ or $ba$, for example $b$ and
+$bbb$, which are not in the language, and it rejects the empty word, which is.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.3cm, auto]
+  \node[state, initial, accepting] (E) {E};
+  \node[state, right=of E] (X) {X};
+  \node[state, above right=0.9cm and 1.8cm of X] (Z) {Z};
+  \node[state, below right=0.9cm and 1.8cm of X] (Y) {Y};
+  \path[->]
+    (E) edge[bend left=15] node {a} (X)
+    (X) edge[bend left=15] node {b} (E)
+    (X) edge node {a} (Z)
+    (X) edge node[swap] {b} (Y)
+    (Z) edge[bend right=55] node[swap] {b} (E)
+    (Y) edge[bend left=55] node {a} (E);
+\end{tikzpicture}
+\caption{NFA for $(ab \mid aab \mid aba)^*$.}
+\label{fig:abstar}
+\end{figure}
+
+\codelines{Rascal}{rascal/src/Automata.rsc}{158}{162}
+
+\begin{exercise}
+Compute the $\lambda$-closure of each state of the automaton with transitions
+$A \xrightarrow{\lambda} B$, $A \xrightarrow{\lambda} C$, $B \xrightarrow{a} B$,
+$C \xrightarrow{a} D$, $D \xrightarrow{b} E$, $E \xrightarrow{\lambda} C$, with
+initial state A and final states B and E.
+\end{exercise}
+
+\paragraph{Solution.} $\mathit{cl}_\lambda(A) = \{A, B, C\}$,
+$\mathit{cl}_\lambda(B) = \{B\}$, $\mathit{cl}_\lambda(C) = \{C\}$,
+$\mathit{cl}_\lambda(D) = \{D\}$ and $\mathit{cl}_\lambda(E) = \{E, C\}$. Eliminating
+the $\lambda$-transitions, A becomes final (its closure contains B), and every
+transition that enters E also enters C: $D \xrightarrow{b} C$ is added.
+
+\begin{exercise}
+\label{ex:neither}
+Build a DFA over $\{c, a, t, h\}$ for the words that contain neither
+\texttt{cat} nor \texttt{hat}.
+\end{exercise}
+
+\paragraph{Solution.} This is the intersection of two languages, so the
+product construction applies, but a direct construction is shorter. Both
+words end in \texttt{at}, so the automaton only needs to remember whether the
+last symbol was \texttt{c} or \texttt{h} (state 1) or whether the last two
+symbols were \texttt{ca} or \texttt{ha} (state 2). From state 0, \texttt{c} and
+\texttt{h} go to 1 and \texttt{a}, \texttt{t} stay in 0. From 1, \texttt{a} goes
+to 2, \texttt{c} and \texttt{h} stay in 1 and \texttt{t} goes back to 0. From 2,
+\texttt{t} goes to a trap state, \texttt{c} and \texttt{h} go to 1 and \texttt{a}
+goes back to 0. States 0, 1 and 2 are final.

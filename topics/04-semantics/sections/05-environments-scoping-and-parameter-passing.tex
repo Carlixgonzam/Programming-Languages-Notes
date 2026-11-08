@@ -1,383 +1,379 @@
-% !TeX root = ../main.tex
-\section{Environments, scoping, and parameter passing}
+\section{Environments, scoping and parameter passing}
+\label{sec:scoping}
 
-Both the operational and denotational sections used a store
-$\sigma : \mathit{Loc} \to \mathit{Val}$ (or, loosely, $\mathit{Var} \to \mathit{Val}$) as if
-variable names \emph{were} memory locations. That conflation is harmless for SIMP, where
-every variable is a single mutable cell that's never hidden, shadowed, or passed around as
-a first-class value. It stops being harmless the moment a language has function
-definitions, parameters, nested scopes, or closures --- you need to separate ``which
-location does this name currently refer to'' from ``what value is stored at that
-location.'' That separation, and its consequences for scoping, closures, and how a function
-call binds its parameters, is the subject of this section.
+This section follows Scott and Aldrich~\cite[Ch.~3]{scott2025pragmatics},
+Friedman and Wand~\cite[Sec.~3.5--3.7]{friedman2008essentials},
+Lee~\cite[Sec.~5.9]{lee2017foundations} and Aho et
+al.~\cite[Sec.~1.6]{aho2007compilers}.
 
-\subsection{environments vs.\ state}
+\subsection{Variables and bindings}
 
-\begin{definition}[Environment and store]
-An \textbf{environment} is a mapping from names to locations, $\rho \in \mathit{Env} =
-\mathit{Var} \to \mathit{Loc}$. A \textbf{store} (the $\sigma$ you already know) maps
-locations to values, $\sigma \in \mathit{Store} = \mathit{Loc} \to \mathit{Val}$. Reading a
-variable $x$ under environment $\rho$ and store $\sigma$ is $\sigma(\rho(x))$: look up
-$x$'s location, then look up that location's value.
+Variables appear in a program as declarations or as references. A
+\textbf{declaration} introduces a variable into the program and makes it
+available at run time; a \textbf{reference} is a use of the variable. The
+lecture's declarations come from many languages: \texttt{val imAVar = 3},
+\texttt{int myVar;}, \texttt{(defvar x 42)}, \texttt{let var = "string";},
+\texttt{variable\_name = 2.71}, \texttt{var aVar string = "variable"},
+\texttt{AVar2 := "new declaration"} and the parameter of
+\texttt{(lambda (x) x)}. A variable is bound by the declaration that declares
+it, and through it to its value.
+
+\subsection{Scopes}
+
+\begin{definition}
+The \textbf{scope} of a declaration is the part of the program where the
+variable is valid and visible.
 \end{definition}
 
-Why bother with two maps when one, $\mathit{Var} \to \mathit{Val}$, would suffice for SIMP?
-Because separating them is exactly what lets two different names alias the \emph{same}
-location (two parameters bound to the same variable, a closure capturing a variable, a
-reference parameter), and it's what lets one name refer to \emph{different} locations at
-different times (recursion allocating a fresh location per call, a block-scoped
-declaration shadowing an outer one). Every example in the rest of this section, scoping,
-closures, aliasing under different parameter-passing disciplines, is really a story about
-how $\rho$ and $\sigma$ get extended, copied, or shared.
+Scopes manage declarations (as symbol tables do) and let the same name be
+reused without undesired side effects. In
+\codelines{Scheme}{scheme/scoping.scm}{7}{12}
+the outer \texttt{let} creates a scope with $x = 3$ and $y = 4$, the inner one a
+scope with $x = y + 5 = 9$, and each application of \texttt{*} and \texttt{+}
+runs in a scope of its own. Figure~\ref{fig:let-envs} shows the environments
+when \texttt{(* x y)} runs: \texttt{x} is found in the inner environment and
+\texttt{y} in the outer one. The product is 36, and the outer sum adds the
+outer \texttt{x}: the result is 39.
 
-\begin{remark}
-For a purely functional language with no mutation, you can collapse $\rho$ directly into
-$\mathit{Var} \to \mathit{Val}$: there's no need for locations if nothing is ever written to
-twice. That's the version of ``environment'' you'll see in most treatments of the untyped
-or simply-typed lambda calculus. As soon as assignment re-enters the picture, keep the two
-maps separate --- it's the only way to model aliasing correctly.
-\end{remark}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[env/.style={draw, rounded corners=2pt, align=left, font=\small\ttfamily, inner sep=4pt}]
+  \node[env] (outer) at (0,0) {x $\mapsto$ 3\\y $\mapsto$ 4};
+  \node[env] (inner) at (4,0) {x $\mapsto$ 9};
+  \node[env] (mul) at (8,0) {r $\mapsto$ 36};
+  \draw[flecha] (inner) -- node[above, font=\footnotesize] {parent} (outer);
+  \draw[flecha] (mul) -- node[above, font=\footnotesize] {parent} (inner);
+  \node[font=\footnotesize, below=2mm of outer] {outer \texttt{let}};
+  \node[font=\footnotesize, below=2mm of inner] {inner \texttt{let}};
+  \node[font=\footnotesize, below=2mm of mul] {result of \texttt{(* x y)}};
+\end{tikzpicture}
+\caption{Environments while evaluating \texttt{(* x y)}.}
+\label{fig:let-envs}
+\end{figure}
 
-\subsection{static (lexical) vs.\ dynamic scoping}
+Each scope creates an environment for the execution of the program, with
+its rules of validity and visibility. The lecture compares three rules. With
+static scoping, a name is bound by the closest declaration in the text,
+moving outward. With dynamic scoping, it is bound according to where the
+function is called, so different calls may give different results. Qualified
+names group names under a prefix to avoid collisions between scopes.
 
-\begin{definition}[Static and dynamic scoping]
-Under \textbf{static (lexical) scoping}, a free variable in a function body refers to the
-binding that is textually in scope at the point where the function is \emph{defined} ---
-you can determine which binding a name resolves to just by reading the source, without
-running the program. Under \textbf{dynamic scoping}, a free variable refers to the most
-recent binding still active on the call stack at the point where the function is
-\emph{called} --- determining which binding a name resolves to requires knowing the call
-history, not just the text.
+\subsection{Static scoping}
+
+\begin{definition}
+The \textbf{static (lexical) scoping} rule: to find the declaration of a use
+of a variable, search outward from the scope of the use, through the
+enclosing scopes, until a declaration is found. Variables that follow this
+rule are \textbf{lexical variables}.
 \end{definition}
 
-The cleanest way to see the difference is to run the \emph{same} program under both
-disciplines. Pseudo-Scheme:
-\begin{lstlisting}[language=Lisp]
-(define x 10)
+Scopes are delimited by code blocks (\texttt{\{\dots\}}): blocks, function
+definitions, control statements and objects each create a scope nested in
+the scope where they are declared, with its own memory space. Function
+definitions create a scope in which each parameter is a variable, plus the
+variables of the body. A function runs in the scope where it was defined:
+its free variables are bound by the declarations around its definition, not
+around its call.
+\codelines{Scheme}{scheme/scoping.scm}{15}{19}
+\texttt{(g)} returns 10: the \texttt{x} in the body of \texttt{f} is the global
+one, the declaration around the definition of \texttt{f}, even though \texttt{f}
+is called from inside the \texttt{let} of \texttt{g}.
 
-(define (f) x)          ; f's body refers to the free variable x
+\paragraph{Holes and shadows.} A declaration in an inner scope with the same
+name as an outer one \textbf{shadows} it: inside the inner scope the outer
+variable is not visible, and the region where it is hidden is a hole in its
+scope.
+\codelines{C++}{cpp/scoping.cpp}{9}{23}
+The program prints \texttt{3 2}, \texttt{1 4}, \texttt{1 2} and \texttt{1 1}
+(Figure~\ref{fig:shadows}). In the first inner block, \texttt{a = 3} shadows
+the outer \texttt{a} and \texttt{b = 2} is visible from the enclosing block.
+In the second, \texttt{b = 4} shadows \texttt{b = 2} and the outer \texttt{a} is
+visible. After the blocks, each name refers to its outer declaration again.
 
-(define (g)
-  (define x 20)          ; a *local* x, shadowing the global one
-  (f))                    ; calls f
-\end{lstlisting}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[blk/.style={draw, rounded corners=2pt, font=\small\ttfamily, align=left, inner sep=4pt, anchor=north west}]
+  \draw[rounded corners=2pt] (0,0) rectangle (9,-4.2);
+  \node[anchor=north west, font=\small\ttfamily] at (0.1,-0.1) {a = 1, b = 1};
+  \draw[rounded corners=2pt] (0.4,-0.7) rectangle (8.6,-3.5);
+  \node[anchor=north west, font=\small\ttfamily] at (0.5,-0.8) {b = 2 \quad (hole in the scope of b = 1)};
+  \node[blk, minimum width=3.6cm, minimum height=1.3cm] at (0.8,-1.4) {a = 3\\prints 3 2};
+  \node[blk, minimum width=3.6cm, minimum height=1.3cm] at (4.7,-1.4) {b = 4\\prints 1 4};
+  \node[anchor=north west, font=\small\ttfamily] at (0.5,-2.9) {prints 1 2};
+  \node[anchor=north west, font=\small\ttfamily] at (0.1,-3.6) {prints 1 1};
+\end{tikzpicture}
+\caption{Nested blocks of the shadowing example and what each \texttt{cout} prints.}
+\label{fig:shadows}
+\end{figure}
 
-\textbf{Static scoping} (Scheme, Python, JavaScript, C, and almost everything else you use
-day to day): when \texttt{f} was \emph{defined}, the enclosing scope had \texttt{x = 10}
-(the global). Calling \texttt{(g)} calls \texttt{(f)}, but \texttt{f}'s reference to
-\texttt{x} was already resolved to the global binding at definition time, regardless of who
-calls it or what local \texttt{x} values happen to be on the stack. \texttt{(g)} returns
-\texttt{10}.
+\paragraph{Extent.} The \textbf{extent} of a binding is the time during which
+it is valid. Bindings are usually valid while the block that defines them
+runs, but they can live longer, even indefinitely, when a closure that
+refers to them is returned:
+\codelines{Scheme}{scheme/scoping.scm}{22}{26}
+\texttt{count} belongs to a call of \texttt{make-counter} that has finished,
+but the returned function still uses it. Scope is a property of the text;
+extent is a property of the execution.
 
-\textbf{Dynamic scoping} (traditional Lisp, early APL, Emacs Lisp ``special'' variables,
-and, as a very real modern example, Bash function variables): \texttt{f}'s reference to
-\texttt{x} is resolved by walking \emph{up the call stack} looking for the nearest active
-binding of \texttt{x}. Calling \texttt{(f)} from inside \texttt{(g)} finds \texttt{g}'s
-local \texttt{x = 20} first, so \texttt{(g)} returns \texttt{20}.
+\paragraph{Lexical depth.} As with symbol tables, each new block has its own
+environment with a link to its parent. In \texttt{let x = exp1 in let y = exp2
+in -(x, y)}, the environment of the body has $y$ at depth 0 and $x$ at depth 1
+(Figure~\ref{fig:depth}). Because scoping is static, the depth of each use is
+known before the program runs, and a compiler can replace each name with a
+pair (depth, position): a lexical address.
 
-You can watch this exact split happen in a real, currently-maintained language, because
-Bash's \texttt{local} is dynamically scoped:
-\begin{lstlisting}[language=bash]
-x=10
-f() { echo "$x"; }
-g() { local x=20; f; }
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[env/.style={draw, rounded corners=2pt, font=\small, inner sep=4pt}]
+  \node[env] (e0) at (0,0) {empty};
+  \node[env] (e1) at (3.5,0) {$x \mapsto \mathit{val}_1$};
+  \node[env] (e2) at (7,0) {$y \mapsto \mathit{val}_2$};
+  \draw[flecha] (e1) -- (e0);
+  \draw[flecha] (e2) -- (e1);
+  \node[font=\footnotesize, below=2mm of e2] {depth 0 for the body};
+  \node[font=\footnotesize, below=2mm of e1] {depth 1};
+  \node[font=\small] at (7,1) {\texttt{-(x, y)}: $x$ at (1, 0), $y$ at (0, 0)};
+\end{tikzpicture}
+\caption{Environments and lexical depth for \texttt{let x = exp1 in let y = exp2 in -(x, y)}.}
+\label{fig:depth}
+\end{figure}
 
-g       # prints 20, not 10 -- f finds g's local x on the call stack
-f       # prints 10 -- no g on the stack, nearest x is the global one
-\end{lstlisting}
+Summing up the rule: variables get their meaning from their location in the
+code. Look for the variable in the current environment; if it is found, use
+it; if not, go to the next enclosing scope and repeat. Operations with
+lexical scope always do the same thing, wherever they are called.
 
-Same shape of program, same names, two different, both internally consistent, answers.
-This is exactly why dynamic scoping is rare in modern general-purpose languages: to know
-what \texttt{f} returns, you'd need to know \emph{every call site} that might reach it, not
-just \texttt{f}'s own text --- that breaks the kind of modular, call-site-independent
-reasoning the operational and axiomatic semantics sections gave you (a Hoare triple for
-\texttt{f} alone would be meaningless if \texttt{f}'s free variables depended on who calls
-it). Where dynamic-like scoping survives today, it's usually opt-in and narrowly scoped:
-Emacs Lisp's special variables, \texttt{parameterize} in Racket, thread-local or
-``context'' variables in some frameworks, or shell scripting, where the informality of
-small scripts is an acceptable trade for the convenience of ambient configuration.
+\subsection{Dynamic scoping}
 
-\subsection{closures: deep vs.\ shallow binding}
-
-Now suppose a function \emph{returns} a function, or stores one in a data structure, and
-that inner function is later called long after the outer call has returned --- the outer
-function's stack frame is gone. If lexical scoping is going to keep working (the inner
-function's free variables must still resolve to the bindings that were in scope where it
-was \emph{defined}), the inner function needs to bring its defining environment along with
-it. That bundle, code plus the environment it was defined in, is a \textbf{closure}.
-
-\begin{definition}[Closure]
-A closure is a pair $(\lambda x.\, e,\ \rho)$ of a function value and the environment
-$\rho$ active at the point the function was created. Calling the closure with argument $v$
-evaluates $e$ under $\rho[x \mapsto \ell]$ for a fresh location $\ell$ with
-$\sigma(\ell) = v$ --- \emph{not} under the caller's environment.
+\begin{definition}
+The \textbf{dynamic scoping} rule: the value of a variable is the one of the
+most recently called procedure that is still active and declares the
+variable.
 \end{definition}
 
-Given that closures must carry an environment, the interesting design question is exactly
-\emph{what} they carry:
-\begin{itemize}
-  \item \textbf{Deep binding}: the closure captures the environment itself, i.e., which
-  \emph{locations} the free variables point to. If a captured variable is later mutated
-  through that same location by someone else, the closure sees the update: closure and
-  outside world share memory.
-  \item \textbf{Shallow binding}: the closure captures a \emph{copy of the values} of the
-  free variables at creation time. Later mutation of the original variable is invisible to
-  the closure.
-\end{itemize}
-Almost every modern language with closures, Python, JavaScript, Scheme, Java's lambdas over
-effectively-final locals, uses deep binding for captured mutable state. The loop-variable
-gotcha below is a direct, very visible consequence of that choice.
+The lecture shows the difference in Perl:
+\codelines{Perl}{perl/dynamic.pl}{4}{6}
+With static scoping, the \texttt{\$x} of \texttt{f} is the global one and
+\texttt{g()} returns 10. With dynamic scoping, when \texttt{f} runs the most
+recent active function that declares \texttt{\$x} is \texttt{g}, so \texttt{g()}
+returns 20; Perl's \texttt{local} gives exactly this behavior, and the test
+checks that \texttt{g()} is 20 and \texttt{f()} alone is 10. In Common Lisp,
+variables declared with \texttt{defvar} are dynamically scoped (special), and
+the same program reads:
+\codelines{CommonLisp}{lisp/dynamic.lisp}{5}{11}
+A variable bound with \texttt{let} that was not declared special is lexical:
+\codelines{CommonLisp}{lisp/dynamic.lisp}{16}{22}
+\texttt{(g-lex)} returns 10. Shell variables are also dynamic:
+\codelines{bash}{bash/dynamic.sh}{1}{3}
 
-\subsection{the loop-variable gotcha}
+The lecture's second Perl example adds \texttt{sub h(param) \{ local \$x = param
++ 5; return f(); \}} and calls \texttt{h(rand(100))} from \texttt{g}: now
+\texttt{f} sees the \texttt{\$x} of \texttt{h}, which is different in every call.
+The behavior of an operation with dynamic scope can change with every call.
 
-\begin{example}
-\begin{lstlisting}[language=Python]
-funcs = []
-for i in range(3):
-    funcs.append(lambda: i)
+\paragraph{Logo.} The third example is in Logo, which uses dynamic scoping. A
+procedure \texttt{test1} with parameter \texttt{:x} only calls \texttt{test2};
+\texttt{test2} prints \texttt{In test2:} followed by \texttt{:x}. The program
+sets the global \texttt{x} to \texttt{"foo} and calls \texttt{test1 "bar}.
+\texttt{test2} called alone prints \texttt{foo}, the global value. Called from
+\texttt{test1 "bar}, it prints \texttt{bar}: the most recent active procedure
+with \texttt{x} is \texttt{test1}, whose parameter \texttt{x} is \texttt{"bar}.
+\codelines{CommonLisp}{lisp/dynamic.lisp}{26}{28}
 
-print([f() for f in funcs])   # [2, 2, 2], NOT [0, 1, 2]
-\end{lstlisting}
-All three lambdas close over the \emph{same} location, the one bound to \texttt{i} by the
-\texttt{for} loop. Python's \texttt{for} doesn't create a fresh binding per iteration, it
-repeatedly reassigns one binding. By the time any lambda is called, the loop has finished
-and \texttt{i} holds its final value, \texttt{2}; deep binding means all three closures see
-that shared, now-final, location. The standard fix forces a fresh value per iteration by
-exploiting default-argument evaluation timing (defaults are evaluated once, at
-\texttt{lambda}-creation time, copying the current value in): \texttt{lambda i=i: i}.
-\end{example}
+\paragraph{Advantages and disadvantages.} Dynamic scoping favors flexibility:
+variables can be accessed from anywhere, which can help reuse and adaptation
+of code. It is harder to reason about, the flow is harder to understand, it
+can be slower (no static optimizations such as lexical addresses), and it is
+error-prone because of unintended accesses to variables.
 
-JavaScript has the identical gotcha with \texttt{var}, which is why ES6 added \texttt{let}:
+\subsection{Qualified names and access modifiers}
+
+Global variables can be accessed from the whole program, which causes name
+collisions. With \textbf{qualified names}, related names are grouped under a
+name, the prefix, and a variable has two sets of scopes: a scope (usually the
+global one) where the qualified name \texttt{Group.name} is visible, and one or
+more narrower scopes where the unqualified name is visible as well. Modules,
+packages and namespaces work this way.
+
+\textbf{Access modifiers} restrict visibility further, beyond the scoping rules.
+A private member is only visible inside the object (it is part of the
+implementation); a public member is visible anywhere (it is part of the
+interface). The details depend on the language; Table~\ref{tab:access} shows
+Swift's levels.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l c c c c}
+  \toprule
+  Modifier & Immediate scope & File & Containing module & Rest of the world \\
+  \midrule
+  \texttt{open}, \texttt{public} & yes & yes & yes & yes \\
+  \texttt{internal}               & yes & yes & yes & no \\
+  \texttt{fileprivate}            & yes & yes & no  & no \\
+  \texttt{private}                & yes & no  & no  & no \\
+  \bottomrule
+\end{tabular}
+\caption{Where a declaration is visible for each access modifier in Swift. \texttt{open} also allows subclassing outside the module.}
+\label{tab:access}
+\end{table}
+
+\subsection{Environments and stores}
+
+This subsection goes beyond the slides. An \textbf{environment}
+$\rho : \mathit{Var} \to \mathit{Loc}$ maps names to locations, and a \textbf{store}
+$\sigma : \mathit{Loc} \to \mathit{Val}$ maps locations to values; reading $x$ is
+$\sigma(\rho(x))$. SIMP used a single map, $\mathit{Var} \to \mathit{Val}$, but separating
+the two is what allows two names to refer to the same location (a reference
+parameter, a closure) and one name to refer to different locations at
+different times (a recursive call, a shadowing declaration). The parameter
+passing modes below are differences in how $\rho$ and $\sigma$ are extended.
+
+\paragraph{Closures in loops.} A closure captures a binding, not a value. In
+Python a loop has one variable for all its iterations; JavaScript's
+\texttt{let} creates a new one in each iteration:
+\codelines{Python}{python/loopvar.py}{1}{7}
+\codelines{JavaScript}{js/loopvar.js}{2}{9}
+
+\subsection{Parameter passing}
+
+The parameters written in a call are the \textbf{actual} parameters; the
+parameters in the definition of the function are the \textbf{formal}
+parameters. The modes differ in what the formal parameter is bound to.
+
+\paragraph{Call by value.} The actual parameters are evaluated, and their
+values copied into the space of the formal parameters (the space of the
+function). Changes to the formal parameters do not affect the caller.
+
+\paragraph{Call by reference.} The address of the actual parameter is passed,
+and the function uses it directly. The formal parameter is another name for
+the caller's variable.
+\codelines{C++}{cpp/scoping.cpp}{27}{28}
+In the lecture's program, \texttt{swap(x, y)} with $x = 1$, $y = 2$ prints
+\texttt{After Swapping in function x: 2, y: 1} in both cases, but
+\texttt{main} prints \texttt{x: 1, y: 2} with call by value and
+\texttt{x: 2, y: 1} with call by reference.
+
+\paragraph{Call by name.} Call by name is between values and references: the
+function sees the parameter as if it were a copy, but the argument expression
+is never evaluated at the call; it is evaluated, in the caller's environment,
+each time the parameter is used (with variables renamed if needed). With
+\texttt{int x = 1, y = 2+8;} and \texttt{swap(x, y)} by name, \texttt{t = x} reads
+1, \texttt{x = y} evaluates the expression of \texttt{y} and writes 10,
+\texttt{y = t} writes 1: the program prints \texttt{x: 10, y: 1}. In Scheme the
+names can be passed as functions that read and write the caller's variables:
+\codelines{Scheme}{scheme/scoping.scm}{33}{42}
+
+\paragraph{Passing parameters between procedures.} The lecture compares the
+modes with one program:
 \begin{lstlisting}
-var funcsVar = [];
-for (var i = 0; i < 3; i++) {
-  funcsVar.push(() => i);
-}
-console.log(funcsVar.map(f => f()));   // [3, 3, 3] -- var is function-scoped
-
-var funcsLet = [];
-for (let j = 0; j < 3; j++) {
-  funcsLet.push(() => j);
-}
-console.log(funcsLet.map(f => f()));   // [0, 1, 2] -- let is block-scoped, fresh per iteration
+Program Test
+  Var x: int, y: int; v[5]: int;
+  Proc p1(val a: int, ref b: int, ref c: int)
+  Begin
+    b = b + 1;
+    c = a;
+  end
+Begin
+  v = [0,1,2,3,4]
+  x = 10;
+  y = 1
+  p1(x, y, v[y]);
+end
 \end{lstlisting}
-\texttt{var} declares one binding for the whole enclosing function, exactly like Python's
-\texttt{for}, so every arrow function captures the same location. \texttt{let}, by
-specification, creates a \emph{new} binding for \texttt{j} on every iteration: formally, a
-fresh location $\ell_i$ with $\rho_i = \rho[j \mapsto \ell_i]$ for each iteration $i$, so
-each closure captures a different location. Same underlying phenomenon (deep binding over a
-mutable variable), two different fixes: Python's is a manual workaround that exploits
-default-argument timing, JavaScript's \texttt{let} bakes ``fresh binding per iteration''
-directly into the loop's own semantics.
+and then changes the mode of \texttt{b} and \texttt{c}. Table~\ref{tab:params}
+gives the result of each version.
 
-\subsection{parameter passing mechanisms}
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l >{\raggedright\arraybackslash}p{0.3\textwidth} >{\raggedright\arraybackslash}p{0.24\textwidth}}
+  \toprule
+  Modes of $a, b, c$ & $b = b + 1$ & $c = a$ & At the end \\
+  \midrule
+  val, ref, ref   & $y = 2$ & $v[1] = 10$ ($c$ was bound to $v[1]$ at the call) & $y = 2$, $v = [0,10,2,3,4]$ \\
+  val, ref, name  & $y = 2$ & $v[2] = 10$ ($v[y]$ is evaluated now, with $y = 2$) & $y = 2$, $v = [0,1,10,3,4]$ \\
+  val, VR, name   & local $b = 2$ & $v[1] = 10$ ($y$ is still 1) & $y = 2$ (copied back), $v = [0,10,2,3,4]$ \\
+  \bottomrule
+\end{tabular}
+\caption{The program \texttt{Test} with three combinations of modes. $a$ is always $x = 10$.}
+\label{tab:params}
+\end{table}
 
-A function call extends the environment and store to bind formal parameters to whatever
-was passed --- exactly \emph{how} it does so is itself a design decision with observable
-consequences.
+\textbf{Value-result} (copy-restore, VR) copies the value in at the call, works on
+a local copy and copies it back at the return. With \texttt{b} by value-result
+the change to $y$ is not visible during the call, so \texttt{v[y]} still means
+\texttt{v[1]}. In C++ a reference parameter is \texttt{int\&}, a parameter by
+name can be a function that returns a reference, and value-result is a copy
+made by hand:
+\codelines{C++}{cpp/scoping.cpp}{30}{39}
 
-\paragraph{Call by value.} The formal parameter gets a fresh location, initialized by
-\emph{copying} the value of the argument expression. Mutating the parameter only ever
-touches that fresh, private location; the caller's variable is untouched.
-\begin{lstlisting}[language=C]
-void swap(int a, int b) {
-    int t = a; a = b; b = t;
-}
-int main(void) {
-    int x = 1, y = 2;
-    swap(x, y);
-    printf("%d %d\n", x, y);  // 1 2 -- unchanged
-    return 0;
-}
-\end{lstlisting}
-\texttt{swap} above dutifully swaps its own local copies \texttt{a} and \texttt{b} and has
-zero effect on \texttt{x}, \texttt{y}: by the time \texttt{swap} runs, the connection to the
-caller's variables is already gone.
+\paragraph{Other kinds.} The lecture also lists call by move (Emerald),
+adaptive parameter passing, streaming semantics, cache semantics and lazy
+semantics or call by need. Call by need is call by name where the argument is
+evaluated at most once and the value is remembered; the runtime block
+studies it.
 
-\paragraph{Call by reference.} The formal parameter is bound to the \emph{same} location
-as the argument: no fresh location, no copy. Reading or writing the parameter inside the
-function directly reads or writes the caller's variable.
-\begin{lstlisting}[language=C++]
-void swap(int &a, int &b) {
-    int t = a; a = b; b = t;
-}
-int main() {
-    int x = 1, y = 2;
-    swap(x, y);
-    std::cout << x << " " << y << "\n";  // 2 1 -- actually swapped
-}
-\end{lstlisting}
-This is exactly why \texttt{swap} needs references (or, in plain C, explicit pointers,
-\texttt{int *a}) to work at all: call-by-value can never let a callee mutate the caller's
-variables through an ordinary parameter.
+\subsection{A small-step rule for calls}
 
-\paragraph{Call by name.} The argument is not evaluated once and passed as a value; it is
-passed as an unevaluated expression (a thunk) that gets \emph{re-evaluated at every
-occurrence} of the formal parameter in the body. This can make a callee observe a different
-value on each use, if something the argument expression depends on changes in between.
-\begin{lstlisting}
-procedure p(x);
-begin
-    i := i + 1;
-    print(x)
-end;
-
-i := 0;
-p(a[i]);
-\end{lstlisting}
-Under \textbf{call by value}, \texttt{x} is bound once, to \texttt{a[0]}'s value at call
-time; \texttt{i := i+1} doesn't touch \texttt{x}; the procedure prints \texttt{a[0]}. Under
-\textbf{call by name}, \texttt{x} is the thunk \texttt{a[i]} itself; by the time
-\texttt{print(x)} forces it, \texttt{i} has already been incremented to \texttt{1}, so it
-prints \texttt{a[1]} instead --- a different array cell, from the very same call, purely
-because the ``argument'' is a re-runnable piece of code rather than a fixed location or
-value. This is the mechanism behind classic Algol tricks like Jensen's device, and the
-reason call-by-name all but disappeared once it became clear how easily it produces
-surprising, order-dependent results.
-
-\paragraph{Call by need.} Like call by name, the argument is passed as an unevaluated
-thunk, but the thunk is \emph{memoized}: the first time it's forced, its value is cached,
-and every later use of the same parameter returns the cached value instead of re-running
-the expression. This restores ``ordinary'' value semantics for a parameter used repeatedly
-with nothing relevant changing in between, at the cost of some bookkeeping to track whether
-each thunk has been forced yet. Call by need is the default argument-passing discipline in
-Haskell, and it's really a special case of \emph{laziness} in general --- the full
-treatment of thunks, forcing, and sharing belongs to lazy evaluation, covered in
-\texttt{topics/05-runtime-systems/sections/01-lazy-evaluation.tex}; the point to keep here
-is just that call-by-need is call-by-name plus memoization.
-
-\paragraph{Call by value-result (copy-restore).} The formal parameter behaves like call by
-value \emph{during} the call: a fresh, private location, initialized by copying the
-argument's value. But at the moment the call returns, the final value of that private
-location is copied back into the caller's original variable. This coincides with call by
-reference as long as there's no aliasing, and diverges from it exactly when there is.
-
-\begin{example}
-\begin{lstlisting}
-g := 1;
-procedure p(x) begin
-    x := x + 1;
-    print(x + g)
-end;
-p(g);
-\end{lstlisting}
-\textbf{Call by reference}: \texttt{x} and \texttt{g} are the \emph{same} location.
-\texttt{x := x+1} sets \texttt{g} to \texttt{2} directly (since \texttt{x} \emph{is}
-\texttt{g}). Then \texttt{print(x + g)} reads \texttt{2 + 2 = 4}.
-
-\textbf{Call by value-result}: \texttt{x} is a fresh, private location, initialized by
-copying \texttt{g}'s value (\texttt{1}). \texttt{x := x+1} sets the private \texttt{x} to
-\texttt{2}; \texttt{g} itself is untouched so far. \texttt{print(x + g)} reads the private
-\texttt{x} (\texttt{2}) plus the \emph{still-unmodified} global \texttt{g} (\texttt{1}),
-printing \texttt{3}. Only when \texttt{p} returns does the copy-restore step write
-\texttt{x}'s final value (\texttt{2}) back into \texttt{g}.
-\end{example}
-
-Same program, same call, genuinely different observable output, \texttt{4} versus
-\texttt{3}, purely because of the parameter-passing discipline. This is exactly why passing
-the same variable as two different arguments, or a global aliased with a parameter, was a
-notorious source of compiler-dependent bugs in languages (older Fortran among them) that
-used copy-restore.
-
-\subsection{a small-step rule for function calls}
-
-To ground all of this in the same formal machinery as the rest of the chapter, let's give
-call by value (and, for contrast, call by reference) an explicit small-step rule. Treat a
-procedure value as a closure, exactly as defined above, applied to procedure declarations
-rather than just returned lambdas: $\mathbf{proc}(x, C, \rho_{\mathrm{def}})$ pairs a formal
-parameter and a body with the environment in effect where the procedure was \emph{defined}.
-For uniformity, assume procedure names live in the environment/store exactly like any other
-variable, so a call configuration $\langle \mathbf{call}\ f(E),\ \rho,\ \sigma \rangle$ finds
-the closure at $\sigma(\rho(f))$.
-
-\[
-\infer[\textsc{Call-By-Value}]
-  {\steppair{\mathbf{call}\ f(E)}{\rho,\sigma}{\mathbf{skip}}{\rho,\sigma''}}
-  {
-    \sigma(\rho(f)) = \mathbf{proc}(x, C, \rho_{\mathrm{def}}) \\
-    \bigstep{E}{\rho,\sigma}{v} \\
-    \ell \notin \mathrm{dom}(\sigma) \\
-    \bigstep{C}{\rho_{\mathrm{def}}[x \mapsto \ell],\, \sigma[\ell \mapsto v]}{\sigma''}
-  }
-\]
-
-Reading the premises in order: look up the closure bound to $f$; evaluate the argument
-expression $E$ to a value $v$ \emph{in the caller's} environment and store (arguments are
-evaluated where they're written, not where the callee happens to be defined); allocate a
-brand-new location $\ell$ used nowhere else; run the body $C$ in the \emph{closure's}
-defining environment $\rho_{\mathrm{def}}$, not the caller's $\rho$ (this is exactly what
-makes it lexical scoping), extended with $x \mapsto \ell$, starting from a store where
-$\ell$ already holds $v$. The whole call reduces to $\mathbf{skip}$ in the caller's
-\emph{unchanged} environment $\rho$ (calling a procedure never rebinds names in the
-caller's scope), but the resulting store $\sigma''$ may differ from $\sigma$ at locations
-other than $\ell$, if the body wrote to aliased or global locations.
-
-Call by reference needs no fresh location at all, only a single line changes:
-\[
-\infer[\textsc{Call-By-Reference}]
-  {\steppair{\mathbf{call}\ f(y)}{\rho,\sigma}{\mathbf{skip}}{\rho,\sigma'}}
-  {
-    \sigma(\rho(f)) = \mathbf{proc}(x, C, \rho_{\mathrm{def}}) \\
-    \bigstep{C}{\rho_{\mathrm{def}}[x \mapsto \rho(y)]}{\sigma}{\sigma'}
-  }
-\]
-(the argument here must itself be a variable $y$, not an arbitrary expression --- you can
-only take a reference to something that already has a location). The entire difference
-between value and reference passing is $x \mapsto \ell$ for a fresh $\ell$ versus
-$x \mapsto \rho(y)$ for the existing location; everything else about the call is identical.
-
-\begin{example}
-Take a global \texttt{r} with $\rho(r) = \ell_r$, $\sigma_0(\ell_r) = 0$, and a procedure
-$\mathtt{double} \triangleq \mathbf{proc}(x, \assign{r}{\deref{x}+\deref{x}}, \rho)$ (defined
-at top level, so $\rho_{\mathrm{def}} = \rho$) with $\rho(\mathtt{double}) = \ell_d$ and
-$\sigma_0(\ell_d) = \mathtt{double}$. We derive
-$\steppair{\mathbf{call}\ \mathtt{double}(3+2)}{\rho,\sigma_0}{\mathbf{skip}}{\rho,\sigma_2}$:
-\[
-\infer[\textsc{Call-By-Value}]
-  {\steppair{\mathbf{call}\ \mathtt{double}(3+2)}{\rho,\sigma_0}{\mathbf{skip}}{\rho,\sigma_2}}
-  {
-    \sigma_0(\ell_d) = \mathbf{proc}(x, \assign{r}{\deref{x}+\deref{x}}, \rho) \\
-    \bigstep{3+2}{\rho,\sigma_0}{5} \\
-    \ell_x \notin \mathrm{dom}(\sigma_0) \\
-    \bigstep{\assign{r}{\deref{x}+\deref{x}}}{\rho[x \mapsto \ell_x],\, \sigma_0[\ell_x \mapsto 5]}{\sigma_2}
-  }
-\]
-where the last premise itself expands to: evaluating $\deref{x}+\deref{x}$ under
-$\rho[x \mapsto \ell_x]$ and $\sigma_1 = \sigma_0[\ell_x \mapsto 5]$ gives $5+5=10$, and the
-assignment writes $\sigma_2 = \sigma_1[\ell_r \mapsto 10]$. So $\sigma_2(\ell_r) = 10$: the
-call correctly computes $\mathtt{double}(5) = 10$ into the global \texttt{r}, while
-\texttt{x}'s private location $\ell_x$ is simply forgotten once the call returns.
-\end{example}
+This subsection goes beyond the slides. A procedure value is a closure
+$\mathbf{proc}(x, C, \rho_{\mathit{def}})$: the parameter, the body and the
+environment where the procedure was defined. Call by value allocates a new
+location for the parameter:
+\begin{mathpar}
+\inferrule*[right=Call-By-Value]
+  {\sigma(\rho(f)) = \mathbf{proc}(x, C, \rho_{\mathit{def}}) \\
+   \langle E, \rho, \sigma \rangle \Downarrow v \\
+   \ell \notin \mathrm{dom}(\sigma) \\
+   \langle C, \rho_{\mathit{def}}[x \mapsto \ell], \sigma[\ell \mapsto v] \rangle \Downarrow \sigma''}
+  {\langle \mathbf{call}\ f(E), \rho, \sigma \rangle \to \langle \mathtt{skip}, \rho, \sigma'' \rangle}
+\end{mathpar}
+The argument is evaluated in the caller's environment $\rho$, and the body
+runs in the closure's environment $\rho_{\mathit{def}}$: that is static scoping.
+With dynamic scoping the body would run in $\rho[x \mapsto \ell]$, the caller's
+environment. Call by reference binds $x$ to the existing location of the
+argument instead of a new one: $\rho_{\mathit{def}}[x \mapsto \rho(y)]$.
 
 \subsection{Exercises}
 
-\begin{itemize}
-  \item Write a three-function nested program in the style of the \texttt{f}/\texttt{g}
-  example above (a third function \texttt{h} that calls \texttt{g}, which calls
-  \texttt{f}, with each of \texttt{f}, \texttt{g}, \texttt{h} declaring its own local
-  \texttt{x}), and state what \texttt{(h)} returns under static scoping and under dynamic
-  scoping.
+\begin{exercise}
+Give the values of the variables in each step of
+\texttt{(let ((x 3) (y 4)) (+ (let ((x (+ y 5))) (* x y)) x))}.
+\end{exercise}
 
-  \item Using \textsc{Call-By-Value}, give a full derivation for calling
-  \texttt{procedure square(y) \{ s := y * y \}} (global \texttt{s}, $\sigma_0(s) = 0$) as
-  \texttt{call square(4)}. What is the final store?
+\paragraph{Solution.} The outer \texttt{let} binds $x = 3$, $y = 4$. The inner one
+evaluates \texttt{(+ y 5)} in the outer environment, 9, and binds $x = 9$. The
+product reads $x = 9$ (inner) and $y = 4$ (outer): 36. Back in the outer scope,
+the sum reads $x = 3$: $36 + 3 = 39$.
 
-  \item Consider \texttt{procedure q(a, b) \{ a := a + 1; b := b + 10 \}} called as
-  \texttt{q(h, h)}, where global \texttt{h} starts at $\sigma_0(h) = 5$. Compute the final
-  value of \texttt{h} under call by reference, and again under call by value-result
-  (assume the copy-restore write-back happens left to right, \texttt{a} then \texttt{b}).
-  Are the two results the same? Should they be?
+\begin{exercise}
+What does the shadowing program print if the declaration \texttt{int b = 2;}
+is replaced by the assignment \texttt{b = 2;}?
+\end{exercise}
 
-  \item Write the 3-line \texttt{for (var ...)} snippet from the text yourself, but with 4
-  iterations instead of 3, pushing an arrow function per iteration. Predict the printed
-  array, then predict it again after changing \texttt{var} to \texttt{let}, and explain the
-  difference in terms of fresh locations per iteration.
+\paragraph{Solution.} Now there is only one \texttt{b}, and the assignment changes
+it. The prints are \texttt{3 2}, \texttt{1 4}, \texttt{1 2} and, at the end,
+\texttt{1 2}: the last line sees the \texttt{b} that was assigned 2.
 
-  \item Using \textsc{Call-By-Reference}, derive the result of calling
-  \texttt{procedure inc(z) \{ z := z + 1 \}} as \texttt{call inc(y)}, where
-  $\rho(y) = \ell_y$ and $\sigma_0(\ell_y) = 9$. What is $\sigma'(\ell_y)$?
+\begin{exercise}
+With dynamic scoping, what does \texttt{g()} return in the Perl example if
+\texttt{g} calls \texttt{h(7)} and \texttt{h} calls \texttt{f}?
+\end{exercise}
 
-  \item In two or three sentences: explain why call by need is often described as ``call
-  by name with memoization,'' and why that distinction matters for a parameter that's used
-  many times inside a loop but whose value, once forced, never needs to change again.
-\end{itemize}
+\paragraph{Solution.} When \texttt{f} runs, the active procedures are \texttt{g}
+(with \texttt{\$x = 20}) and \texttt{h} (with \texttt{\$x = 7 + 5 = 12}). The most
+recent is \texttt{h}, so the result is 12. With static scoping it would be 10.
+
+\begin{exercise}
+Run \texttt{test(i, a[i], i)} with $a = [0, 10, 20, 40]$, $i = 0$, and
+\texttt{proc test(ref x, name y, VR z) \{ x := x + 1; y := y + 1; z := z + 2;
+y := y + 1 \}}.
+\end{exercise}
+
+\paragraph{Solution.} $x$ is another name for $i$, $y$ re-evaluates \texttt{a[i]} at
+each use, and $z$ starts as a local copy of $i$, 0. \texttt{x := x + 1} makes
+$i = 1$. \texttt{y := y + 1} evaluates \texttt{a[i]} with $i = 1$: $a[1] = 11$.
+\texttt{z := z + 2} gives $z = 2$, locally. The second \texttt{y := y + 1} again
+uses $a[1]$: 12. At the return, value-result copies $z$ back into $i$: $i = 2$,
+which overwrites the change made through $x$. The final state is $i = 2$,
+$a = [0, 12, 20, 40]$.

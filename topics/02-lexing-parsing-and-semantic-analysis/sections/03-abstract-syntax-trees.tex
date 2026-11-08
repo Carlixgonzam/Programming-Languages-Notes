@@ -1,50 +1,320 @@
-% !TeX root = ../main.tex
-\section{Abstract syntax trees}
-An \textit{abstract syntax tree} (AST) is a tree representation of the hierarchical structure of a program. Unlike a concrete parse tree, an AST omits purely syntactic detail such as parenthesis, semicolons used as separators, keywords whose meaning is already captured by the node type; retaining only the information needed to define the program's meaning.
+\section{Abstract syntax trees and attribute grammars}
+\label{sec:ast}
 
-Each \textit{internal node} of the AST corresponds to a language construct (sequence, assignment, conditional, etc.) and each \textit{leaf} corresponds to an atomic value or reference.
+Some rules of a language cannot be captured by its syntax definition: type
+consistency, or the use of \texttt{return} statements. Semantic analysis
+checks them, and it works on a tree that is simpler than the parse tree. This
+section and the next follow Wilhelm, Seidl and
+Hack~\cite[Ch.~4]{wilhelm2013compiler} and Scott and
+Aldrich~\cite[Ch.~4]{scott2025pragmatics}.
 
-For an imperative language with mutable references, the relevant constructs are:
-\begin{itemize}
-  \item $\seq{C_1}{C_2}$, sequential composition
-  \item $\assign{l}{e}$, assignment to location $l$
-  \item $\ift{B}{C_1}{C_2}$, conditional command
-  \item $\whiledo{B}{C}$, iteration
-  \item $\deref{l}$, dereferencing a location (read the value stored at $l$)
-  \item $n$, $b$, integer and boolean literals
-  \item $e_1\ \mathit{op}\ e_2$, arithmetic or boolean combination
-\end{itemize}
+\subsection{Abstract syntax trees}
 
-\subsection{solved example}
-Build the AST of the following program:
+\begin{definition}
+An \textbf{abstract syntax tree} (AST) is a parse tree with the nonessential
+information removed: nonterminal nodes are replaced by nodes for the
+constructs of the word they represent, and unit productions (rules such as
+$\mathit{Exp} ::= \mathit{Term}$) are collapsed.
+\end{definition}
+
+Figure~\ref{fig:pt-vs-ast} compares the two trees for
+\texttt{if x then y else z} in a grammar where the condition is an expression and
+the branches are statements.
+The parse tree has a node for every rule and every keyword; the AST has one
+node for the conditional, with three children. ASTs are what compilers use to
+generate code and what interpreters run.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=3mm, l sep=4mm},
+  [S [if] [Exp [x]] [then] [S [y]] [else] [S [z]]]
+\end{forest}
+\hspace{2cm}
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=3mm, l sep=4mm},
+  [if [x] [y] [z]]
+\end{forest}
+\caption{Parse tree (left) and AST (right) of a conditional.}
+\label{fig:pt-vs-ast}
+\end{figure}
+
+\paragraph{Example.} For the imperative language of the semantics block, with
+assignment $l := e$, sequence, conditional, \texttt{while} and dereferencing
+$!l$, the program
 \[
   \assign{y}{0}\;;\;
   \ift{\deref{x} = \deref{y}}
     {\assign{x}{\deref{x}+1}\;;\;\assign{y}{\deref{y}-1}}
     {\assign{x}{\deref{x}-1}\;;\;\assign{y}{\deref{y}+1}}
 \]
-The top level operator is the semicolon that separates the two main components, so the root is a \textsc{Seq} node. Its left child is the assignment $\assign{y}{0}$, and its right child is the conditional. The conditional has three children: the guard $\deref{x}=\deref{y}$, the \emph{then}-branch $\seq{\assign{x}{\deref{x}+1}}{\assign{y}{\deref{y}-1}}$, and the \emph{else}-branch (symmetric).
+has the AST of Figure~\ref{fig:simp-ast}. The top-level semicolon is the root.
+$\deref{x}$ is a node \textsc{Deref} applied to the location $x$: the location names
+a cell of the memory, and dereferencing reads its content.
 
-\[
-\begin{array}{c}
-\textsc{Seq} \\
-\swarrow \quad \searrow \\
-\textsc{Assign}(y,0) \qquad \textsc{If-then-else} \\
-\quad\quad\swarrow \quad \downarrow \quad \searrow \\
-\textsc{Eq}(\deref{x},\deref{y}) \quad \textsc{Seq}_1 \quad \textsc{Seq}_2
-\end{array}
-\]
-note that $\deref{x}$ is represented as a \textsc{Deref} node applied to the location $x$, which is distinct from $x$ as an identifier: the location names a cell in the store, and dereferencing reads its content.
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=2mm, l sep=4mm},
+  [\textsc{Seq}
+    [\textsc{Assign} [$y$] [$0$]]
+    [\textsc{If}
+      [{$=$} [\textsc{Deref} [$x$]] [\textsc{Deref} [$y$]]]
+      [\textsc{Seq}
+        [\textsc{Assign} [$x$] [{$+$} [\textsc{Deref} [$x$]] [$1$]]]
+        [\textsc{Assign} [$y$] [{$-$} [\textsc{Deref} [$y$]] [$1$]]]]
+      [\textsc{Seq} [\dots]]
+    ]
+  ]
+\end{forest}
+\caption{AST of the example program. The \texttt{else} branch is symmetric to the \texttt{then} branch.}
+\label{fig:simp-ast}
+\end{figure}
 
+\subsection{Attribute grammars}
+
+\begin{definition}
+An \textbf{attribute grammar} associates attributes with the symbols of a
+grammar and, with each rule, semantic functions that compute the attributes
+of the symbols of the rule. The attributes give the grammar elements a value
+or a meaning.
+\end{definition}
+
+For the expression grammar, an attribute $\mathit{val}$ holds the value of each
+expression. When a nonterminal appears twice in a rule, subscripts tell the
+occurrences apart:
+\begin{center}
+\small
+\begin{tabular}{l l}
+  \toprule
+  Rule & Semantic function \\
+  \midrule
+  $\mathit{Exp}_1 ::= \mathit{Exp}_2 + \mathit{Term}$ & $\mathit{Exp}_1.\mathit{val} := \mathit{sum}(\mathit{Exp}_2.\mathit{val}, \mathit{Term}.\mathit{val})$ \\
+  $\mathit{Exp}_1 ::= \mathit{Exp}_2 - \mathit{Term}$ & $\mathit{Exp}_1.\mathit{val} := \mathit{difference}(\mathit{Exp}_2.\mathit{val}, \mathit{Term}.\mathit{val})$ \\
+  $\mathit{Exp} ::= \mathit{Term}$ & $\mathit{Exp}.\mathit{val} := \mathit{Term}.\mathit{val}$ \\
+  $\mathit{Term}_1 ::= \mathit{Term}_2 * \mathit{Factor}$ & $\mathit{Term}_1.\mathit{val} := \mathit{product}(\mathit{Term}_2.\mathit{val}, \mathit{Factor}.\mathit{val})$ \\
+  $\mathit{Term}_1 ::= \mathit{Term}_2 / \mathit{Factor}$ & $\mathit{Term}_1.\mathit{val} := \mathit{quotient}(\mathit{Term}_2.\mathit{val}, \mathit{Factor}.\mathit{val})$ \\
+  $\mathit{Term} ::= \mathit{Factor}$ & $\mathit{Term}.\mathit{val} := \mathit{Factor}.\mathit{val}$ \\
+  $\mathit{Factor} ::= (\mathit{Exp})$ & $\mathit{Factor}.\mathit{val} := \mathit{Exp}.\mathit{val}$ \\
+  $\mathit{Factor}_1 ::= - \mathit{Factor}_2$ & $\mathit{Factor}_1.\mathit{val} := \mathit{add\_inverse}(\mathit{Factor}_2.\mathit{val})$ \\
+  $\mathit{Factor} ::= \mathit{Num}$ & $\mathit{Factor}.\mathit{val} := \mathit{Num}.\mathit{val}$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Synthesized attributes.} Decorating (annotating) a parse tree starts
+at the leaves and propagates up the tree following the semantic functions.
+An attribute computed from the children of a node is \textbf{synthesized}.
+Figure~\ref{fig:decorated} shows the decoration of $7 + 3 * 4$: the leaves
+get the values of the numbers, the product node gets $12$, and the root gets
+$7 + 12 = 19$.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=3mm, l sep=4mm},
+  [{Exp \quad\textbf{19}}
+    [{Exp \quad\textbf{7}} [{Term \quad\textbf{7}} [{Factor \quad\textbf{7}} [7]]]]
+    [+]
+    [{Term \quad\textbf{12}}
+      [{Term \quad\textbf{3}} [{Factor \quad\textbf{3}} [3]]]
+      [*]
+      [{Factor \quad\textbf{4}} [4]]
+    ]
+  ]
+\end{forest}
+\caption{Parse tree of $7 + 3 * 4$ decorated with the synthesized attribute $\mathit{val}$.}
+\label{fig:decorated}
+\end{figure}
+
+In Rascal, each semantic function is one equation over a concrete syntax
+pattern, and the attribute is the function:
+\codelines{Rascal}{rascal/src/Attributes.rsc}{22}{30}
+
+\paragraph{Inherited attributes.} An attribute computed from the parent or the
+siblings of a node is \textbf{inherited}. Inherited attributes carry values
+from the left part of an expression into the right part, for example to
+preserve associativity in a grammar without left recursion. With
+\begin{center}
+\small
+\begin{tabular}{l l}
+  \toprule
+  Rule & Semantic functions \\
+  \midrule
+  $\mathit{Exp} ::= \mathit{Num}\ \mathit{ExpT}$ & $\mathit{ExpT}.\mathit{inh} := \mathit{Num}.\mathit{val}$;\ \ $\mathit{Exp}.\mathit{val} := \mathit{ExpT}.\mathit{syn}$ \\
+  $\mathit{ExpT}_1 ::= - \mathit{Num}\ \mathit{ExpT}_2$ & $\mathit{ExpT}_2.\mathit{inh} := \mathit{ExpT}_1.\mathit{inh} - \mathit{Num}.\mathit{val}$;\ \ $\mathit{ExpT}_1.\mathit{syn} := \mathit{ExpT}_2.\mathit{syn}$ \\
+  $\mathit{ExpT} ::= \lambda$ & $\mathit{ExpT}.\mathit{syn} := \mathit{ExpT}.\mathit{inh}$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+the value of $9 - 4 - 3$ is computed as in Figure~\ref{fig:inherited}. The 9
+goes down into the first $\mathit{ExpT}$; there $9 - 4 = 5$ goes down into the
+second; there $5 - 3 = 2$ goes down into the empty $\mathit{ExpT}$, which copies
+its inherited value into its synthesized one; and the 2 goes back up to the
+root. The subtraction associates to the left, $(9 - 4) - 3 = 2$, even though
+the tree grows to the right. Computing $9 - (4 - 3) = 8$ would be the error of
+ignoring associativity.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=4mm, l sep=5mm},
+  [{Exp \quad syn 2}
+    [{Num \quad 9}]
+    [{ExpT \quad inh 9, syn 2}
+      [$-$]
+      [{Num \quad 4}]
+      [{ExpT \quad inh 5, syn 2}
+        [$-$]
+        [{Num \quad 3}]
+        [{ExpT \quad inh 2, syn 2} [$\lambda$]]
+      ]
+    ]
+  ]
+\end{forest}
+\caption{Decoration of $9 - 4 - 3$ with an inherited attribute ($\mathit{inh}$) and a synthesized one ($\mathit{syn}$).}
+\label{fig:inherited}
+\end{figure}
+
+In Rascal the inherited attribute is an extra parameter:
+\codelines{Rascal}{rascal/src/Attributes.rsc}{35}{38}
+
+\subsection{Building ASTs}
+
+Attribute grammars can also build the AST from the parse tree. An attribute
+$\mathit{ptr}$ points to the AST node of each grammar symbol, and three
+constructors create nodes: $\mathit{make\_leaf}(n)$, $\mathit{make\_bin\_op}(op, l, r)$
+and $\mathit{make\_un\_op}(op, a)$.
+
+\paragraph{Bottom-up.} With the grammar with left recursion, $\mathit{ptr}$ is
+synthesized:
+\begin{center}
+\small
+\begin{tabular}{l l}
+  \toprule
+  Rule & Semantic function \\
+  \midrule
+  $\mathit{Exp}_1 ::= \mathit{Exp}_2 + \mathit{Term}$ & $\mathit{Exp}_1.\mathit{ptr} := \mathit{make\_bin\_op}(``+", \mathit{Exp}_2.\mathit{ptr}, \mathit{Term}.\mathit{ptr})$ \\
+  $\mathit{Exp}_1 ::= \mathit{Exp}_2 - \mathit{Term}$ & $\mathit{Exp}_1.\mathit{ptr} := \mathit{make\_bin\_op}(``-", \mathit{Exp}_2.\mathit{ptr}, \mathit{Term}.\mathit{ptr})$ \\
+  $\mathit{Exp} ::= \mathit{Term}$ & $\mathit{Exp}.\mathit{ptr} := \mathit{Term}.\mathit{ptr}$ \\
+  $\mathit{Term}_1 ::= \mathit{Term}_2 * \mathit{Fact}$ & $\mathit{Term}_1.\mathit{ptr} := \mathit{make\_bin\_op}(``*", \mathit{Term}_2.\mathit{ptr}, \mathit{Fact}.\mathit{ptr})$ \\
+  $\mathit{Term}_1 ::= \mathit{Term}_2 / \mathit{Fact}$ & $\mathit{Term}_1.\mathit{ptr} := \mathit{make\_bin\_op}(``/", \mathit{Term}_2.\mathit{ptr}, \mathit{Fact}.\mathit{ptr})$ \\
+  $\mathit{Term} ::= \mathit{Fact}$ & $\mathit{Term}.\mathit{ptr} := \mathit{Fact}.\mathit{ptr}$ \\
+  $\mathit{Fact} ::= (\mathit{Exp})$ & $\mathit{Fact}.\mathit{ptr} := \mathit{Exp}.\mathit{ptr}$ \\
+  $\mathit{Fact}_1 ::= - \mathit{Fact}_2$ & $\mathit{Fact}_1.\mathit{ptr} := \mathit{make\_un\_op}(``-", \mathit{Fact}_2.\mathit{ptr})$ \\
+  $\mathit{Fact} ::= \mathit{Num}$ & $\mathit{Fact}.\mathit{ptr} := \mathit{make\_leaf}(\mathit{Num}.\mathit{val})$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+The slide assigns $\mathit{Exp}_1.\mathit{val}$ in the rule for subtraction; the
+attribute is $\mathit{ptr}$, since the rule builds a node. It also writes the
+unary rule with $\mathit{Factor}$ on the left and $\mathit{Fact}$ on the right; the
+table uses $\mathit{Fact}$ throughout.
+
+For $(1+2)*4$ the leaves become nodes first, then the sum, then the product
+(Figure~\ref{fig:ast-bu}). The parentheses and the unit rules disappear: they
+only pass pointers up.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=3mm, l sep=4mm},
+  [Exp
+    [Term
+      [Term [Fact [( ] [Exp [Exp [Term [Fact [Num [1]]]]] [+] [Term [Fact [Num [2]]]]] [ )]]]
+      [*]
+      [Fact [Num [4]]]
+    ]
+  ]
+\end{forest}
+\hspace{1.5cm}
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=4mm, l sep=6mm},
+  [$*$ [$+$ [1] [2]] [4]]
+\end{forest}
+\caption{Parse tree of $(1+2)*4$ and the AST its $\mathit{ptr}$ attributes build. The $+$ node is created when the parser reduces $\mathit{Exp} ::= \mathit{Exp} + \mathit{Term}$ inside the parentheses, the $*$ node at $\mathit{Term} ::= \mathit{Term} * \mathit{Fact}$.}
+\label{fig:ast-bu}
+\end{figure}
+
+\codelines{Rascal}{rascal/src/Attributes.rsc}{42}{46}
+\codelines{Rascal}{rascal/src/Attributes.rsc}{48}{56}
+
+\paragraph{Top-down.} With the grammar without left recursion the operator and
+its left operand are in different subtrees, so the tree built so far has to
+travel down to the right as an inherited attribute $\mathit{st}$:
+\begin{center}
+\small
+\begin{tabular}{l >{\raggedright\arraybackslash}p{0.6\textwidth}}
+  \toprule
+  Rule & Semantic functions \\
+  \midrule
+  $\mathit{Exp} ::= \mathit{Term}\ \mathit{Terms}$ & $\mathit{Terms}.\mathit{st} := \mathit{Term}.\mathit{ptr}$;\newline $\mathit{Exp}.\mathit{ptr} := \mathit{Terms}.\mathit{ptr}$ \\
+  $\mathit{Terms}_1 ::= + \mathit{Term}\ \mathit{Terms}_2$ & $\mathit{Terms}_2.\mathit{st} := \mathit{make\_bin\_op}(``+", \mathit{Terms}_1.\mathit{st}, \mathit{Term}.\mathit{ptr})$;\newline $\mathit{Terms}_1.\mathit{ptr} := \mathit{Terms}_2.\mathit{ptr}$ \\
+  $\mathit{Terms}_1 ::= - \mathit{Term}\ \mathit{Terms}_2$ & same, with $``-"$ \\
+  $\mathit{Terms} ::= \lambda$ & $\mathit{Terms}.\mathit{ptr} := \mathit{Terms}.\mathit{st}$ \\
+  $\mathit{Term} ::= \mathit{Fact}\ \mathit{FactTerm}$ & $\mathit{FactTerm}.\mathit{st} := \mathit{Fact}.\mathit{ptr}$;\newline $\mathit{Term}.\mathit{ptr} := \mathit{FactTerm}.\mathit{ptr}$ \\
+  $\mathit{FactTerm}_1 ::= * \mathit{Fact}\ \mathit{FactTerm}_2$ & $\mathit{FactTerm}_2.\mathit{st} := \mathit{make\_bin\_op}(``*", \mathit{FactTerm}_1.\mathit{st}, \mathit{Fact}.\mathit{ptr})$;\newline $\mathit{FactTerm}_1.\mathit{ptr} := \mathit{FactTerm}_2.\mathit{ptr}$ \\
+  $\mathit{FactTerm}_1 ::= / \mathit{Fact}\ \mathit{FactTerm}_2$ & same, with $``/"$ \\
+  $\mathit{FactTerm} ::= \lambda$ & $\mathit{FactTerm}.\mathit{ptr} := \mathit{FactTerm}.\mathit{st}$ \\
+  $\mathit{Fact}_1 ::= - \mathit{Fact}_2$ & $\mathit{Fact}_1.\mathit{ptr} := \mathit{make\_un\_op}(``-", \mathit{Fact}_2.\mathit{ptr})$ \\
+  $\mathit{Fact} ::= (\mathit{Exp})$ & $\mathit{Fact}.\mathit{ptr} := \mathit{Exp}.\mathit{ptr}$ \\
+  $\mathit{Fact} ::= \mathit{Num}$ & $\mathit{Fact}.\mathit{ptr} := \mathit{make\_leaf}(\mathit{Num}.\mathit{val})$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+Four rules on the slide differ from this table. In the first rule it assigns
+$\mathit{Terms}.\mathit{ptr} := \mathit{Term}.\mathit{ptr}$, but the left operand has to go
+into the inherited $\mathit{st}$, as in the other rules of $\mathit{Terms}$. The same
+happens with $\mathit{FactTerm}.\mathit{st}$ (written $\mathit{FafctTerm}.\mathit{ptr}$). The rules
+for $*$ and $/$ compute $\mathit{FactTerm}_1.\mathit{st}$ from $\mathit{Fact}.\mathit{st}$ and
+$\mathit{FactTerm}_2.\mathit{ptr}$, the reverse of the rules for $+$ and $-$; the node
+must be built from the inherited tree and the new factor and passed down to
+$\mathit{FactTerm}_2$. And the parenthesis rule is written $\mathit{Fact} ::= \mathit{Exp}$.
+\codelines{Rascal}{rascal/src/Attributes.rsc}{58}{71}
+The tests check that both constructions build the same AST for $(1+2)*4$ and
+for $1-2*3+4/2$, and that $9-4-3$ becomes $(9-4)-3$.
 
 \subsection{Exercises}
-\begin{itemize}
-  \item Build the AST of:
-  $\assign{x}{\deref{x} \times 2}\;;\;\ift{\deref{x}>10}{\mathbf{skip}}{\assign{x}{\deref{x}+1}}$
-  \item Build the AST of:
-  $\whiledo{\deref{i}<\deref{n}}{\seq{\assign{s}{\deref{s}+\deref{i}}}{\assign{i}{\deref{i}+1}}}$
-  \item Reconstruct the source program corresponding to the following AST: root is \textsc{Seq} with left child $\textsc{Assign}(x, 5)$ and right child $\textsc{If-then-else}(\textsc{Eq}(\deref{x},5),\,\textsc{Assign}(y,1),\, \textsc{Assign}(y,0))$.
-\end{itemize}
- 
 
+\begin{exercise}
+Decorate the parse tree of $8 / 2 - (1 + 1)$ with the synthesized attribute
+$\mathit{val}$.
+\end{exercise}
 
+\paragraph{Solution.} The leaves get 8, 2, 1 and 1. $\mathit{Term} ::= \mathit{Term} / \mathit{Factor}$
+gives $8 / 2 = 4$. Inside the parentheses, $\mathit{Exp} ::= \mathit{Exp} + \mathit{Term}$ gives
+$2$, and $\mathit{Factor} ::= (\mathit{Exp})$ copies it. The root,
+$\mathit{Exp} ::= \mathit{Exp} - \mathit{Term}$, gives $4 - 2 = 2$.
+
+\begin{exercise}
+Extend the inherited-attribute grammar for $9-4-3$ with addition, and compute
+$10 - 3 + 2$.
+\end{exercise}
+
+\paragraph{Solution.} Add the rule $\mathit{ExpT}_1 ::= + \mathit{Num}\ \mathit{ExpT}_2$ with
+\[
+\mathit{ExpT}_2.\mathit{inh} := \mathit{ExpT}_1.\mathit{inh} + \mathit{Num}.\mathit{val}
+\qquad
+\mathit{ExpT}_1.\mathit{syn} := \mathit{ExpT}_2.\mathit{syn}.
+\]
+The inherited values are 10, then
+$10 - 3 = 7$, then $7 + 2 = 9$, and 9 goes up to the root.
+
+\begin{exercise}
+Build the AST of $\whiledo{\deref{i}<\deref{n}}{\seq{\assign{s}{\deref{s}+\deref{i}}}{\assign{i}{\deref{i}+1}}}$.
+\end{exercise}
+
+\paragraph{Solution.} The root is \textsc{While} with two children: the
+condition $<(\textsc{Deref}(i), \textsc{Deref}(n))$ and the body
+$\textsc{Seq}(\textsc{Assign}(s, +(\textsc{Deref}(s), \textsc{Deref}(i))),
+\textsc{Assign}(i, +(\textsc{Deref}(i), 1)))$.
+
+\begin{exercise}
+Run the top-down construction on $6 / 3 / 2$ and show the value of
+$\mathit{st}$ in each $\mathit{FactTerm}$.
+\end{exercise}
+
+\paragraph{Solution.} The first $\mathit{FactTerm}$ inherits the leaf 6. It reads
+$/ 3$ and passes $\mathit{st} = /(6, 3)$ to the second, which reads $/ 2$ and
+passes $/(/(6, 3), 2)$ to the empty $\mathit{FactTerm}$. That tree goes back up as
+$\mathit{ptr}$: the division associates to the left, $(6/3)/2 = 1$.

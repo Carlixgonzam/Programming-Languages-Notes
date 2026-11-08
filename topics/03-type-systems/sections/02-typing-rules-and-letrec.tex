@@ -1,0 +1,274 @@
+\section{Typing rules and LETREC}
+\label{sec:letrec}
+
+\subsection{Typing rules}
+
+Typing rules define which transformations are allowed on the values of a
+program, through the functions that apply to each type. A rule has
+premises above a line and a conclusion below it. The basic statement is a
+\textbf{typing judgment}
+\[
+\Gamma \vdash \mathit{exp} : T
+\]
+read ``in the typing context $\Gamma$, the expression $\mathit{exp}$ has type
+$T$''. The context $\Gamma$ is a map from variables to types: the types of the
+variables in scope. The lecture's first rule is functional abstraction:
+\begin{mathpar}
+\inferrule*[right=(Abs)]{\Gamma, x : T_1 \vdash \mathit{exp} : T_2}{\Gamma \vdash \lambda x : T_1 .\, \mathit{exp} : T_1 \to T_2}
+\end{mathpar}
+If, in the context $\Gamma$ extended with $x$ of type $T_1$, the body
+$\mathit{exp}$ has type $T_2$, then the function that takes $x$ and returns
+$\mathit{exp}$ has the function type $T_1 \to T_2$.
+
+\subsection{The language LETREC}
+
+The lecture uses a small language, LETREC, from Friedman and
+Wand~\cite[Ch.~4]{friedman2008essentials}:
+\begin{itemize}
+  \item it has numbers and boolean values;
+  \item variables are introduced with \texttt{let};
+  \item the only arithmetic expression is the difference \texttt{-(e1, e2)};
+  \item there are \texttt{if} expressions and the test \texttt{zero?};
+  \item new functions can be defined (\texttt{proc}, and \texttt{letrec} for
+    recursive ones) and applied (\texttt{(f e)}).
+\end{itemize}
+The grammar of the lecture is
+\begin{lstlisting}
+Expression ::= letrec Identifier (Identifier) = Expression in Expression
+             | (Expression Expression)
+             | proc (Identifier) Expression
+             | if Bool-exp then Expression else Expression
+             | num | bool
+             | - (Expression, Expression)
+Bool-exp   ::= Expression Operator Expression | Identifier (Expression)
+Operator   ::= < | > | <> | || | && | ==
+\end{lstlisting}
+and a program that doubles a number by recursion:
+\begin{lstlisting}
+letrec double(x)
+  = if zero?(x) then 0 else -((double -(x,1)), -2)
+in (double 6)
+\end{lstlisting}
+Subtracting $-2$ adds 2, so \texttt{(double 6)} is 12. The typed version of the
+language adds types to the parameters and to the result of \texttt{letrec}:
+\begin{lstlisting}
+Expression ::= letrec Type Identifier (Identifier : Type) = Expression in Expression
+             | proc (Identifier : Type) Expression
+             | ...
+Type       ::= int | boolean
+\end{lstlisting}
+\begin{lstlisting}
+letrec
+  int double (x : int) = if zero?(x) then 0 else -((double -(x,1)), -2)
+in double
+\end{lstlisting}
+Typed declarations can come before the variable (\texttt{T var}, as in C) or
+after it (\texttt{var : T}, as here). A function can be typed by its
+parameters and result, $T_{\mathit{res}}\ \mathit{foo}(T_1\ p_1, \dots, T_n\ p_n)$
+or $\mathit{foo}(p_1 : T_1, \dots, p_n : T_n) : T_{\mathit{res}}$, or with its full type
+$\mathit{foo} : T_1 \to T_2 \to \dots \to T_{\mathit{res}}$; the first two forms mean the
+third.
+
+In Rascal, the syntax with optional types (used also for inference in
+Section~\ref{sec:inference}) and the abstract syntax are:
+\codelines{Rascal}{rascal/src/Letrec.rsc}{6}{26}
+\codelines{Rascal}{rascal/src/Letrec.rsc}{28}{43}
+In the concrete syntax a function type is written \texttt{(int -> int)}. In the
+abstract syntax it is \texttt{procType(intType(), intType())}.
+
+\subsection{Typing rules of LETREC}
+
+\begin{mathpar}
+\inferrule*[right=(Const)]{ }{\Gamma \vdash n : \mathit{int}}
+\and
+\inferrule*[right=(Var)]{(x : T) \in \Gamma}{\Gamma \vdash x : T}
+\and
+\inferrule*[right=(Pred)]{\Gamma \vdash e : \mathit{int}}{\Gamma \vdash \mathtt{zero?}(e) : \mathit{bool}}
+\and
+\inferrule*[right=(Diff)]{\Gamma \vdash e_1 : \mathit{int} \\ \Gamma \vdash e_2 : \mathit{int}}{\Gamma \vdash \mathtt{-}(e_1, e_2) : \mathit{int}}
+\and
+\inferrule*[right=(Var-Intro)]{\Gamma \vdash e : T_1 \\ \Gamma, x : T_1 \vdash \mathit{body} : T_2}{\Gamma \vdash \mathtt{let}\ x = e\ \mathtt{in}\ \mathit{body} : T_2}
+\and
+\inferrule*[right=(If)]{\Gamma \vdash e_1 : \mathit{bool} \\ \Gamma \vdash e_2 : T \\ \Gamma \vdash e_3 : T}{\Gamma \vdash \mathtt{if}\ e_1\ \mathtt{then}\ e_2\ \mathtt{else}\ e_3 : T}
+\and
+\inferrule*[right=(Reduc)]{\Gamma \vdash \mathit{rator} : T_1 \to T_2 \\ \Gamma \vdash \mathit{rand} : T_1}{\Gamma \vdash (\mathit{rator}\ \mathit{rand}) : T_2}
+\end{mathpar}
+Each rule reads from the conclusion: to know the type of a difference, check
+that both operands are integers; the result is an integer. The rule
+\textsc{If} requires both branches to have the same type, which becomes the
+type of the whole expression. \textsc{Reduc} (application) requires the
+operator to be a function whose argument type is the type of the operand.
+
+\paragraph{Functions.} The rule for \texttt{proc} is \textsc{Abs}:
+\begin{mathpar}
+\inferrule*[right=(Abs)]{\Gamma, x : T_1 \vdash \mathit{body} : T_2}{\Gamma \vdash \mathtt{proc}\ (x : T_1)\ \mathit{body} : T_1 \to T_2}
+\end{mathpar}
+It needs the type of $x$. In the typed language the programmer writes it; in
+Section~\ref{sec:inference} the checker deduces it. For \texttt{letrec}, the
+function is in scope in its own body, so the context for the body already
+contains $f$:
+\begin{mathpar}
+\inferrule*[right=(Letrec)]{\Gamma, f : T_1 \to T_2, x : T_1 \vdash \mathit{fbody} : T_2 \\ \Gamma, f : T_1 \to T_2 \vdash \mathit{body} : T}{\Gamma \vdash \mathtt{letrec}\ T_2\ f\,(x : T_1) = \mathit{fbody}\ \mathtt{in}\ \mathit{body} : T}
+\end{mathpar}
+
+\paragraph{A derivation.} The rules combine into a tree, the typing
+derivation. Figure~\ref{fig:derivation} shows the one for
+\texttt{let x = 3 in -(x, 1)}.
+
+\begin{figure}[h]
+\centering
+\begin{mathpar}
+\inferrule*[right=(Var-Intro)]
+  {\inferrule*[right=(Const)]{ }{\vdash 3 : \mathit{int}}
+   \\
+   \inferrule*[right=(Diff)]
+     {\inferrule*[right=(Var)]{(x : \mathit{int}) \in \{x : \mathit{int}\}}{x : \mathit{int} \vdash x : \mathit{int}}
+      \\
+      \inferrule*[right=(Const)]{ }{x : \mathit{int} \vdash 1 : \mathit{int}}}
+     {x : \mathit{int} \vdash \mathtt{-}(x, 1) : \mathit{int}}}
+  {\vdash \mathtt{let}\ x = 3\ \mathtt{in}\ \mathtt{-}(x, 1) : \mathit{int}}
+\end{mathpar}
+\caption{Typing derivation of \texttt{let x = 3 in -(x, 1)}.}
+\label{fig:derivation}
+\end{figure}
+
+\subsection{The function type-of}
+
+The rules become a function that computes the type of an expression in an
+environment. The lecture writes it as
+\begin{lstlisting}
+fun type-of(tenv, exp) {
+  if exp==num && const-exp(num) then int
+  if exp==var && var-exp(var) then tenv(var)
+  if type-of(exp) == int then t(zero?-exp(exp), bool)
+  if type-of(exp1) == int && type-of(exp2) == int then t(diff(exp1 exp2), int)
+  if type-of(exp) == T1 && type-of(body) == T2 && tenv(var) then t(let-exp(var exp body), T2)
+  if type-of(exp1)==bool && type-of(exp2)==T && type-of(exp3)==T then t(if-exp(exp1, exp2, exp3), T)
+  if type-of(rator) == T1 -> T2 && type-of(rand) == T1 then t(call-exp(rator, rand), T2)
+}
+\end{lstlisting}
+In Rascal there is one equation per rule, and each \texttt{checkEqual} is a
+premise:
+\codelines{Rascal}{rascal/src/Letrec.rsc}{76}{125}
+The tests type the program \texttt{double} as \texttt{int -> int}, its
+application to 6 as \texttt{int}, and reject an \texttt{if} whose branches have
+different types and the application of a number.
+
+\paragraph{Type consistency.} The core of the checker is the comparison of
+types. Given two types that an expression requires to be equal, the checker
+continues if they are and reports an error otherwise:
+\begin{lstlisting}
+error check-equal(T1, T2, exp) {
+  if T1 != T2 then
+    error("Types did not match in expression %s: %s != %s", exp, name(T1), name(T2))
+  else continue
+}
+\end{lstlisting}
+The Rascal version is \texttt{checkEqual} above. The lecture also shows the
+same checks written with TypePal, a Rascal library for type checkers, where
+each construct \texttt{collect}s its constraints and a solver computes the
+types.
+
+\subsection{Type checking and type inference}
+
+\paragraph{Type checking.} At compile time all the entities of the program
+(values, variables, functions, objects) must have a type. The programmer
+provides the types; the type checker deduces the types of the other
+expressions and checks that they are consistent. In
+\begin{lstlisting}[language=C]
+int res;
+int x = 3;
+res = x / 2.0;
+\end{lstlisting}
+the types of \texttt{res} and \texttt{x} are given. The checker deduces that
+\texttt{x / 2.0} is \texttt{float}, since dividing an \texttt{int} by a
+\texttt{float} gives a \texttt{float}, and then has to decide whether a
+\texttt{float} can be assigned to an \texttt{int} variable. Java rejects it; C
+converts the value implicitly.
+
+\paragraph{Type inference.} The programmer does not provide all the types, and
+the checker infers them from their use. In Haskell,
+\codelines{Haskell}{haskell/DoubleSmall.hs}{1}{3}
+has no type annotation. \texttt{x > 100} needs \texttt{x} to be something that
+can be compared, and \texttt{x * 2} something that can be multiplied, so the
+function goes from numbers to numbers. The lecture writes this as
+$\mathit{Num} \to \mathit{Num}$; GHC's exact answer is
+\texttt{(Ord a, Num a) => a -> a}: for any type \texttt{a} that can be compared
+and has arithmetic. Section~\ref{sec:inference} shows how such types are
+computed.
+
+\subsection{Type environments}
+
+Variables are typed in an environment, the same way the symbol table works
+for names. The lecture's example is in OCaml:
+\begin{lstlisting}
+let someval = "hello";;
+let otherval = "world" in let someval = 3 in
+  Printf.printf "%d %s \n" someval otherval;;
+\end{lstlisting}
+The first line gives \texttt{someval : string}. The second creates a new
+environment for \texttt{otherval} and, inside it, another one where a new
+\texttt{someval} of type \texttt{int} hides the first. The program prints
+\texttt{3 world}. Figure~\ref{fig:tenv} shows the three environments. The same
+structure in Scheme:
+\codelines{Scheme}{scheme/dynamic.scm}{17}{21}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[env/.style={draw, rounded corners=2pt, align=left, font=\small, inner sep=4pt}]
+  \node[env] (g1) at (0,0) {$\Gamma_1$\\ \texttt{someval : string}};
+  \node[env] (g2) at (5.2,0) {$\Gamma_2$\\ \texttt{otherval : string}};
+  \node[env] (g3) at (10.4,0) {$\Gamma_3$\\ \texttt{someval : int}};
+  \draw[flecha] (g2) -- node[above, font=\footnotesize] {extends} (g1);
+  \draw[flecha] (g3) -- node[above, font=\footnotesize] {extends} (g2);
+\end{tikzpicture}
+\caption{Nested type environments. In $\Gamma_3$, $\Gamma_3 \vdash \mathtt{someval} : \mathit{int}$ because the search stops at the innermost declaration.}
+\label{fig:tenv}
+\end{figure}
+
+\subsection{Exercises}
+
+\begin{exercise}
+What would be the rule for the definition of functions in LETREC? How does the
+checker know the type of the parameter?
+\end{exercise}
+
+\paragraph{Solution.} It is \textsc{Abs}: if the body has type $T_2$ when the
+parameter has type $T_1$, the function has type $T_1 \to T_2$. The parameter's
+type is written by the programmer in the typed language
+(\texttt{proc (x : int) \dots}); without the annotation it has to be inferred
+from how the body uses $x$.
+
+\begin{exercise}
+Give the typing derivation of
+\texttt{letrec int double (x : int) = if zero?(x) then 0 else -((double -(x,1)), -2) in double}.
+\end{exercise}
+
+\paragraph{Solution.} With $\Gamma = \{\mathit{double} : \mathit{int} \to \mathit{int}\}$ and
+$\Gamma' = \Gamma, x : \mathit{int}$. In $\Gamma'$: $\mathtt{zero?}(x) : \mathit{bool}$ by
+\textsc{Pred} and \textsc{Var}; $0 : \mathit{int}$; $\mathtt{-}(x, 1) : \mathit{int}$ by
+\textsc{Diff}; $(\mathit{double}\ \mathtt{-}(x,1)) : \mathit{int}$ by \textsc{Reduc}, since
+$\mathit{double} : \mathit{int} \to \mathit{int}$; $\mathtt{-}(\dots, -2) : \mathit{int}$ by
+\textsc{Diff}; so the \texttt{if} has type $\mathit{int}$ by \textsc{If}, which matches
+the declared result. Then the body \texttt{double} has type $\mathit{int} \to \mathit{int}$
+in $\Gamma$ by \textsc{Var}, and by \textsc{Letrec} the whole program has type
+$\mathit{int} \to \mathit{int}$.
+
+\begin{exercise}
+Which rule fails for \texttt{if zero?(1) then 1 else zero?(0)}?
+\end{exercise}
+
+\paragraph{Solution.} \textsc{If}: the condition is a $\mathit{bool}$, but the branches
+have types $\mathit{int}$ and $\mathit{bool}$, and the rule requires the same type
+$T$ for both. The Rascal checker reports
+\texttt{Types did not match \dots: bool != int}.
+
+\begin{exercise}
+In the OCaml example, what does \texttt{Printf.printf "\%d \%s" someval otherval}
+print if the inner \texttt{let someval = 3} is removed? Does the program still
+type check?
+\end{exercise}
+
+\paragraph{Solution.} It does not type check: \texttt{someval} is now the outer
+one, a \texttt{string}, and \texttt{\%d} requires an \texttt{int}. The format
+string makes the types of the arguments part of the check.

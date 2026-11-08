@@ -1,233 +1,131 @@
-% !TeX root = ../main.tex
 \section{Interpreters}
+\label{sec:interpreters}
 
-We've spent a lot of time on the AST as a data structure and on environments as a
-semantic device. This section makes both of those concrete: an interpreter is a
-program whose job is to walk an AST, holding an environment in its hand, and produce a
-result. It's the most direct way to give a language an executable meaning, direct in
-the sense that there's no intermediate translation step, the tree \emph{is} the
-program, and running it is just recursion over that tree.
+This section and the following three go beyond the slides. They make concrete
+two ideas used throughout the course, the AST and the environment: an
+interpreter walks the AST with an environment and produces a result, without
+translating the program first. The presentation follows Friedman and
+Wand~\cite[Ch.~3]{friedman2008essentials} and
+Nystrom~\cite[Part~II]{nystrom2021crafting}.
 
-\subsection{tree-walking, the most direct interpreter}
+\subsection{Tree-walking interpreters}
 
-A \textbf{tree-walking interpreter} takes the AST built during parsing (recall the
-abstract syntax trees chapter: each node is a language construct, each leaf an atomic
-value) and recursively
-evaluates it, node by node, according to what shape the node has. There's no separate
-compilation pass, no bytecode, no machine code, the tree you parsed is the same tree
-you execute. This is the simplest interpreter architecture to build and reason about,
-and it's usually the first one you'd write for a new language, precisely because there's
-so little machinery standing between ``I parsed a program'' and ``I can run it''.
+A \textbf{tree-walking interpreter} takes the AST built by the parser and
+evaluates it recursively, node by node, according to the shape of each node.
+The tree that was parsed is the tree that runs. This is the simplest
+architecture to build, and the Rascal evaluators of the previous topics
+(the SIMP big-step semantics, the type checker of LETREC) have this shape.
 
-\subsection{eval / apply}
+\subsection{Eval and apply}
 
-The classic organizing structure for a tree-walking interpreter, going back to the
-original Lisp interpreter, is the \textbf{eval/apply} pair:
-\begin{itemize}
-  \item \texttt{eval(expr, env)} looks at the \emph{shape} of \texttt{expr} (is it a
-    literal? a variable reference? an if? a function call?) and dispatches to the
-    matching case. Evaluating a literal just returns it. Evaluating a variable looks it
-    up in \texttt{env}. Evaluating a function call means: evaluate the function
-    position and the argument expressions (by calling \texttt{eval} recursively on
-    each), then hand the results to \texttt{apply}.
-  \item \texttt{apply(fn, args)} handles the mechanics of actually invoking a function
-    once you already have a function value and already-evaluated arguments: bind the
-    arguments to the function's parameters in a fresh environment (extending the
-    closure's captured environment, recall the closures discussion), and \texttt{eval}
-    the function's body in that new environment.
-\end{itemize}
-\texttt{eval} recurses over the AST's shape; \texttt{apply} recurses (indirectly,
-through \texttt{eval} on the body) into the function being called. Almost every
-tree-walking interpreter you'll ever read, however dressed up, is this pair underneath.
+Most tree-walking interpreters are organized around two functions
+(Figure~\ref{fig:eval-apply}). \texttt{eval(expr, env)} looks at the shape of
+\texttt{expr}: a literal evaluates to itself, a variable is looked up in
+\texttt{env}, and a call evaluates the function and the arguments and passes
+the results to \texttt{apply}. \texttt{apply(f, args)} invokes a function value
+on evaluated arguments: it binds the parameters to the arguments in a new
+environment that extends the environment captured by the closure, and calls
+\texttt{eval} on the body in that environment.
 
-\subsection{the environment, made concrete}
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[b/.style={draw, minimum width=2.6cm, minimum height=9mm, font=\small}]
+  \node[b] (eval) at (0,0) {\texttt{eval(expr, env)}};
+  \node[b] (apply) at (6,0) {\texttt{apply(f, args)}};
+  \draw[flecha] (eval.north east) to[bend left=25] node[above, font=\footnotesize] {function value and evaluated arguments} (apply.north west);
+  \draw[flecha] (apply.south west) to[bend left=25] node[below, font=\footnotesize] {body in the extended environment} (eval.south east);
+  \draw[flecha] (eval.west) to[out=150, in=210, looseness=6] node[left, font=\footnotesize, align=right] {subexpressions} (eval.west);
+\end{tikzpicture}
+\caption{The eval/apply cycle.}
+\label{fig:eval-apply}
+\end{figure}
 
-The environment stopped being an abstract mathematical object ($\mathit{Var} \to
-\mathit{Val}$, as in the denotational semantics chapter) the moment we started writing
-an interpreter: now it's an actual runtime data structure that the interpreter's code
-allocates, extends, and looks values up in. Two common concrete choices:
-\begin{itemize}
-  \item A \textbf{chain of frames}: each scope is a small dictionary of its own
-    bindings, plus a pointer to the enclosing scope's frame. Looking up a variable
-    walks the chain outward until it finds a frame that binds that name (or fails, if
-    it reaches the end with nothing).
-  \item A \textbf{single hashmap per call}, cloned or extended from the caller's, if
-    the language doesn't need the sharing/mutation behaviour that a frame chain gives
-    you for closures.
-\end{itemize}
-The frame-chain version is what makes closures work correctly: capturing ``the current
-environment'' when a function is defined just means keeping a pointer to the current
-frame, and the chain behind it, alive even after the defining scope's own \texttt{eval}
-call has returned.
+\paragraph{Environments.} In an interpreter the environment stops being the
+mathematical function $\mathit{Var} \to \mathit{Val}$ of the denotational
+semantics and becomes a data structure that the interpreter allocates,
+extends and searches. A common choice is a chain of frames: each scope has its
+own bindings and a pointer to the frame of the enclosing scope, and a lookup
+walks the chain outward. With a chain, a closure captures the current
+environment by keeping a pointer to the current frame.
 
-\subsection{a worked interpreter: arithmetic, \texttt{let}, and \texttt{if}}
+\subsection{An interpreter for arithmetic, let and if}
 
-Here's a complete, runnable-shaped interpreter for a tiny expression language with
-integer arithmetic, \texttt{let}-bindings, and \texttt{if}, written directly over an
-AST built from Python tuples for compactness:
+The following interpreter handles integer arithmetic, \texttt{let} and
+\texttt{if}, with the AST written as Python tuples:
+\codelines{Python}{python/interp.py}{2}{23}
 
-\begin{lstlisting}[language=Python]
-# AST shapes:
-#   ('num', n)                       -- literal
-#   ('var', name)                    -- variable reference
-#   ('add', e1, e2)  ('mul', e1, e2) -- arithmetic
-#   ('let', name, e1, e2)            -- let name = e1 in e2
-#   ('if', cond, then_e, else_e)     -- if cond then then_e else else_e
-
-def eval(expr, env):
-    tag = expr[0]
-
-    if tag == 'num':
-        _, n = expr
-        return n
-
-    elif tag == 'var':
-        _, name = expr
-        return env[name]                     # look up in the environment
-
-    elif tag == 'add':
-        _, e1, e2 = expr
-        return eval(e1, env) + eval(e2, env)  # recursively eval both sides
-
-    elif tag == 'mul':
-        _, e1, e2 = expr
-        return eval(e1, env) * eval(e2, env)
-
-    elif tag == 'let':
-        _, name, e1, e2 = expr
-        v1 = eval(e1, env)                    # eval the bound expression first
-        new_env = {**env, name: v1}           # extend the environment
-        return eval(e2, new_env)              # eval the body in the extended env
-
-    elif tag == 'if':
-        _, cond, then_e, else_e = expr
-        if eval(cond, env) != 0:              # 0 is "false", nonzero is "true"
-            return eval(then_e, env)
-        else:
-            return eval(else_e, env)
-
-    else:
-        raise ValueError(f"unknown AST node: {tag}")
-\end{lstlisting}
-
-\begin{example}[Tracing \texttt{let x = 2 + 3 in if x then x * 10 else 0}]
-As an AST:
-\begin{lstlisting}[language=Python]
-program = ('let', 'x', ('add', ('num', 2), ('num', 3)),
-                  ('if', ('var', 'x'),
-                         ('mul', ('var', 'x'), ('num', 10)),
-                         ('num', 0)))
-eval(program, {})
-\end{lstlisting}
-The sequence of recursive calls:
-\begin{enumerate}
-  \item \texttt{eval(('let', 'x', \ldots), \{\})} matches the \texttt{let} case.
-  \item It first evaluates the bound expression: \texttt{eval(('add', ('num',2),
-    ('num',3)), \{\})}, which recurses into \texttt{eval(('num',2),\{\}) = 2} and
-    \texttt{eval(('num',3),\{\}) = 3}, and returns $2+3=5$.
-  \item It builds \texttt{new\_env = \{'x': 5\}} and evaluates the body,
-    \texttt{eval(('if', \ldots), \{'x': 5\})}.
-  \item That \texttt{if} case first evaluates the condition:
-    \texttt{eval(('var','x'), \{'x':5\}) = 5} (a lookup, not a recursive descent into
-    subexpressions). Since $5 \ne 0$, it's truthy.
-  \item So it evaluates the \emph{then}-branch: \texttt{eval(('mul', ('var','x'),
-    ('num',10)), \{'x':5\})}, which recurses into \texttt{eval(('var','x'),
-    \{'x':5\}) = 5} and \texttt{eval(('num',10), \{'x':5\}) = 10}, returning
-    $5 \times 10 = 50$.
-  \item The \emph{else}-branch, \texttt{('num', 0)}, is never evaluated at all, exactly
-    because \texttt{if} only recurses into one of its two branches.
-\end{enumerate}
-Final result: \texttt{50}. Notice the call tree mirrors the AST's shape exactly, that's
-the entire point of tree-walking: the \emph{control flow of the interpreter} is
-isomorphic to the \emph{structure of the program} being interpreted.
+\begin{example}
+The program \texttt{let x = 2 + 3 in if x then x * 10 else 0} is the tuple
+\codelines{Python}{python/interp.py}{25}{28}
+\texttt{evaluate} matches the \texttt{let} case and evaluates the bound
+expression: the two literals give 2 and 3, and the sum gives 5. It builds the
+environment $\{x \mapsto 5\}$ and evaluates the \texttt{if} in it. The
+condition is a lookup that gives 5, which is not 0, so the \texttt{then} branch
+runs: $5 \times 10 = 50$. The \texttt{else} branch is never evaluated. The tree
+of calls has the same shape as the AST.
 \end{example}
 
-\subsection{interpreter vs.\ compiler: a spectrum, not a binary}
+\subsection{Interpreters and compilers}
 
-It's tempting to draw a hard line between ``interpreted languages'' and ``compiled
-languages'', but the honest picture is a spectrum of execution strategies, and a single
-language implementation can sit at more than one point on it:
-\begin{itemize}
-  \item \textbf{Tree-walking interpretation}: evaluate the AST directly, as above.
-    Simplest to build, slowest to run (every node re-dispatches on its shape, every
-    single time it's evaluated, even inside a hot loop).
-  \item \textbf{Bytecode interpretation}: compile the AST once into a flat,
-    lower-level instruction sequence, then run a dispatch loop over \emph{that}
-    instead of re-walking the tree on every execution. We'll build this out properly
-    in the next section on virtual machines; the key point for now is that ``interpreter''
-    doesn't have to mean ``tree-walker'', CPython's bytecode VM and the JVM are both,
-    in a real sense, interpreters too.
-  \item \textbf{Native compilation}: translate all the way down to the target
-    machine's own instruction set, so there's no interpreter loop running at all at
-    execution time, just the CPU executing native instructions directly (the subject
-    of the next section but one).
-\end{itemize}
-Where a real implementation sits on this spectrum is usually a pragmatic choice, not an
-ideological one: many production language runtimes use several of these strategies at
-once (an interpreter for a fast startup path, a JIT compiler that kicks in for code
-that turns out to run often), which is a strong hint that ``interpreted'' and
-``compiled'' describe \emph{implementation strategies}, not properties baked into a
-language itself.
+Execution strategies form a range. A tree-walking interpreter evaluates the
+AST directly, and dispatches on the shape of each node every time the node
+runs, even inside a loop. A bytecode interpreter translates the AST once into
+a flat sequence of instructions and runs a dispatch loop over it
+(Section~\ref{sec:vm}). A native compiler translates to the instructions of
+the machine, and no interpreter loop runs at execution time
+(Section~\ref{sec:ir}). One implementation can use several strategies: the JVM
+interprets bytecode and compiles the methods that run often. ``Interpreted''
+and ``compiled'' describe implementations, not languages.
 
-\subsection{meta-circular interpreters}
+\subsection{Metacircular interpreters}
 
-A fun (and clarifying) exercise: write an interpreter for a language \emph{in that same
-language}. This is a \textbf{meta-circular interpreter}, and the classic example is
-Lisp's original \texttt{eval}/\texttt{apply}, written in Lisp, evaluating Lisp:
-
-\begin{lstlisting}[language=Lisp]
-(define (eval expr env)
-  (cond ((self-evaluating? expr) expr)
-        ((variable? expr)       (lookup expr env))
-        ((if? expr)             (if (eval (if-cond expr) env)
-                                     (eval (if-then expr) env)
-                                     (eval (if-else expr) env)))
-        ((lambda? expr)         (make-closure expr env))
-        ((application? expr)    (apply (eval (operator expr) env)
-                                        (map (lambda (a) (eval a env))
-                                             (operands expr))))
-        (else (error "unknown expression" expr))))
-
-(define (apply fn args)
-  (if (primitive? fn)
-      (apply-primitive fn args)
-      (eval (closure-body fn)
-            (extend-env (closure-params fn) args (closure-env fn)))))
-\end{lstlisting}
-This is exactly the same eval/apply shape as the Python interpreter above, just written
-in Lisp itself, and evaluating Lisp expressions. Why bother? Because it forces you to
-be completely explicit about what your language's semantics \emph{are}: every construct
-(what counts as ``self-evaluating'', how a closure captures its environment, how
-application binds arguments) has to be spelled out as code, in the same notation the
-language itself uses. If you can write your language's meta-circular evaluator and it
-handles every construct in the language, you've demonstrated, very concretely, that you
-understand the language's semantics well enough to reproduce them.
+A \textbf{metacircular interpreter} is an interpreter for a language written in
+the same language. The original Lisp \texttt{eval} was one. A small version in
+Scheme, for numbers, variables, \texttt{if}, \texttt{lambda} and application,
+with environments as lists of pairs:
+\codelines{Scheme}{scheme/metacircular.scm}{7}{24}
+The functions are called \texttt{m-eval} and \texttt{m-apply} so that they do
+not replace the \texttt{eval} and \texttt{apply} of Scheme. The primitives come
+from the host language:
+\codelines{Scheme}{scheme/metacircular.scm}{26}{27}
+A \texttt{lambda} evaluates to a list that holds the parameters, the body and
+the environment of its definition, the function object $F$ of
+Section~\ref{sec:representation}. The last test applies a function defined
+where $x = 10$ inside a scope where $x = 99$, and gets 10: the interpreter
+implements static scope because \texttt{m-apply} extends the environment saved
+in the closure, not the environment of the call. Writing a metacircular
+interpreter forces every rule of the language to be explicit: what evaluates
+to itself, what a closure keeps, how application binds the arguments.
 
 \subsection{Exercises}
-\begin{itemize}
-  \item Extend the Python interpreter above with a \texttt{('sub', e1, e2)} node for
-    subtraction, and a \texttt{('leq', e1, e2)} node that returns \texttt{1} if
-    $e_1 \le e_2$ else \texttt{0} (recall \texttt{if} treats nonzero as true). Trace it
-    on \texttt{if (5 leq 3) then 1 else 2}.
-  \item Trace, by hand, the full sequence of \texttt{eval} calls (as in the worked
-    example) for \texttt{let x = 4 in let y = x * x in y + 1}. What is the final
-    result?
-  \item The \texttt{let} case above builds \texttt{new\_env = \{**env, name: v1\}}, a
-    fresh dictionary copy on every \texttt{let}. What's the asymptotic cost of this
-    choice for a deeply nested chain of a thousand lets? How would using a frame-chain
-    representation instead change that cost?
-  \item Add a minimal \texttt{('closure', params, body)} / function-call node pair to
-    the interpreter (an \texttt{eval/apply} split), following the eval/apply
-    organization described above. What has to be stored in a closure value for it to
-    work correctly when called later, outside the scope where it was defined?
-  \item Think about it: the meta-circular evaluator's \texttt{eval} function is itself
-    written in a language that presumably has its own \texttt{eval}, running somewhere
-    underneath. Does this lead to infinite regress, or does it bottom out somewhere?
-    Where?
-  \item Compare the tree-walking interpreter's dispatch (\texttt{if tag == 'add':
-    \ldots elif tag == 'mul': \ldots}) to how you'd imagine a bytecode interpreter's
-    dispatch loop looking, just from the description in this section. What do you
-    expect to be different about the cost of dispatching on a node/instruction when
-    the tree is walked directly vs.\ when it's been flattened into a linear
-    instruction stream first?
-\end{itemize}
+
+\begin{exercise}
+Trace the calls of \texttt{evaluate} for \texttt{let x = 4 in let y = x * x in y + 1}.
+\end{exercise}
+
+\paragraph{Solution.} The outer \texttt{let} evaluates \texttt{4} and builds
+$\{x \mapsto 4\}$. The inner \texttt{let} evaluates \texttt{x * x} in it: two
+lookups and a product, 16, and builds $\{x \mapsto 4, y \mapsto 16\}$. The body
+looks up $y$ and adds 1. The result is 17, which the tests check.
+
+\begin{exercise}
+The \texttt{let} case builds \texttt{\{**env, name: v1\}}, a copy of the
+environment. What does a chain of $n$ nested \texttt{let}s cost, and what
+changes with a chain of frames?
+\end{exercise}
+
+\paragraph{Solution.} The $k$-th \texttt{let} copies an environment of $k - 1$
+bindings, so the chain costs $O(n^2)$ to build, and each lookup is $O(1)$. With
+frames each \texttt{let} adds one frame in $O(1)$, the chain costs $O(n)$, and a
+lookup may walk $O(n)$ frames.
+
+\begin{exercise}
+Change \texttt{m-apply} so that it extends the environment of the call instead
+of the environment of the closure. Which result does the last test give?
+\end{exercise}
+
+\paragraph{Solution.} \texttt{m-apply} needs the environment of the call as a
+third argument, and \texttt{m-eval} passes its \texttt{env}. The body
+\texttt{(+ x y)} then finds the binding $x = 99$ first, and the result is 99:
+the interpreter implements dynamic scope, as in the \texttt{defvar} example of
+the scoping section of the semantics notes.

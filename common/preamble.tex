@@ -1,20 +1,105 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb,amsthm}
+\usepackage{stmaryrd}
 \usepackage{mathpartir}
 \usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{forest}
 \usepackage{tikz}
-\usetikzlibrary{shapes,arrows,positioning}
-\usepackage{xcolor}
-\usepackage{hyperref}
+\usetikzlibrary{automata, positioning, arrows.meta, calc, fit, shapes.geometric, shapes.multipart, matrix, decorations.pathreplacing}
 \usepackage{listings}
-\usepackage{stmaryrd}
+\usepackage[hidelinks]{hyperref}
 
+\setlength{\parskip}{4pt}
+\captionsetup{font=small, labelfont=bf}
+
+\tikzset{
+  >={Stealth[length=2mm]},
+  every state/.style={draw, minimum size=7mm, inner sep=1pt, font=\small},
+  initial text={},
+  caja/.style={draw, minimum width=9mm, minimum height=6mm, font=\small\ttfamily},
+  flecha/.style={->, thick},
+  nodoarbol/.style={draw, circle, minimum size=6mm, inner sep=1pt, font=\small\ttfamily},
+}
+\forestset{
+  arbol/.style={for tree={font=\small\ttfamily, s sep=3mm, l sep=4mm, align=center}},
+}
 
 \lstset{
   basicstyle=\ttfamily\small,
-  breaklines=true,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=lines,
+  framerule=0.3pt,
   showstringspaces=false,
-  frame=single,
-  captionpos=b
+  breaklines=true,
+  xleftmargin=1em,
+  xrightmargin=1em,
+  captionpos=b,
+  upquote=true,
+  literate={¬}{{$\neg$}}1 {λ}{{$\lambda$}}1 {→}{{$\to$}}1 {∨}{{$\vee$}}1
+    {∧}{{$\wedge$}}1 {⇒}{{$\Rightarrow$}}1 {♭}{{$\flat$}}1 {♯}{{$\sharp$}}1
+    {≤}{{$\le$}}1 {≥}{{$\ge$}}1 {⊢}{{$\vdash$}}1 {α}{{$\alpha$}}1 {β}{{$\beta$}}1
+    {γ}{{$\gamma$}}1 {∪}{{$\cup$}}1 {Σ}{{$\Sigma$}}1 {∈}{{$\in$}}1
+    {σ}{{$\sigma$}}1 {δ}{{$\delta$}}1 {μ}{{$\mu$}}1 {ν}{{$\nu$}}1 {↦}{{$\mapsto$}}1 {Δ}{{$\Delta$}}1 {Γ}{{$\Gamma$}}1 {τ}{{$\tau$}}1 {ρ}{{$\rho$}}1,
 }
+
+\lstdefinelanguage{Rascal}{
+  morekeywords={module, import, extend, syntax, lexical, layout, keyword, start,
+    data, alias, if, else, for, while, do, return, switch, case, default, visit,
+    insert, fail, test, bool, int, str, real, num, list, set, map, rel, tuple,
+    node, value, void, true, false, when, throw, try, catch, public, private,
+    bottom-up, top-down, innermost, outermost, solve, append, loc, left, right,
+    assoc, non-assoc},
+  sensitive=true,
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+  alsoletter={-},
+}
+
+\lstdefinelanguage{Scheme}{
+  morekeywords={define, lambda, let, let*, letrec, if, cond, else, case, and,
+    or, begin, set!, quote, delay, force, delay-force, make-promise,
+    define-syntax, syntax-rules, define-record-type},
+  sensitive=true,
+  morecomment=[l]{;},
+  morestring=[b]",
+  alsoletter={-,!,?,*},
+}
+
+\lstdefinelanguage{Swift}{
+  morekeywords={func, let, var, if, else, guard, return, print, nil, struct,
+    class, protocol, precondition, true, false},
+  sensitive=true,
+  morecomment=[l]{//},
+  morestring=[b]",
+}
+
+\lstdefinelanguage{JavaScript}{
+  morekeywords={let, const, var, if, else, function, return, for, while, true, false},
+  sensitive=true,
+  morecomment=[l]{//},
+  morestring=[b]",
+  morestring=[b]`,
+}
+
+\lstdefinelanguage{CommonLisp}{
+  morekeywords={defvar, defparameter, defun, defmacro, let, let*, lambda, if,
+    cond, progn, setf, quote, function, funcall, eval},
+  sensitive=false,
+  morecomment=[l]{;},
+  morestring=[b]",
+  alsoletter={-,*},
+}
+
+\newcommand{\codefile}[2]{\lstinputlisting[language=#1]{code/#2}}
+\newcommand{\codelines}[4]{\lstinputlisting[language=#1, firstline=#3, lastline=#4]{code/#2}}

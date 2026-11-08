@@ -1,0 +1,118 @@
+\section{Subtyping}
+\label{sec:subtyping}
+
+This section goes beyond the slides, except for the example of variance,
+which comes from the statement of the course project. \textbf{Subtyping} asks
+when a term of one type can be used where another type is expected. The
+answer is a relation $\tau_1 <: \tau_2$, read ``$\tau_1$ is a subtype of
+$\tau_2$'': anywhere a $\tau_2$ is expected, a $\tau_1$ will do.
+
+\subsection{Subsumption}
+
+Subtyping enters the type system through one rule:
+\begin{mathpar}
+\inferrule*[right=T-Sub]{\Gamma \vdash e : \tau_1 \\ \tau_1 <: \tau_2}{\Gamma \vdash e : \tau_2}
+\end{mathpar}
+The other rules do not change; the design work is in the definition of $<:$.
+
+\paragraph{Records.} A record with more fields is a subtype of a record with
+fewer, if the shared fields agree (width subtyping):
+$\{\mathit{name}: \mathit{string}, \mathit{age}: \tyint, \mathit{email}: \mathit{string}\} <:
+\{\mathit{name}: \mathit{string}, \mathit{age}: \tyint\}$. A function that only reads
+\texttt{name} and \texttt{age} can ignore \texttt{email}. A record is also a
+subtype if each field is a subtype of the corresponding field (depth
+subtyping).
+
+\subsection{Variance}
+
+How does subtyping extend to type constructors? For functions the rule is
+\begin{mathpar}
+\inferrule*[right=S-Arrow]{\sigma_1 <: \tau_1 \\ \tau_2 <: \sigma_2}{\tau_1 \to \tau_2 \;<:\; \sigma_1 \to \sigma_2}
+\end{mathpar}
+The argument goes in the opposite direction. A caller that expects
+$\sigma_1 \to \sigma_2$ will pass any $\sigma_1$, so the function must accept at least
+that: $\sigma_1 <: \tau_1$. The caller will use the result as a $\sigma_2$, so the
+function may return something more specific: $\tau_2 <: \sigma_2$. Function types
+are \textbf{contravariant} in the argument and \textbf{covariant} in the result.
+
+The statement of the course project (Objectilang) has an example. With
+\texttt{Puppy <: Dog <: Animal} and \texttt{DogFood <: Food}, a generic
+\texttt{Transformer[-In, +Out]} declares \texttt{In} contravariant and
+\texttt{Out} covariant, so
+\[
+\mathtt{Transformer[Animal, DogFood]} \;<:\; \mathtt{Transformer[Puppy, Food]}.
+\]
+A transformer that accepts any animal and returns dog food can be used where
+the program needs one that accepts puppies and returns some food
+(Figure~\ref{fig:variance}). The comments of the statement say the same thing:
+the input is broader and the output narrower.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[box/.style={draw, rounded corners=1pt, font=\small\ttfamily, minimum height=6mm}]
+  \node[box] (animal) at (0,2.4) {Animal};
+  \node[box] (dog) at (0,1.2) {Dog};
+  \node[box] (puppy) at (0,0) {Puppy};
+  \node[box] (food) at (6,2.4) {Food};
+  \node[box] (dogfood) at (6,1.2) {DogFood};
+  \draw[flecha] (dog) -- (animal);
+  \draw[flecha] (puppy) -- (dog);
+  \draw[flecha] (dogfood) -- (food);
+  \node[box] (t1) at (3,-1.4) {Transformer[Animal, DogFood]};
+  \node[box] (t2) at (3,-2.8) {Transformer[Puppy, Food]};
+  \draw[flecha] (t1) -- node[right, font=\footnotesize] {$<:$} (t2);
+  \draw[dashed] (t1.west) to[out=180, in=270] node[left, font=\footnotesize, pos=0.6] {In: wider} (animal.south west);
+  \draw[dashed] (t1.east) to[out=0, in=270] node[right, font=\footnotesize, pos=0.6] {Out: narrower} (dogfood.south);
+\end{tikzpicture}
+\caption{Subtype hierarchies (arrows point to the supertype) and the variance of \texttt{Transformer[-In, +Out]}.}
+\label{fig:variance}
+\end{figure}
+
+Java expresses variance at the use of a generic type, with wildcards:
+\codelines{Java}{java/Flyer.java}{8}{11}
+\texttt{List<? extends Animal>} accepts a \texttt{List<Dog>}: reading animals
+from it is safe. Writing is not, which is why a mutable list cannot be
+covariant without the wildcard.
+
+\paragraph{Liskov substitution.} In object-oriented design the same idea is the
+Liskov substitution principle: if $S$ is a subtype of $T$, objects of type $T$
+can be replaced by objects of type $S$ without breaking the program.
+Subsumption is the typing side of it; the variance rules keep it sound.
+
+\subsection{Nominal and structural subtyping}
+
+In a \textbf{nominal} system the relation has to be declared. In Java a class
+is a subtype of an interface only if it says \texttt{implements}:
+\codelines{Java}{java/Flyer.java}{2}{6}
+Without \texttt{implements Flying}, \texttt{Flying f = new Duck();} is rejected
+with \texttt{incompatible types: Duck cannot be converted to Flying}, even
+though \texttt{Duck} has the method. In a \textbf{structural} system the shape is
+enough: in TypeScript and in Go, a value with a method \texttt{fly} satisfies an
+interface that requires it, without mentioning the interface. Duck typing
+(Section~\ref{sec:types}) is the dynamic version of structural typing.
+
+\subsection{Exercises}
+
+\begin{exercise}
+Is $\mathit{Animal} \to \mathit{Dog}$ a subtype of $\mathit{Dog} \to \mathit{Animal}$? And the
+other way around?
+\end{exercise}
+
+\paragraph{Solution.} By S-Arrow, $\mathit{Animal} \to \mathit{Dog} <: \mathit{Dog} \to \mathit{Animal}$
+needs $\mathit{Dog} <: \mathit{Animal}$ (argument) and $\mathit{Dog} <: \mathit{Animal}$ (result).
+Both hold, so yes. The other way around needs $\mathit{Animal} <: \mathit{Dog}$, which
+does not hold.
+
+\begin{exercise}
+With \texttt{Transformer[-In, +Out]}, which of these relations hold?
+\begin{enumerate}
+  \item \texttt{Transformer[Dog, Food]} $<:$ \texttt{Transformer[Animal, Food]}
+  \item \texttt{Transformer[Animal, DogFood]} $<:$ \texttt{Transformer[Dog, DogFood]}
+\end{enumerate}
+\end{exercise}
+
+\paragraph{Solution.} The first does not hold: \texttt{In} is contravariant, so
+the input on the right (\texttt{Animal}) would have to be a subtype of the
+input on the left (\texttt{Dog}). A caller that expects to pass any animal
+could pass a cat. The second holds: \texttt{Dog <: Animal} for the input, and
+the output is the same.

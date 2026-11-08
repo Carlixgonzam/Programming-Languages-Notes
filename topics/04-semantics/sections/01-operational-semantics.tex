@@ -1,115 +1,542 @@
-% !TeX root = ../main.tex
 \section{Operational semantics}
-% TODO: completar
-%   - Estados $\langle C, \sigma \rangle$ y configuraciones
-%   - Small-step: $\steppair{C}{\sigma}{C'}{\sigma'}$
-%   - Big-step: $\bigstep{C}{\sigma}{\sigma'}$
-%   - Reglas para if, while, asignación, secuenciación
-%   - Determinismo y equivalencia entre semánticas
+\label{sec:operational}
 
-\subsection{Big-step semantics}
-In \emph{big-step} (natural semantics, a judgement) $\bigstep{e}{\sigma}{v}$ asserts that expression $e$ in store $\sigma$ evaluates \emph{directly} to value $v$, without exposing intermediate steps. Derivations are trees whose leaves are axioms and whose internal nodes are inference rules.
+\subsection{The behavior of programs}
 
-\subsubsection{Lists: \texttt{concat} and \texttt{append}}
+The lecture starts with a line of C++:
+\begin{lstlisting}[language=C++]
+foo(i++, --i);
+\end{lstlisting}
+\texttt{i++} returns the value of \texttt{i} and then increments it, and
+\texttt{--i} decrements \texttt{i} and returns the result. With \texttt{i = 0},
+what are the arguments of \texttt{foo}? If the arguments are evaluated from
+left to right, \texttt{i++} gives 0 and leaves \texttt{i = 1}, then
+\texttt{--i} gives 0: the call is \texttt{foo(0, 0)}. From right to left,
+\texttt{--i} gives $-1$, then \texttt{i++} gives $-1$: \texttt{foo(-1, -1)}. C++
+does not fix the order, and before C++17 the line was undefined. The syntax
+of the line is clear; its meaning is not. Semantics is the part of the
+definition of a language that gives meaning to programs.
 
-We assume the constructors $\nil$ (empty list) and $\cons{h}{t}$ (list with
-head $h$ and tail $t$).
+Semantics come in three flavors: axiomatic semantics, operational semantics
+(small step and big step, also called natural semantics) and denotational
+semantics. Besides defining the language, they are used to prove properties
+of programs, to simulate and explore their behavior and to generate
+interpreters. This section follows Fern\'andez~\cite[Ch.~2, 4, 6, 8]{fernandez2014operational}.
 
-\paragraph{\texttt{concat}$(e,\ell)$, insert element $e$ at the end of $\ell$.}
+\subsection{The language SIMP}
 
+SIMP has commands (C), integer expressions (E) and boolean expressions (B):
+\begin{lstlisting}
+P   ::= C | E | B
+C   ::= l := E | C ; C | if B then C else C | while B do C | skip
+E   ::= !l | n | E Op E
+Op  ::= + | - | * | /
+B   ::= true | false | E Bop E | ¬B | B ∧ B
+Bop ::= > | < | =
+\end{lstlisting}
+$l$ is a location of the memory (a variable), and $!l$ reads its value.
+Figure~\ref{fig:simp-asts} shows the ASTs of two programs of the lecture:
+the swap \texttt{z := !x ; (x := !y ; y := !z)} and the factorial
+\texttt{while !l > 0 do (fac := !fac * !l ; l := !l - 1)}.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=3mm, l sep=4mm},
+  [;
+    [{:=} [z] [!x]]
+    [;
+      [{:=} [x] [!y]]
+      [{:=} [y] [!z]]
+    ]
+  ]
+\end{forest}
+\hspace{1.2cm}
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=3mm, l sep=4mm},
+  [while
+    [> [!l] [0]]
+    [;
+      [{:=} [fac] [* [!fac] [!l]]]
+      [{:=} [l] [- [!l] [1]]]
+    ]
+  ]
+\end{forest}
+\caption{ASTs of the swap (left) and of the factorial (right).}
+\label{fig:simp-asts}
+\end{figure}
+
+In Rascal the grammar has a priority for the sequence, so that
+\texttt{;} binds less than the other commands:
+\codelines{Rascal}{rascal/src/Simp.rsc}{8}{41}
+
+\subsection{An abstract machine}
+
+To give meaning to programs, the lecture first describes their behavior with
+an abstract machine (Figure~\ref{fig:machine}). It has a control stack $c$
+with what remains to be done, a results stack $r$ with intermediate values,
+a processor for arithmetic, and a memory $m : L \to \mathbb{Z}$ from locations to
+integers.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[box/.style={draw, minimum width=2.2cm, minimum height=8mm, font=\small, align=center}]
+  \node[box] (c) at (0,0) {control\\stack $c$};
+  \node[box] (r) at (3.5,0) {results\\stack $r$};
+  \node[box] (alu) at (1.75,-2) {processor};
+  \node[box] (m) at (6.5,-1) {memory $m$};
+  \node[font=\small] (in) at (-2.6,0) {program};
+  \node[font=\small] (out) at (9,-1) {result};
+  \draw[flecha] (in) -- (c);
+  \draw[<->, thick] (c) -- (r);
+  \draw[<->, thick] (c) -- (alu);
+  \draw[<->, thick] (r) -- (alu);
+  \draw[<->, thick] (r) -- (m);
+  \draw[flecha] (m) -- (out);
+\end{tikzpicture}
+\caption{The abstract machine.}
+\label{fig:machine}
+\end{figure}
+
+\begin{definition}
+A \textbf{configuration} of the machine is a triple $\langle c, r, m \rangle$, with
 \[
-\infer[\textsc{Concat-Nil}]
-  {\bigstep{\concat{e}{\nil}}{\sigma}{\cons{e}{\nil}}}
-  {}
-\qquad
-\infer[\textsc{Concat-Cons}]
-  {\bigstep{\concat{e}{\cons{h}{t}}}{\sigma}{\cons{h}{t'}}}
-  {\bigstep{\concat{e}{t}}{\sigma}{t'}}
+c ::= \mathit{nil} \mid i \cdot c \qquad
+i ::= P \mid \mathit{Op} \mid \neg \mid \wedge \mid \mathit{Bop} \mid {:=} \mid \mathit{if} \mid \mathit{while} \qquad
+r ::= \mathit{nil} \mid P \cdot r \mid l \cdot r.
 \]
+The initial configuration for a command $C$ is $\langle C \cdot \mathit{nil}, \mathit{nil}, m \rangle$.
+The machine stops at a final configuration $\langle \mathit{nil}, \mathit{nil}, m \rangle$. A
+computation step transforms a configuration into a new one,
+$\langle c, r, m \rangle \to \langle c', r', m' \rangle$.
+\end{definition}
 
-\paragraph{\texttt{append}$(\ell_1, \ell_2)$ concatenate two lists.}
-
+\paragraph{Integer expressions.}
 \[
-\infer[\textsc{Append-Nil}]
-  {\bigstep{\append{\nil}{\ell_2}}{\sigma}{\ell_2}}
-  {}
-\qquad
-\infer[\textsc{Append-Cons}]
-  {\bigstep{\append{\cons{h}{t_1}}{\ell_2}}{\sigma}{\cons{h}{\ell'}}}
-  {\bigstep{\append{t_1}{\ell_2}}{\sigma}{\ell'}}
+\begin{array}{lll}
+\langle n \cdot c, r, m \rangle & \to \langle c, n \cdot r, m \rangle \\
+\langle !l \cdot c, r, m \rangle & \to \langle c, n \cdot r, m \rangle & \text{if } m(l) = n \\
+\langle E_1\ \mathit{op}\ E_2 \cdot c, r, m \rangle & \to \langle E_1 \cdot E_2 \cdot \mathit{op} \cdot c, r, m \rangle \\
+\langle \mathit{op} \cdot c, n_1 \cdot n_2 \cdot r, m \rangle & \to \langle c, n \cdot r, m \rangle & \text{if } n = n_2\ \mathit{op}\ n_1
+\end{array}
 \]
+$E_1$ is evaluated first, so its value $n_2$ ends up below the value $n_1$ of
+$E_2$. The slide writes the condition as $n = n_1\ \mathit{op}\ n_2$, which gives
+the right result for $+$ and $*$ but not for $-$, $/$ or the comparisons; its
+own trace of the factorial computes $4 - 1 = 3$, which is $n_2 - n_1$.
 
-Derivation for append
-We verify $\bigstep{\append{\cons{1}{\nil}}{\cons{2}{\nil}}}{\sigma}{\cons{1}{\cons{2}{\nil}}}$:
+Table~\ref{tab:machine-expr} is the evaluation of $3 * (4 + 5)$.
 
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l}
+  \toprule
+  Control stack & Results stack & Rule \\
+  \midrule
+  $3 * (4 + 5) \cdot \mathit{nil}$       & $\mathit{nil}$          & split the operation \\
+  $3 \cdot (4 + 5) \cdot * \cdot \mathit{nil}$ & $\mathit{nil}$     & number \\
+  $(4 + 5) \cdot * \cdot \mathit{nil}$   & $3 \cdot \mathit{nil}$  & split the operation \\
+  $4 \cdot 5 \cdot + \cdot * \cdot \mathit{nil}$ & $3 \cdot \mathit{nil}$ & number \\
+  $5 \cdot + \cdot * \cdot \mathit{nil}$ & $4 \cdot 3 \cdot \mathit{nil}$ & number \\
+  $+ \cdot * \cdot \mathit{nil}$         & $5 \cdot 4 \cdot 3 \cdot \mathit{nil}$ & $4 + 5 = 9$ \\
+  $* \cdot \mathit{nil}$                 & $9 \cdot 3 \cdot \mathit{nil}$ & $3 * 9 = 27$ \\
+  $\mathit{nil}$                         & $27 \cdot \mathit{nil}$ & \\
+  \bottomrule
+\end{tabular}
+\caption{The machine on $3 * (4 + 5)$.}
+\label{tab:machine-expr}
+\end{table}
+
+\paragraph{Boolean expressions.}
 \[
-\infer[\textsc{Append-Cons}]
-  {\bigstep{\append{\cons{1}{\nil}}{\cons{2}{\nil}}}{\sigma}{\cons{1}{\cons{2}{\nil}}}}
-  {
-    \infer[\textsc{Append-Nil}]
-      {\bigstep{\append{\nil}{\cons{2}{\nil}}}{\sigma}{\cons{2}{\nil}}}
-      {}
-  }
+\begin{array}{lll}
+\langle b \cdot c, r, m \rangle & \to \langle c, b \cdot r, m \rangle \\
+\langle \neg B \cdot c, r, m \rangle & \to \langle B \cdot \neg \cdot c, r, m \rangle \\
+\langle \neg \cdot c, b \cdot r, m \rangle & \to \langle c, b' \cdot r, m \rangle & \text{if } b' = \mathit{not}\ b \\
+\langle B_1 \wedge B_2 \cdot c, r, m \rangle & \to \langle B_1 \cdot B_2 \cdot \wedge \cdot c, r, m \rangle \\
+\langle \wedge \cdot c, b_1 \cdot b_2 \cdot r, m \rangle & \to \langle c, b \cdot r, m \rangle & \text{if } b = b_2 \wedge b_1 \\
+\langle E_1\ \mathit{Bop}\ E_2 \cdot c, r, m \rangle & \to \langle E_1 \cdot E_2 \cdot \mathit{Bop} \cdot c, r, m \rangle \\
+\langle \mathit{Bop} \cdot c, n_1 \cdot n_2 \cdot r, m \rangle & \to \langle c, b \cdot r, m \rangle & \text{if } b = n_2\ \mathit{Bop}\ n_1
+\end{array}
 \]
+(The slide writes the rule for $\neg$ as ``$b$ if $b = \mathit{not}\ b$'', which
+never holds; the result is a new value $b'$.)
+
+\paragraph{Commands.} A sequence executes from left to right. An \texttt{if}
+evaluates the condition and keeps both branches on the results stack until
+it knows which one to run. A \texttt{while} evaluates the condition and, if it
+is true, runs the body and then the whole loop again. An assignment evaluates
+the expression and then updates the memory:
+\[
+\begin{array}{ll}
+\langle (C_1 ; C_2) \cdot c, r, m \rangle & \to \langle C_1 \cdot C_2 \cdot c, r, m \rangle \\
+\langle (\mathtt{if}\ B\ \mathtt{then}\ C_1\ \mathtt{else}\ C_2) \cdot c, r, m \rangle & \to \langle B \cdot \mathit{if} \cdot c, C_1 \cdot C_2 \cdot r, m \rangle \\
+\langle \mathit{if} \cdot c, \mathit{True} \cdot C_1 \cdot C_2 \cdot r, m \rangle & \to \langle C_1 \cdot c, r, m \rangle \\
+\langle \mathit{if} \cdot c, \mathit{False} \cdot C_1 \cdot C_2 \cdot r, m \rangle & \to \langle C_2 \cdot c, r, m \rangle \\
+\langle (\mathtt{while}\ B\ \mathtt{do}\ C) \cdot c, r, m \rangle & \to \langle B \cdot \mathit{while} \cdot c, B \cdot C \cdot r, m \rangle \\
+\langle \mathit{while} \cdot c, \mathit{True} \cdot B \cdot C \cdot r, m \rangle & \to \langle C \cdot (\mathtt{while}\ B\ \mathtt{do}\ C) \cdot c, r, m \rangle \\
+\langle \mathit{while} \cdot c, \mathit{False} \cdot B \cdot C \cdot r, m \rangle & \to \langle c, r, m \rangle \\
+\langle (l := E) \cdot c, r, m \rangle & \to \langle E \cdot {:=} \cdot c, l \cdot r, m \rangle \\
+\langle {:=} \cdot c, v \cdot l \cdot r, m \rangle & \to \langle c, r, m[l \mapsto v] \rangle
+\end{array}
+\]
+When the assignment runs, the value of $E$ is on top of $l$; the slide writes
+the stack as $l \cdot v \cdot r$, in the opposite order to its own trace.
+
+If $\langle C \cdot \mathit{nil}, \mathit{nil}, m \rangle \to^* \langle \mathit{nil}, \mathit{nil}, m' \rangle$, the
+program $C$ executed in the memory $m$ terminates successfully and produces
+$m'$.
+
+\paragraph{The factorial.} With $B = !l > 0$, $C' = \mathit{fac} := !\mathit{fac} * !l ; l := !l - 1$
+and $m = \{l \mapsto 4, \mathit{fac} \mapsto 1\}$, the first iteration of
+$C = \mathtt{while}\ B\ \mathtt{do}\ C'$ is in Table~\ref{tab:machine-fac}. The other three
+iterations repeat the same pattern, and the machine ends in
+$\langle \mathit{nil}, \mathit{nil}, m[\mathit{fac} \mapsto 24, l \mapsto 0] \rangle$.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l}
+  \toprule
+  Control stack & Results stack & Memory \\
+  \midrule
+  $C \cdot \mathit{nil}$                       & $\mathit{nil}$                     & $m$ \\
+  $!l > 0 \cdot \mathit{while} \cdot \mathit{nil}$ & $B \cdot C' \cdot \mathit{nil}$ & $m$ \\
+  $!l \cdot 0 \cdot {>} \cdot \mathit{while} \cdot \mathit{nil}$ & $B \cdot C' \cdot \mathit{nil}$ & $m$ \\
+  $0 \cdot {>} \cdot \mathit{while} \cdot \mathit{nil}$ & $4 \cdot B \cdot C' \cdot \mathit{nil}$ & $m$ \\
+  ${>} \cdot \mathit{while} \cdot \mathit{nil}$ & $0 \cdot 4 \cdot B \cdot C' \cdot \mathit{nil}$ & $m$ \\
+  $\mathit{while} \cdot \mathit{nil}$           & $\mathit{True} \cdot B \cdot C' \cdot \mathit{nil}$ & $m$ \\
+  $C' \cdot C \cdot \mathit{nil}$               & $\mathit{nil}$                     & $m$ \\
+  $\mathit{fac} := !\mathit{fac} * !l \cdot l := !l - 1 \cdot C \cdot \mathit{nil}$ & $\mathit{nil}$ & $m$ \\
+  $!\mathit{fac} * !l \cdot {:=} \cdot l := !l - 1 \cdot C \cdot \mathit{nil}$ & $\mathit{fac} \cdot \mathit{nil}$ & $m$ \\
+  $!\mathit{fac} \cdot !l \cdot * \cdot {:=} \cdots$ & $\mathit{fac} \cdot \mathit{nil}$ & $m$ \\
+  $!l \cdot * \cdot {:=} \cdots$                & $1 \cdot \mathit{fac} \cdot \mathit{nil}$ & $m$ \\
+  $* \cdot {:=} \cdots$                         & $4 \cdot 1 \cdot \mathit{fac} \cdot \mathit{nil}$ & $m$ \\
+  ${:=} \cdot l := !l - 1 \cdot C \cdot \mathit{nil}$ & $4 \cdot \mathit{fac} \cdot \mathit{nil}$ & $m$ \\
+  $l := !l - 1 \cdot C \cdot \mathit{nil}$      & $\mathit{nil}$ & $m[\mathit{fac} \mapsto 4]$ \\
+  $!l - 1 \cdot {:=} \cdot C \cdot \mathit{nil}$ & $l \cdot \mathit{nil}$ & $\dots$ \\
+  $!l \cdot 1 \cdot - \cdot {:=} \cdot C \cdot \mathit{nil}$ & $l \cdot \mathit{nil}$ & $\dots$ \\
+  $- \cdot {:=} \cdot C \cdot \mathit{nil}$     & $1 \cdot 4 \cdot l \cdot \mathit{nil}$ & $\dots$ \\
+  ${:=} \cdot C \cdot \mathit{nil}$             & $3 \cdot l \cdot \mathit{nil}$ & $\dots$ \\
+  $C \cdot \mathit{nil}$                        & $\mathit{nil}$ & $m[\mathit{fac} \mapsto 4, l \mapsto 3]$ \\
+  \bottomrule
+\end{tabular}
+\caption{First iteration of the factorial on the abstract machine.}
+\label{tab:machine-fac}
+\end{table}
+
+In Rascal each transition is one equation of \texttt{machineStep}, with the
+head of each list as the top of the stack:
+\codelines{Rascal}{rascal/src/Simp.rsc}{69}{118}
+The tests run $3 * (4 + 5)$, the factorial and $10 - 3$ (which checks the order
+of the operands).
+
 \subsection{Small-step semantics}
 
-In \emph{small-step} semantics, a judgement
-$\steppair{P}{\sigma}{P'}{\sigma'}$ performs a single atomic reduction.
-A program is fully evaluated when no rule applies (it is a value or a
-stuck state) or when it reduces to $\mathbf{skip}$ (for commands).
+The machine describes execution with stacks. Small-step semantics describes
+it directly on the program, as a reduction relation that rewrites a program
+into a simpler one.
 
-\subsubsection{For-loops in SIMP}
+\begin{definition}
+A \textbf{configuration} of SIMP is a pair $\langle P, s \rangle$ of a program and a
+store $s$, a map from locations to values. The program progresses by
+reductions $\langle P, s \rangle \to \langle P', s' \rangle$ between configurations.
+\end{definition}
 
-The grammar of SIMP extended with \textbf{for} is:
+The rules for expressions reduce one operand at a time, from left to right:
+\begin{mathpar}
+\inferrule*[right=(var)]{s(l) = n}{\langle !l, s \rangle \to \langle n, s \rangle}
+\and
+\inferrule*[right=(op)]{n = n_1\ \mathit{op}\ n_2}{\langle n_1\ \mathit{op}\ n_2, s \rangle \to \langle n, s \rangle}
+\and
+\inferrule*[right=(opL)]{\langle E_1, s \rangle \to \langle E_1', s' \rangle}{\langle E_1\ \mathit{op}\ E_2, s \rangle \to \langle E_1'\ \mathit{op}\ E_2, s' \rangle}
+\and
+\inferrule*[right=(opR)]{\langle E_2, s \rangle \to \langle E_2', s' \rangle}{\langle n_1\ \mathit{op}\ E_2, s \rangle \to \langle n_1\ \mathit{op}\ E_2', s' \rangle}
+\end{mathpar}
+The rules for booleans are the same with $\mathit{bop}$ (\textsc{bopL},
+\textsc{bopR}), $\wedge$ (\textsc{andL}, \textsc{andR}) and $\neg$
+(\textsc{notArg}). Writing $n_1$ in \textsc{opR} makes the order fixed: the
+right operand is reduced only when the left one is already a number.
 
+Commands:
+\begin{mathpar}
+\inferrule*[right={(:=R)}]{\langle E, s \rangle \to \langle E', s' \rangle}{\langle l := E, s \rangle \to \langle l := E', s' \rangle}
+\and
+\inferrule*[right={(:=)}]{ }{\langle l := n, s \rangle \to \langle \mathtt{skip}, s[l \mapsto n] \rangle}
+\and
+\inferrule*[right=(seq)]{\langle C_1, s \rangle \to \langle C_1', s' \rangle}{\langle C_1 ; C_2, s \rangle \to \langle C_1' ; C_2, s' \rangle}
+\and
+\inferrule*[right=(skip)]{ }{\langle \mathtt{skip} ; C, s \rangle \to \langle C, s \rangle}
+\and
+\inferrule*[right=(if)]{\langle B, s \rangle \to \langle B', s' \rangle}{\langle \mathtt{if}\ B\ \mathtt{then}\ C_1\ \mathtt{else}\ C_2, s \rangle \to \langle \mathtt{if}\ B'\ \mathtt{then}\ C_1\ \mathtt{else}\ C_2, s' \rangle}
+\and
+\inferrule*[right=(ifT)]{ }{\langle \mathtt{if}\ \mathit{True}\ \mathtt{then}\ C_1\ \mathtt{else}\ C_2, s \rangle \to \langle C_1, s \rangle}
+\and
+\inferrule*[right=(ifF)]{ }{\langle \mathtt{if}\ \mathit{False}\ \mathtt{then}\ C_1\ \mathtt{else}\ C_2, s \rangle \to \langle C_2, s \rangle}
+\and
+\inferrule*[right=(while)]{ }{\langle \mathtt{while}\ B\ \mathtt{do}\ C, s \rangle \to \langle \mathtt{if}\ B\ \mathtt{then}\ (C ; \mathtt{while}\ B\ \mathtt{do}\ C)\ \mathtt{else}\ \mathtt{skip}, s \rangle}
+\end{mathpar}
+\textsc{while} has no premise: it unfolds the loop once into an \texttt{if}.
+
+\paragraph{Example.} The swap with $s(z) = 0$, $s(x) = 1$, $s(y) = 2$:
 \[
-C ::= \assign{l}{E} \mid \seq{C}{C} \mid \ift{B}{C}{C} \mid
-      \whiledo{B}{C} \mid \mathbf{skip} \mid \fordoo{C}{B}{C}{C}
+\begin{array}{ll}
+& \langle z := !x ; (x := !y ; y := !z), s \rangle \\
+\to & \langle z := 1 ; (x := !y ; y := !z), s \rangle \\
+\to & \langle \mathtt{skip} ; (x := !y ; y := !z), s[z \mapsto 1] \rangle \\
+\to & \langle x := !y ; y := !z, s[z \mapsto 1] \rangle \\
+\to & \langle x := 2 ; y := !z, s[z \mapsto 1] \rangle \\
+\to & \langle \mathtt{skip} ; y := !z, s[z \mapsto 1, x \mapsto 2] \rangle \\
+\to & \langle y := !z, s[z \mapsto 1, x \mapsto 2] \rangle \\
+\to & \langle y := 1, s[z \mapsto 1, x \mapsto 2] \rangle \\
+\to & \langle \mathtt{skip}, s[z \mapsto 1, x \mapsto 2, y \mapsto 1] \rangle
+\end{array}
 \]
+At the end $s(z) = 1$, $s(x) = 2$, $s(y) = 1$. (The slides write the store of
+the middle steps as $s$; it already contains the updates.)
 
-The cleanest approach is to treat \textbf{for} as \emph{syntactic sugar}:
+Every step must be justified by an axiom or a rule. The first step, for
+example, is the conclusion of the tree in Figure~\ref{fig:small-proof}: \textsc{seq}
+reduces the first command, \textsc{:=R} reduces its expression, and \textsc{var}
+reads $x$.
 
+\begin{figure}[h]
+\centering
+\begin{mathpar}
+\inferrule*[right=(seq)]
+  {\inferrule*[right={(:=R)}]
+    {\inferrule*[right=(var)]{s(x) = 1}{\langle !x, s \rangle \to \langle 1, s \rangle}}
+    {\langle z := !x, s \rangle \to \langle z := 1, s \rangle}}
+  {\langle z := !x ; (x := !y ; y := !z), s \rangle \to \langle z := 1 ; (x := !y ; y := !z), s \rangle}
+\end{mathpar}
+\caption{The derivation that justifies the first step of the swap.}
+\label{fig:small-proof}
+\end{figure}
+
+\paragraph{Final configurations.} A configuration with no possible reduction is
+final: $\langle n, s \rangle$ with $n$ an integer, $\langle b, s \rangle$ with $b$ a boolean,
+$\langle \mathtt{skip}, s \rangle$, and $\langle !l, s \rangle$ with $l \notin \mathrm{dom}(s)$. The
+last one is a \textbf{blocked} configuration. From an initial configuration
+$\langle P, s \rangle$, the program executes successfully if it reaches
+$\langle n, s' \rangle$ or $\langle b, s' \rangle$ (for expressions) or $\langle \mathtt{skip}, s' \rangle$
+(for commands), and it fails if it reaches a blocked configuration.
+
+In Rascal, each \texttt{step} function returns the next configuration, or an
+empty list when the configuration is final:
+\codelines{Rascal}{rascal/src/Simp.rsc}{120}{170}
+The tests check that the swap takes the eight steps above and ends with
+$z = 1$, $x = 2$, $y = 1$, and that \texttt{x := !w} stops at a blocked
+configuration.
+
+\subsection{Big-step semantics}
+
+Big-step semantics evaluates a program recursively, without showing each
+step: a transition represents a full evaluation. $\langle P, s \rangle \Downarrow \langle v, s' \rangle$
+means that $P$ in the store $s$ evaluates to $v$ and leaves $s'$.
+\begin{mathpar}
+\inferrule*[right=(num)]{ }{\langle n, s \rangle \Downarrow \langle n, s \rangle}
+\and
+\inferrule*[right=(var)]{s(l) = v}{\langle !l, s \rangle \Downarrow \langle v, s \rangle}
+\and
+\inferrule*[right=(op)]{\langle E_1, s \rangle \Downarrow \langle n_1, s' \rangle \\ \langle E_2, s' \rangle \Downarrow \langle n_2, s'' \rangle \\ n = n_1\ \mathit{op}\ n_2}{\langle E_1\ \mathit{op}\ E_2, s \rangle \Downarrow \langle n, s'' \rangle}
+\and
+\inferrule*[right={(:=)}]{\langle E, s \rangle \Downarrow \langle n, s' \rangle}{\langle l := E, s \rangle \Downarrow \langle \mathtt{skip}, s'[l \mapsto n] \rangle}
+\and
+\inferrule*[right=(seq)]{\langle C_1, s \rangle \Downarrow \langle \mathtt{skip}, s' \rangle \\ \langle C_2, s' \rangle \Downarrow \langle \mathtt{skip}, s'' \rangle}{\langle C_1 ; C_2, s \rangle \Downarrow \langle \mathtt{skip}, s'' \rangle}
+\and
+\inferrule*[right=(ifT)]{\langle B, s \rangle \Downarrow \langle \mathit{True}, s' \rangle \\ \langle C_1, s' \rangle \Downarrow \langle \mathtt{skip}, s'' \rangle}{\langle \mathtt{if}\ B\ \mathtt{then}\ C_1\ \mathtt{else}\ C_2, s \rangle \Downarrow \langle \mathtt{skip}, s'' \rangle}
+\and
+\inferrule*[right=(whileT)]{\langle B, s \rangle \Downarrow \langle \mathit{True}, s_1 \rangle \\ \langle C, s_1 \rangle \Downarrow \langle \mathtt{skip}, s_2 \rangle \\ \langle \mathtt{while}\ B\ \mathtt{do}\ C, s_2 \rangle \Downarrow \langle \mathtt{skip}, s_3 \rangle}{\langle \mathtt{while}\ B\ \mathtt{do}\ C, s \rangle \Downarrow \langle \mathtt{skip}, s_3 \rangle}
+\and
+\inferrule*[right=(whileF)]{\langle B, s \rangle \Downarrow \langle \mathit{False}, s' \rangle}{\langle \mathtt{while}\ B\ \mathtt{do}\ C, s \rangle \Downarrow \langle \mathtt{skip}, s' \rangle}
+\end{mathpar}
+\textsc{ifF} is like \textsc{ifT} with $\mathit{False}$ and $C_2$, and the boolean
+rules are like \textsc{op}.
+
+\paragraph{Example.} The derivation of the swap is built from the leaves up.
+With $s_1 = s[z \mapsto 1]$ and $s_2 = s[z \mapsto 1, x \mapsto 2]$:
 \[
-\fordoo{C_i}{B}{C_s}{C_b}
-\;\triangleq\;
-\seq{C_i}{\whiledo{B}{\seq{C_b}{C_s}}}
+\begin{array}{ll}
+\langle !x, s \rangle \Downarrow \langle 1, s \rangle & \text{(var)} \\
+\langle z := !x, s \rangle \Downarrow \langle \mathtt{skip}, s_1 \rangle & \text{(:=)} \\
+\langle !y, s_1 \rangle \Downarrow \langle 2, s_1 \rangle & \text{(var)} \\
+\langle x := !y, s_1 \rangle \Downarrow \langle \mathtt{skip}, s_2 \rangle & \text{(:=)} \\
+\langle !z, s_2 \rangle \Downarrow \langle 1, s_2 \rangle & \text{(var)} \\
+\langle y := !z, s_2 \rangle \Downarrow \langle \mathtt{skip}, s_2[y \mapsto 1] \rangle & \text{(:=)} \\
+\langle z := !x ; x := !y ; y := !z, s \rangle \Downarrow \langle \mathtt{skip}, s[z \mapsto 1, x \mapsto 2, y \mapsto 1] \rangle & \text{(seq), twice}
+\end{array}
 \]
+Figure~\ref{fig:big-proof} draws the tree for the first two assignments.
 
-If the language requires explicit small-step rules (no sugar), we give:
+\begin{figure}[h]
+\centering
+\begin{mathpar}
+\inferrule*[right=(seq)]
+  {\inferrule*[right={(:=)}]{\inferrule*[right=(var)]{ }{\langle !x, s \rangle \Downarrow \langle 1, s \rangle}}{\langle z := !x, s \rangle \Downarrow \langle \mathtt{skip}, s_1 \rangle}
+   \\
+   \inferrule*[right={(:=)}]{\inferrule*[right=(var)]{ }{\langle !y, s_1 \rangle \Downarrow \langle 2, s_1 \rangle}}{\langle x := !y, s_1 \rangle \Downarrow \langle \mathtt{skip}, s_2 \rangle}}
+  {\langle z := !x ; x := !y, s \rangle \Downarrow \langle \mathtt{skip}, s_2 \rangle}
+\end{mathpar}
+\caption{Big-step derivation of the first two assignments of the swap.}
+\label{fig:big-proof}
+\end{figure}
 
-\[
-\infer[\textsc{For-Init}]
-  {\steppair{\fordoo{C_i}{B}{C_s}{C_b}}{\sigma}
-            {\fordoo{C_i'}{B}{C_s}{C_b}}{\sigma'}}
-  {\steppair{C_i}{\sigma}{C_i'}{\sigma'}}
-\]
+In Rascal big-step semantics is a recursive evaluator with one equation per
+rule:
+\codelines{Rascal}{rascal/src/Simp.rsc}{189}{203}
+Small step is the natural model of a debugger: it shows each intermediate
+state, and it can describe programs that do not terminate (an infinite
+sequence of steps). Big step is the natural model of an interpreter, and a
+program that does not terminate simply has no derivation.
 
-\[
-\infer[\textsc{For-Skip}]
-  {\steppair{\fordoo{\mathbf{skip}}{B}{C_s}{C_b}}{\sigma}
-            {\ift{B}{(\seq{C_b}{\seq{C_s}{\fordoo{\mathbf{skip}}{B}{C_s}{C_b}}})}{{\mathbf{skip}}}}{\sigma}}
-  {}
-\]
+\subsection{Blocks and local variables}
 
-Rule \textsc{For-Init} reduces the initialiser one step at a time.
-Rule \textsc{For-Skip} fires once the initialiser has been fully executed:
-it checks the guard and either runs the body followed by the step expression
-(and loops), or terminates with $\mathbf{skip}$.
+Blocks give locality to programs: a variable declared in a block is only
+visible and valid inside it. SIMP is extended with blocks and with
+allocation of new locations:
+\begin{lstlisting}
+C ::= ... | begin loc l := E ; C end
+E ::= ... | ref E
+\end{lstlisting}
+\begin{mathpar}
+\inferrule*[right=(ref)]{\langle E, s \rangle \Downarrow \langle v, s' \rangle}{\langle \mathtt{ref}\ E, s \rangle \Downarrow \langle l, s'[l \mapsto v] \rangle}\quad l \notin \mathrm{dom}(s')
+\and
+\inferrule*[right=(loc)]{\langle E, s \rangle \Downarrow \langle v, s' \rangle \\ \langle C\{z \mapsto l\}, s'[l \mapsto v] \rangle \Downarrow \langle \mathtt{skip}, s''[l \mapsto v'] \rangle}{\langle \mathtt{begin}\ \mathtt{loc}\ z := E ; C\ \mathtt{end}, s \rangle \Downarrow \langle \mathtt{skip}, s'' \rangle}
+\end{mathpar}
+with $l \notin \mathrm{dom}(s') \cup \mathrm{dom}(s'') \cup \mathit{locations}(C)$. $C\{z \mapsto l\}$
+replaces the name $z$ by the new location $l$ in $C$, and the final store
+drops $l$: the local variable does not exist after the block. For the swap
+with a local variable,
+\begin{lstlisting}
+begin
+  loc z := !x;
+  x := !y;
+  y := !z
+end
+\end{lstlisting}
+the body runs in $s'[l \mapsto s(x)]$ and gives $s_1 = s[l \mapsto s(x), x \mapsto s(y), y \mapsto s(x)]$;
+the whole program gives $s_2 = s[x \mapsto s(y), y \mapsto s(x)]$, with no $z$.
+\codelines{Rascal}{rascal/src/Simp.rsc}{212}{219}
+
+\subsection{More constructs}
+
+This subsection goes beyond the slides.
+
+\paragraph{repeat.} The command $\mathtt{repeat}\ E\ \mathtt{times}\ C$ runs $C$ as many
+times as the value of $E$, evaluated once. In small step:
+\begin{mathpar}
+\inferrule*[right=(repeat-E)]{\langle E, s \rangle \to \langle E', s' \rangle}{\langle \mathtt{repeat}\ E\ \mathtt{times}\ C, s \rangle \to \langle \mathtt{repeat}\ E'\ \mathtt{times}\ C, s' \rangle}
+\and
+\inferrule*[right=(repeat-fin)]{n \le 0}{\langle \mathtt{repeat}\ n\ \mathtt{times}\ C, s \rangle \to \langle \mathtt{skip}, s \rangle}
+\and
+\inferrule*[right=(repeat-paso)]{n > 0 \\ m = n - 1}{\langle \mathtt{repeat}\ n\ \mathtt{times}\ C, s \rangle \to \langle C ; \mathtt{repeat}\ m\ \mathtt{times}\ C, s \rangle}
+\end{mathpar}
+Once $E$ is a numeral it is never evaluated again, even if $C$ changes the
+variables of $E$. The base case is $n \le 0$ and not $n = 0$: with only
+$n = 0$, a negative count would leave the configuration blocked.
+\codelines{Rascal}{rascal/src/Simp.rsc}{172}{176}
+\codelines{Rascal}{rascal/src/Simp.rsc}{205}{208}
+The tests run \texttt{repeat !k times (x := !x + 1; k := !k + 1)} with $k = 2$,
+which runs the body twice although $k$ grows, and a negative count.
+
+\paragraph{for.} A loop $\mathtt{for}\,(C_i; B; C_s)\,\{C_b\}$ is syntactic sugar for
+$C_i ; \mathtt{while}\ B\ \mathtt{do}\ (C_b ; C_s)$. With its own rules, the
+initialization is reduced first and then the loop unfolds into an
+\texttt{if}:
+\begin{mathpar}
+\inferrule*[right=For-Init]{\langle C_i, s \rangle \to \langle C_i', s' \rangle}{\langle \mathtt{for}\,(C_i; B; C_s)\,\{C_b\}, s \rangle \to \langle \mathtt{for}\,(C_i'; B; C_s)\,\{C_b\}, s' \rangle}
+\and
+\inferrule*[right=For-Skip]{ }{\langle \mathtt{for}\,(\mathtt{skip}; B; C_s)\,\{C_b\}, s \rangle \to \langle \mathtt{if}\ B\ \mathtt{then}\ (C_b ; C_s ; \mathtt{for}\,(\mathtt{skip}; B; C_s)\,\{C_b\})\ \mathtt{else}\ \mathtt{skip}, s \rangle}
+\end{mathpar}
+\codelines{Rascal}{rascal/src/Simp.rsc}{178}{181}
+
+\paragraph{Lists.} Big step also defines functions on data. With the
+constructors $\nil$ and $\cons{h}{t}$, adding an element at the end of a list
+and appending two lists are
+\begin{mathpar}
+\inferrule*[right=Concat-Nil]{ }{\bigstep{\concat{e}{\nil}}{\sigma}{\cons{e}{\nil}}}
+\and
+\inferrule*[right=Concat-Cons]{\bigstep{\concat{e}{t}}{\sigma}{t'}}{\bigstep{\concat{e}{\cons{h}{t}}}{\sigma}{\cons{h}{t'}}}
+\and
+\inferrule*[right=Append-Nil]{ }{\bigstep{\append{\nil}{\ell_2}}{\sigma}{\ell_2}}
+\and
+\inferrule*[right=Append-Cons]{\bigstep{\append{t_1}{\ell_2}}{\sigma}{\ell'}}{\bigstep{\append{\cons{h}{t_1}}{\ell_2}}{\sigma}{\cons{h}{\ell'}}}
+\end{mathpar}
 
 \subsection{Exercises}
 
-\begin{itemize}
-	\item Write big-step rules for $\mathbf{reverse}(\ell)$, which reverses a list.
-	\item Use \texttt{concat} as a helper.
+\begin{exercise}
+Draw the AST of \texttt{while !l > 0 do (factorial := !factorial * !l; l := !l - 1)}.
+\end{exercise}
 
-	Prove with a full derivation tree:
+\paragraph{Solution.} It is the right tree of Figure~\ref{fig:simp-asts}, with
+\texttt{factorial} in place of \texttt{fac}.
+
+\begin{exercise}
+Define the transitions of the abstract machine for \texttt{;}, \texttt{if},
+\texttt{while} and assignment.
+\end{exercise}
+
+\paragraph{Solution.} They are the command rules of the abstract machine above.
+The idea in each one: put the parts that must run first on the control stack,
+and keep on the results stack what will be needed later (the branches of the
+\texttt{if}, the condition and the body of the \texttt{while}, the location of
+the assignment).
+
+\begin{exercise}
+Run \texttt{y := !x + 1 ; x := !y * 2} from $\sigma = \{x \mapsto 3, y \mapsto 0\}$ in small
+step and in big step.
+\end{exercise}
+
+\paragraph{Solution.} In small step, with $\sigma_1 = \sigma[y \mapsto 4]$ and
+$\sigma_2 = \sigma_1[x \mapsto 8]$:
 \[
-\bigstep{\concat{3}{\cons{1}{\cons{2}{\nil}}}}{\sigma}
-        {\cons{1}{\cons{2}{\cons{3}{\nil}}}}
+\begin{array}{ll}
+& \langle y := !x + 1 ; x := !y * 2, \sigma \rangle \\
+\to & \langle y := 3 + 1 ; x := !y * 2, \sigma \rangle \quad \text{(seq, :=R, opL, var)} \\
+\to & \langle y := 4 ; x := !y * 2, \sigma \rangle \quad \text{(seq, :=R, op)} \\
+\to & \langle \mathtt{skip} ; x := !y * 2, \sigma_1 \rangle \quad \text{(seq, :=)} \\
+\to & \langle x := !y * 2, \sigma_1 \rangle \quad \text{(skip)} \\
+\to & \langle x := 4 * 2, \sigma_1 \rangle \to \langle x := 8, \sigma_1 \rangle \to \langle \mathtt{skip}, \sigma_2 \rangle
+\end{array}
 \]
+In big step there is one tree: \textsc{seq} with two premises, each an
+assignment whose premise evaluates $!x + 1 \Downarrow 4$ in $\sigma$ and $!y * 2 \Downarrow 8$
+in $\sigma_1$. Both give $\{x \mapsto 8, y \mapsto 4\}$.
 
-	\item Write big-step rules for $\mathbf{length}(\ell)$, which returns the number of
-elements, and evaluate $\bigstep{\mathbf{length}(\cons{1}{\cons{2}{\nil}})}{\sigma}{2}$
-with a derivation tree.
-\end{itemize}
+\begin{exercise}
+Give small-step rules for $\mathtt{for}\ E_1\ \mathtt{to}\ E_2\ \mathtt{do}\ C$, which evaluates
+$E_1$ and $E_2$ once and runs $C$ for each integer from $n_1$ to $n_2$.
+\end{exercise}
 
+\paragraph{Solution.} Reduce the bounds first, then unfold:
+\begin{mathpar}
+\inferrule{\langle E_1, s \rangle \to \langle E_1', s' \rangle}{\langle \mathtt{for}\ E_1\ \mathtt{to}\ E_2\ \mathtt{do}\ C, s \rangle \to \langle \mathtt{for}\ E_1'\ \mathtt{to}\ E_2\ \mathtt{do}\ C, s' \rangle}
+\and
+\inferrule{\langle E_2, s \rangle \to \langle E_2', s' \rangle}{\langle \mathtt{for}\ n_1\ \mathtt{to}\ E_2\ \mathtt{do}\ C, s \rangle \to \langle \mathtt{for}\ n_1\ \mathtt{to}\ E_2'\ \mathtt{do}\ C, s' \rangle}
+\and
+\inferrule{n_1 > n_2}{\langle \mathtt{for}\ n_1\ \mathtt{to}\ n_2\ \mathtt{do}\ C, s \rangle \to \langle \mathtt{skip}, s \rangle}
+\and
+\inferrule{n_1 \le n_2}{\langle \mathtt{for}\ n_1\ \mathtt{to}\ n_2\ \mathtt{do}\ C, s \rangle \to \langle C ; \mathtt{for}\ (n_1 + 1)\ \mathtt{to}\ n_2\ \mathtt{do}\ C, s \rangle}
+\end{mathpar}
+Unfolding before the bounds are numbers would evaluate them again in each
+iteration. Without the rule for $n_1 > n_2$ an empty range would be blocked.
+
+\begin{exercise}
+Write big-step rules for $\mathbf{reverse}(\ell)$, using \texttt{concat}, and prove
+\[
+\bigstep{\concat{3}{\cons{1}{\cons{2}{\nil}}}}{\sigma}{\cons{1}{\cons{2}{\cons{3}{\nil}}}}.
+\]
+\end{exercise}
+
+\paragraph{Solution.}
+\begin{mathpar}
+\inferrule*[right=Rev-Nil]{ }{\mathbf{reverse}(\nil) \Downarrow \nil}
+\and
+\inferrule*[right=Rev-Cons]{\mathbf{reverse}(t) \Downarrow t' \\ \concat{h}{t'} \Downarrow \ell'}{\mathbf{reverse}(\cons{h}{t}) \Downarrow \ell'}
+\end{mathpar}
+For the
+proof, \textsc{Concat-Cons} twice and \textsc{Concat-Nil} once:
+$\concat{3}{\nil} \Downarrow \cons{3}{\nil}$, then
+$\concat{3}{\cons{2}{\nil}} \Downarrow \cons{2}{\cons{3}{\nil}}$, then the goal.

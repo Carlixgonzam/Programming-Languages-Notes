@@ -1,0 +1,136 @@
+\section{Simply typed lambda calculus}
+\label{sec:stlc}
+
+The untyped calculus accepts terms such as $\mathit{TRUE}\ 3$ or $x\, x$. The
+\textbf{simply typed lambda calculus} (STLC) adds the smallest type discipline:
+every term has a type, and an application is legal only when the types
+match. Its rules are the rules of LETREC (Section~\ref{sec:letrec}) for
+variables, functions, application and \texttt{if}; LETREC adds numbers,
+\texttt{let} and recursion.
+
+\subsection{Types and terms}
+
+Types are built from two base types and the function type:
+\[
+\tau ::= \tyint \mid \tybool \mid \tau \to \tau.
+\]
+Terms are those of the untyped calculus, with an annotation on each parameter,
+plus literals and conditionals:
+\[
+e ::= x \mid \lambda x{:}\tau.\, e \mid e\, e \mid n \mid \ift{e}{e}{e}.
+\]
+
+\subsection{The typing judgment}
+
+\begin{mathpar}
+\inferrule*[right=T-Var]{x : \tau \in \Gamma}{\Gamma \vdash x : \tau}
+\and
+\inferrule*[right=T-Abs]{\Gamma, x : \tau_1 \vdash e : \tau_2}{\Gamma \vdash \lambda x{:}\tau_1.\, e : \tau_1 \to \tau_2}
+\and
+\inferrule*[right=T-App]{\Gamma \vdash e_1 : \tau_1 \to \tau_2 \\ \Gamma \vdash e_2 : \tau_1}{\Gamma \vdash e_1\, e_2 : \tau_2}
+\and
+\inferrule*[right=T-If]{\Gamma \vdash e_1 : \tybool \\ \Gamma \vdash e_2 : \tau \\ \Gamma \vdash e_3 : \tau}{\Gamma \vdash \ift{e_1}{e_2}{e_3} : \tau}
+\end{mathpar}
+The rules are syntax-directed: for each form of term exactly one rule
+applies, so checking a term never requires a guess. \textsc{T-App} rejects
+$3\, (\lambda x{:}\tyint.\, x)$, because 3 does not have a function type, and
+$(\lambda x{:}\tyint.\, x)\ \mathit{true}$, because $\tyint \ne \tybool$.
+Figure~\ref{fig:stlc-deriv} shows a derivation.
+
+\begin{figure}[h]
+\centering
+\begin{mathpar}
+\inferrule*[right=T-Abs]
+  {\inferrule*[right=T-Abs]
+    {\inferrule*[right=T-Var]{x : \tyint \in \{x : \tyint, y : \tybool\}}{x : \tyint, y : \tybool \vdash x : \tyint}}
+    {x : \tyint \vdash \lambda y{:}\tybool.\, x : \tybool \to \tyint}}
+  {\vdash \lambda x{:}\tyint.\, \lambda y{:}\tybool.\, x : \tyint \to \tybool \to \tyint}
+\end{mathpar}
+\caption{Typing derivation of $\lambda x{:}\tyint.\, \lambda y{:}\tybool.\, x$.}
+\label{fig:stlc-deriv}
+\end{figure}
+
+\subsection{Capture-avoiding substitution}
+
+$\beta$-reduction substitutes the argument into the body, $e[x := v]$, and the
+substitution must not capture variables. With $e = \lambda y.\, x\, y$ and
+$v = y$, replacing $x$ by $y$ textually gives $\lambda y.\, y\, y$, where the $y$
+that was free has been captured by $\lambda y$. The fix is to rename the bound
+variable first ($\lambda z.\, x\, z$, which is $\alpha$-equivalent) and then
+substitute: $\lambda z.\, y\, z$. Compilers often avoid the problem by replacing
+names with de Bruijn indices, the distance to the binder.
+
+\subsection{Strong normalization}
+
+\begin{theorem}[Strong normalization]
+If $\vdash e : \tau$, every reduction sequence that starts at $e$ ends in a
+normal form.
+\end{theorem}
+
+So every well-typed STLC program terminates, and STLC is not Turing complete.
+The reason is that self-application has no type. For $x\, x$ to be typed, $x$
+needs a type $\alpha$ with $\alpha = \alpha \to \beta$, and no finite type satisfies
+that equation, because the right side is always bigger than the left. The
+combinator $Y$ is built from self-applications, so it has no type either.
+Section~\ref{sec:inference} meets the same equation as the occurs check of
+\texttt{proc (f) zero?((f f))}, and Section~\ref{sec:recursive} adds recursive
+types to give it a solution. LETREC recovers recursion directly with
+\texttt{letrec}, and that is why it can loop.
+
+\subsection{Propositions as types}
+
+Read as logical formulas, the types of STLC are propositions of
+intuitionistic logic, and the well-typed terms are their proofs
+(Table~\ref{tab:curry-howard}). \textsc{T-App} is modus ponens: from a proof of
+$P \Rightarrow Q$ and a proof of $P$ it gives a proof of $Q$. \textsc{T-Abs} is
+conditional proof: to prove $P \Rightarrow Q$, assume $P$ and derive $Q$.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l}
+  \toprule
+  Logic & Types \\
+  \midrule
+  proposition & type \\
+  proof of $P$ & term of type $P$ \\
+  implication $P \Rightarrow Q$ & function type $P \to Q$ \\
+  conjunction $P \wedge Q$ & product type $P \times Q$ \\
+  modus ponens & application \\
+  \bottomrule
+\end{tabular}
+\caption{The Curry--Howard correspondence.}
+\label{tab:curry-howard}
+\end{table}
+
+The term $\lambda x{:}\tau_1.\, \lambda y{:}\tau_2.\, x$ of Figure~\ref{fig:stlc-deriv}
+is a proof of $P \Rightarrow (Q \Rightarrow P)$. Proof assistants such as Coq and
+Agda are built on this correspondence: checking the type of a program is
+checking a proof.
+
+\subsection{Exercises}
+
+\begin{exercise}
+Is $\lambda x{:}(\tyint \to \tyint).\, x\, x$ well typed?
+\end{exercise}
+
+\paragraph{Solution.} No. \textsc{T-App} on $x\, x$ needs the type of the operator,
+$\tyint \to \tyint$, to have as argument type the type of the operand,
+$\tyint \to \tyint$. But the argument type is $\tyint$, and $\tyint \ne \tyint \to \tyint$.
+
+\begin{exercise}
+Perform $(\lambda y.\, x\, (\lambda x.\, x\, y))[x := y\, z]$.
+\end{exercise}
+
+\paragraph{Solution.} The outer $\lambda y$ would capture the $y$ of $y\, z$, so rename it
+to $w$: $\lambda w.\, x\, (\lambda x.\, x\, w)$. Inside $\lambda x$ the variable $x$ is
+bound, so only the first $x$ is replaced: $\lambda w.\, (y\, z)\, (\lambda x.\, x\, w)$.
+
+\begin{exercise}
+Write a term of type $(\tau_1 \to \tau_2) \to (\tau_2 \to \tau_3) \to (\tau_1 \to \tau_3)$.
+Which logical rule does it prove?
+\end{exercise}
+
+\paragraph{Solution.} $\lambda f{:}\tau_1 \to \tau_2.\, \lambda g{:}\tau_2 \to \tau_3.\, \lambda x{:}\tau_1.\, g\,(f\, x)$,
+function composition. It proves that implication is transitive: if
+$P \Rightarrow Q$ and $Q \Rightarrow R$, then $P \Rightarrow R$.

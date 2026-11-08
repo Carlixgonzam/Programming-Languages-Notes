@@ -1,0 +1,287 @@
+\section{Type inference}
+\label{sec:inference}
+
+Writing the types in a program helps with design and documentation, but it
+takes time. In a statically typed language the compiler can deduce the types
+from the context in which each entity is used. In LETREC this means making the
+annotations optional:
+\begin{lstlisting}
+Expression ::= letrec Type? Identifier (Identifier : Type?) = Expression in Expression
+             | proc (Identifier : Type?) Expression
+             | ...
+Type       ::= int | boolean
+\end{lstlisting}
+The Rascal grammar of Section~\ref{sec:letrec} already allows a missing type;
+the abstract syntax stores it as \texttt{noType()}.
+
+\subsection{Rules with type variables}
+
+When a type is unknown, the checker gives it a name, a \textbf{type variable}
+$t_0, t_1, \dots$, and collects equations between types from the rules:
+\begin{mathpar}
+\inferrule*[right=(Diff)]{e_1 : \mathit{Int} \\ e_2 : \mathit{Int}}{\mathtt{-}(e_1, e_2) : \mathit{Int}}
+\and
+\inferrule*[right=(Pred)]{e_1 : \mathit{Int}}{\mathtt{zero?}(e_1) : \mathit{Boolean}}
+\and
+\inferrule*[right=(If)]{e_1 : \mathit{Boolean} \\ e_2 : T \\ e_3 : T}{(\mathtt{if}\ e_1\ \mathtt{then}\ e_2\ \mathtt{else}\ e_3) : T}
+\and
+\inferrule*[right=(Abs)]{v : T_{\mathit{var}} \\ \mathit{body} : T_{\mathit{body}}}{\mathtt{proc}(v)\ \mathit{body} : T_{\mathit{var}} \to T_{\mathit{body}}}
+\and
+\inferrule*[right=(Reduc)]{\mathit{rator} : T_1 \to T_2 \\ \mathit{rand} : T_1}{\mathtt{call}(\mathit{rator}, \mathit{rand}) : T_2}
+\end{mathpar}
+Every use of a rule produces equations. Solving the equations gives the
+types.
+
+\paragraph{Example 1.} The lecture starts with
+\begin{lstlisting}
+letrec foo (x) = if zero?(x) then 1 else -(x, (foo -(x,1))) in foo
+\end{lstlisting}
+Let $x : t_x$ and $\mathit{foo} : t_x \to t_r$. $\mathtt{zero?}(x)$ gives $t_x = \mathit{Int}$.
+The \texttt{then} branch is $1 : \mathit{Int}$, so the \texttt{if} has type
+$\mathit{Int}$ and $t_r = \mathit{Int}$. The \texttt{else} branch is a difference,
+which needs $(\mathit{foo}\ \mathtt{-}(x,1)) : \mathit{Int}$, consistent with
+$t_r = \mathit{Int}$. So $\mathit{foo} : \mathit{Int} \to \mathit{Int}$.
+
+\paragraph{Example 2.} For
+\begin{lstlisting}
+proc (f) proc (x) -((f 3), (f x))
+\end{lstlisting}
+the lecture names every subexpression (Figure~\ref{fig:infer-tree}): $t_0$ for the
+whole term, $t_1$ for the inner \texttt{proc}, $t_2$ for the difference, $t_3$
+for \texttt{(f 3)}, $t_4$ for \texttt{(f x)}, and $t_f$, $t_x$ for the
+parameters. The equations are in Table~\ref{tab:infer-eqs}.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=4mm, l sep=4mm, align=center},
+  [{\texttt{proc (f)}\\$t_0$}
+    [{\texttt{proc (x)}\\$t_1$}
+      [{\texttt{-( , )}\\$t_2$}
+        [{\texttt{(f 3)}\\$t_3$} [{\texttt{f}\\$t_f$}] [{\texttt{3}\\$\mathit{Int}$}]]
+        [{\texttt{(f x)}\\$t_4$} [{\texttt{f}\\$t_f$}] [{\texttt{x}\\$t_x$}]]
+      ]
+    ]
+  ]
+\end{forest}
+\caption{Type variables for the subexpressions of \texttt{proc (f) proc (x) -((f 3), (f x))}.}
+\label{fig:infer-tree}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l}
+  \toprule
+  Subexpression & Rule & Equation \\
+  \midrule
+  \texttt{(f 3)}         & Reduc & $t_f = \mathit{Int} \to t_3$ \\
+  \texttt{(f x)}         & Reduc & $t_f = t_x \to t_4$ \\
+  \texttt{-((f 3),(f x))} & Diff & $t_3 = \mathit{Int}$,\ \ $t_4 = \mathit{Int}$,\ \ $t_2 = \mathit{Int}$ \\
+  \texttt{proc (x) \dots}  & Abs  & $t_1 = t_x \to t_2$ \\
+  \texttt{proc (f) \dots}  & Abs  & $t_0 = t_f \to t_1$ \\
+  \bottomrule
+\end{tabular}
+\caption{Equations for Example 2.}
+\label{tab:infer-eqs}
+\end{table}
+
+Solving: $t_f = \mathit{Int} \to \mathit{Int}$; from the second equation
+$t_x \to \mathit{Int} = \mathit{Int} \to \mathit{Int}$, so $t_x = \mathit{Int}$; then
+$t_1 = \mathit{Int} \to \mathit{Int}$ and
+\[
+t_0 = (\mathit{Int} \to \mathit{Int}) \to \mathit{Int} \to \mathit{Int}.
+\]
+The function takes a function from integers to integers and returns a
+function from integers to integers. The parentheses around the first
+$\mathit{Int} \to \mathit{Int}$ matter: the slide writes
+$t_0 = \mathit{Int} \to \mathit{Int} \to \mathit{Int} \to \mathit{Int}$, which, since the
+arrow associates to the right, would be a function of three integers.
+
+\paragraph{Example 3.} \texttt{if x then -(x,1) else 0}. The difference needs
+$t_x = \mathit{Int}$; the condition of the \texttt{if} needs
+$t_x = \mathit{Boolean}$. Together, $\mathit{Boolean} = \mathit{Int}$, which has no
+solution: the expression has a type error.
+
+\paragraph{Example 4.} \texttt{proc (f) zero?((f f))}. With $f : t_f$ and
+$(f\ f) : t_3$, application gives $t_f = t_f \to t_3$, and \texttt{zero?} gives
+$t_3 = \mathit{Int}$, so $t_f = t_f \to \mathit{Int}$. The type of $f$ would be defined
+in terms of itself, and no finite type satisfies the equation. The
+\textbf{occurs check} detects this: a variable cannot be bound to a type that
+contains it.
+
+\subsection{The algorithm}
+
+The lecture divides type inference into five parts:
+\begin{enumerate}
+  \item substitution: replace a type variable by a known type inside a type
+    expression;
+  \item the no-occurrence property: a variable that is bound never appears
+    in the types of the substitution, which the occurs check preserves;
+  \item unification: add the equation $t_1 = t_2$ between two types to a
+    substitution;
+  \item fresh type variables for the expressions whose type is unknown;
+  \item the type of an expression, computed from the rules and the current
+    substitution.
+\end{enumerate}
+
+\paragraph{Substitution.} Substituting a type $t_1$ for a variable $t_{\mathit{var}}$
+in a type expression $t_0$ replaces every occurrence:
+\[
+(t_{\mathit{var}} \to t_x \to t_y \to \mathit{Int} \to t_{\mathit{var}})[t_{\mathit{var}} = T]
+\;=\; T \to t_x \to t_y \to \mathit{Int} \to T.
+\]
+The function goes by cases on $t_0$:
+\begin{lstlisting}
+substitution(t0, tvar, t1) : Type {
+  switch (t0) {
+    case int-type(): int-type;
+    case boolean-type(): boolean-type;
+    case proc-type(arg-type, result-type):
+      proc-type(substitution(arg-type, tvar, t1), substitution(result-type, tvar, t1));
+    case tvar-type(sn): if (t0 == tvar) then t1 else t0;
+  }
+}
+\end{lstlisting}
+(The slide compares \texttt{t1 = tvar} in the last case. The comparison is
+between the variable found, $t_0$, and the variable being replaced.) A
+substitution maps several variables to types. In Rascal, \texttt{apply} follows
+chains such as $t_1 = t_2$, $t_2 = \mathit{Int}$:
+\codelines{Rascal}{rascal/src/Infer.rsc}{7}{17}
+
+\paragraph{Unification.} Given two types, the unifier returns a substitution in
+which they are equal:
+\begin{enumerate}
+  \item apply the current substitution to $t_1$ and $t_2$;
+  \item if the results are the same, return the substitution unchanged;
+  \item if $t_1$ is a variable, propose $t_1 = t_2$, after the occurs check;
+  \item if $t_2$ is a variable, do the same;
+  \item if both are function types, unify the argument types and then the
+    result types; otherwise ($\mathit{Int}$ against $\mathit{Boolean}$, or a basic
+    type against a function type) there is no solution.
+\end{enumerate}
+\begin{lstlisting}
+unifier(t1, t2, subs, exp) : Substitution {
+  t1 = apply-substitution(t1, subs);
+  t2 = apply-substitution(t2, subs);
+  condition (t1 == t2) { subs; }
+  tvar-type?(t1) {
+    if (no-occurrence?(t1, t2)) extend-substitution(subs, t1, t2);
+    else Error(No occurrence violation t1 t2 exp);
+  }
+  tvar-type?(t2) { ... }
+  proc-type?(t1) && proc-type?(t2) {
+    subs = unifier(proc-type.arg(t1), proc-type.arg(t2), subs, exp);
+    subs = unifier(proc-type.res(t1), proc-type.res(t2), subs, exp);
+  }
+  else { Error(Unification failure t1 t2 exp); }
+}
+
+no-occurrence?(tvar, t) : Boolean {
+  switch (t) {
+    int-type: true;
+    bool-type: true;
+    proc-type(args, res): no-occurrence?(tvar, args) && no-occurrence?(tvar, res);
+    var-type: not(tvar == t)
+  }
+}
+\end{lstlisting}
+In Rascal:
+\codelines{Rascal}{rascal/src/Infer.rsc}{19}{40}
+
+\paragraph{Types for expressions.} A missing annotation becomes a fresh
+variable (\texttt{optionaltype-2-type}), and the inference function follows
+the rules, calling the unifier at each premise that requires two types to be
+equal. For an application it creates a variable for the result and unifies
+the type of the operator with $t_{\mathit{rand}} \to t_{\mathit{res}}$:
+\codelines{Rascal}{rascal/src/Infer.rsc}{42}{98}
+The tests run the four examples of this section: \texttt{foo} gets
+\texttt{int -> int}, Example 2 gets \texttt{(int -> int) -> int -> int}, Example 3
+fails with a unification failure and Example 4 with a no-occurrence violation.
+
+\subsection{Principal types and Algorithm W}
+
+This subsection goes beyond the slides. The method above is a version of
+Algorithm W, the inference algorithm of ML and Haskell (the Hindley--Milner
+type system). Unification, when it succeeds, finds the \textbf{most general
+unifier}: every other solution is an instance of it. So every typable term
+has a \textbf{principal type}, of which all its other types are instances.
+The principal type of \texttt{proc (x) x} is $t_0 \to t_0$; $\mathit{Int} \to \mathit{Int}$
+is a valid type for it, but an instance. The Rascal test \texttt{identity}
+shows the variable left in the result. Section~\ref{sec:polymorphism} uses this
+to give \texttt{let}-bound functions polymorphic types.
+
+Checking and inference are different problems. Checking verifies a type that
+is given; inference has to find one. For richer type systems inference can
+be undecidable, and many modern languages (Rust, Swift, TypeScript) use
+\textbf{bidirectional} checking: some constructs synthesize their type
+bottom-up (variables, literals, applications), and others are checked against
+a type that comes from the context (an unannotated function passed where a
+function type is expected). They need more annotations than ML, and combine
+better with subtyping.
+
+\paragraph{Generics in Java.} Java infers the type parameters at each call of a
+generic method, a restricted form of the same problem:
+\codelines{Java}{java/Generics.java}{4}{8}
+\codelines{Java}{java/Generics.java}{11}{14}
+For \texttt{p} the compiler infers \texttt{MyPair<Integer, String>}, for
+\texttt{q} and \texttt{result} \texttt{Integer}, and for \texttt{pairs}
+\texttt{List<MyPair<Integer, String>>}.
+
+\paragraph{References.} The same method extends to the commands of the
+semantics block. A cell has type $\tref{T}$, and commands have type $\unit$:
+\begin{mathpar}
+\inferrule*[right=T-Deref]{\Gamma \vdash l : \tref{T}}{\Gamma \vdash \deref{l} : T}
+\and
+\inferrule*[right=T-Assign]{\Gamma \vdash l : \tref{T} \\ \Gamma \vdash e : T}{\Gamma \vdash \assign{l}{e} : \unit}
+\and
+\inferrule*[right=T-While]{\Gamma \vdash B : \tybool \\ \Gamma \vdash C : \unit}{\Gamma \vdash \whiledo{B}{C} : \unit}
+\end{mathpar}
+In the program
+\[
+\begin{array}{l}
+\assign{a}{1}\ ;\ \assign{b}{1}\ ;\ \whiledo{\deref{n} < 5}{C} \\
+C = \ift{\deref{\mathit{term}} \le 2}{\assign{\mathit{res}}{\deref{n}}}{(\assign{c}{\deref{a} + \deref{b}}\ ;\ \assign{\mathit{res}}{\deref{n}}\ ;\ \assign{a}{\deref{b}}\ ;\ \assign{b}{\deref{c}})}\ ;\ \assign{n}{\deref{n} + 1}
+\end{array}
+\]
+every cell is dereferenced and compared with or added to an integer, so
+$n, \mathit{res}, a, b, c, \mathit{term} : \tref{\tyint}$; the conditions are $\tybool$; and
+every command, the \texttt{while} included, is $\unit$.
+
+\subsection{Exercises}
+
+\begin{exercise}
+What is the inferred type of \texttt{if x then -(x,1) else 0}?
+\end{exercise}
+
+\paragraph{Solution.} None. The difference requires $t_x = \mathit{Int}$ and the
+condition requires $t_x = \mathit{Boolean}$; unifying $\mathit{Int}$ with
+$\mathit{Boolean}$ fails.
+
+\begin{exercise}
+Infer the type of \texttt{proc (f) proc (x) (f (f x))}.
+\end{exercise}
+
+\paragraph{Solution.} $(f\ x)$ gives $t_f = t_x \to t_1$ and $(f\ (f\ x))$ gives
+$t_f = t_1 \to t_2$. Unifying the two function types: $t_x = t_1$ and $t_1 = t_2$.
+So $t_f = t_x \to t_x$ and the type is $(t_x \to t_x) \to t_x \to t_x$: apply a function
+twice, for any type.
+
+\begin{exercise}
+Infer the principal type of $\lambda x.\, \lambda y.\, \lambda z.\, x\, z\, (y\, z)$ (the S
+combinator).
+\end{exercise}
+
+\paragraph{Solution.} Let $z : \gamma$. $y\, z$ gives $y : \gamma \to \beta$. $x\, z\, (y\, z)$
+gives $x : \gamma \to \beta \to \alpha$. The type is
+$(\gamma \to \beta \to \alpha) \to (\gamma \to \beta) \to \gamma \to \alpha$.
+
+\begin{exercise}
+Run the unifier by hand on $t_f = t_f \to \mathit{Int}$ and say at which step it stops.
+\end{exercise}
+
+\paragraph{Solution.} After applying the (empty) substitution the two types are
+different, and $t_f$ is a variable, so the unifier proposes
+$t_f = t_f \to \mathit{Int}$. The occurs check finds $t_f$ inside $t_f \to \mathit{Int}$ and
+reports a no-occurrence violation. Without the check, the substitution would
+replace $t_f$ forever.

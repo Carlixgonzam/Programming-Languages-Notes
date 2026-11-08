@@ -1,325 +1,608 @@
-% !TeX root = ../main.tex
 \section{Parsing}
+\label{sec:parsing}
 
-The lexer hands you a flat stream of tokens. That stream has no structure --- it's just a
-list. \texttt{IDENT(x) ASSIGN(=) NUMBER(3) PLUS(+) NUMBER(4)} doesn't say, by itself,
-whether this is one statement or two, or which operator applies to which operand. The
-\textbf{parser}'s job is to take that stream and, using the grammar you wrote in the
-previous block, recover the structure the programmer intended: a tree. The next section
-formalizes exactly what that tree looks like for a small imperative language (assignments,
-sequencing, conditionals, loops); here we care about the mechanics of \emph{building} it,
-whatever shape it ends up taking.
+Parsers analyze the syntax of programs: they make sure that the input follows
+the syntactic rules (the grammar) of the language and build its structure.
+Their role is also to detect errors. This section follows Aho et
+al.~\cite[Ch.~4]{aho2007compilers}, Lee~\cite[Sec.~2.8--2.11]{lee2017foundations}
+and Nystrom~\cite[Ch.~6--7]{nystrom2021crafting}.
 
-If a token sequence can't be produced by the grammar at all, the parser reports a
-\textbf{syntax error} --- a different failure mode from the lexer's ``I don't recognize
-this character'' errors. \texttt{x = = 3} tokenizes just fine (every character is legal),
-but \texttt{ASSIGN ASSIGN NUMBER} isn't a valid statement in any reasonable grammar.
+\subsection{Errors}
 
-\subsection{recursive descent: one function per nonterminal}
-
-The most direct way to write a parser by hand is \textbf{recursive descent}: for every
-nonterminal in the grammar, write a function; that function's job is to recognize (and
-consume) exactly the tokens that nonterminal can produce, calling other nonterminals'
-functions as it goes. It's a literal, mechanical translation from grammar to code.
-
-Take a small arithmetic grammar:
-\[
-\begin{aligned}
-E  &::= T\; E' \\
-E' &::= \texttt{+}\; T\; E' \mid \texttt{-}\; T\; E' \mid \varepsilon \\
-T  &::= F\; T' \\
-T' &::= \texttt{*}\; F\; T' \mid \texttt{/}\; F\; T' \mid \varepsilon \\
-F  &::= \texttt{NUMBER} \mid \texttt{(}\; E\; \texttt{)}
-\end{aligned}
-\]
-This grammar bakes precedence directly into its structure: $T$ (terms, built from
-\texttt{*}/\texttt{/}) sits ``inside'' $E$ (expressions, built from \texttt{+}/\texttt{-}),
-so a $T$ always binds tighter. Translating it to recursive descent is almost mechanical:
-
-\begin{lstlisting}[language=Python]
-def E():
-    T()
-    Eprime()
-
-def Eprime():
-    if peek() in ("+", "-"):
-        advance()
-        T()
-        Eprime()
-    # else: epsilon. FOLLOW(E') = {')', EOF} tells us it's safe to
-    # stop here without consuming anything.
-
-def T():
-    F()
-    Tprime()
-
-def Tprime():
-    if peek() in ("*", "/"):
-        advance()
-        F()
-        Tprime()
-
-def F():
-    if peek() == "NUMBER":
-        advance()
-    elif peek() == "(":
-        advance()
-        E()
-        expect(")")
-    else:
-        error("expected NUMBER or '('")
+The lecture uses this function, written in a made-up language, to show four
+kinds of errors:
+\begin{lstlisting}
+function testFunction(Int a, Int b) -> Int {
+  if (b = a) {
+    print("equal numbers a")
+  } elfi (a > b)
+    a = a * (b + c * d
+  elif (a != b) {
+    b = (a + b) / (b - a * c);
+  } else
+    "a is not is not a real number"
+}
 \end{lstlisting}
 
-Every production became a function; every alternative in the grammar became a branch
-picked by looking at the next token.
+\begin{center}
+\small
+\begin{tabular}{l p{0.38\textwidth} p{0.33\textwidth}}
+  \toprule
+  Kind & Meaning & In the example \\
+  \midrule
+  Lexical   & misspellings & \texttt{elfi} instead of \texttt{elif} \\
+  Syntactic & misplaced elements in the program text & the parenthesis opened in \texttt{(b + c * d} is never closed \\
+  Semantic  & type mismatches, for example in function returns & the function returns \texttt{Int} but the last branch is a string \\
+  Logical   & incorrect reasoning by the programmer & \texttt{b = a} instead of \texttt{b == a} \\
+  \bottomrule
+\end{tabular}
+\end{center}
 
-\subsection{FIRST/FOLLOW sets and what LL(1) means}
+The parser is responsible for the syntactic errors. It has four independent
+responsibilities, of which only the first is mandatory: locating and
+reporting the error, diagnosing it, correcting it, and continuing the
+analysis after it.
 
-That last function, \texttt{F}, decides which branch to take by looking at exactly one
-token of input. That's not an accident --- it's a property of the grammar, and it's called
-\textbf{LL(1)}: parseable Left-to-right, building a Leftmost derivation, with 1 token of
-lookahead.
+\paragraph{Panic-mode recovery.} The parser discards tokens until it finds a
+synchronizing token, such as \texttt{;} or \texttt{\}}, and continues from there.
+It skips the discarded tokens without checking them for errors. In the
+example, after the unclosed parenthesis the parser can skip to the next
+\texttt{elif}. A parser that only reports and stops is the extreme case:
+\texttt{panicked at 'unmatched parenthesis', testFunction.lang:5}.
 
-\begin{definition}[FIRST set]
-$\mathrm{FIRST}(\alpha)$ is the set of terminals that can appear as the first symbol of
-some string derived from $\alpha$ (plus $\varepsilon$, if $\alpha$ can derive the empty
-string).
+\paragraph{Phrase-level recovery.} The parser fixes the error where it is
+detected with a local correction, replacing the processed prefix by a valid
+one. In
+\begin{lstlisting}
+if (a == b)
+  a = a * ((b + c) * d)
+else if (a != b) {
+\end{lstlisting}
+the parser detects a missing \texttt{;} at the end of the second line and
+inserts it. This works when the error is at the point where it is detected.
+It struggles when the real error happened earlier: a missing \texttt{(} is
+only detected at the unmatched \texttt{)}. The goal is to parse as much of the
+program as possible and report as many errors as possible, not to fix the
+program.
+
+\paragraph{Error productions.} The grammar anticipates common errors with extra
+rules. With $S ::= A$, $A ::= aA \mid bA \mid a \mid b$ and $B ::= cd$, the input
+$abcd$ is not in the language, because $S$ does not generate the trailing
+$cd$. The augmented grammar adds $E ::= S\,B$. If the parser uses that rule,
+it has found the error and can report it precisely.
+
+\paragraph{Global correction.} The parser looks for the smallest number of
+insertions, deletions and changes that turn the input into a valid program.
+For the function \texttt{arithmetic\_logic} of the first lecture, replacing
+\texttt{a = 3+foo;} by \texttt{a = 3;} is a correction of that kind. It gives
+the best diagnosis and is too expensive to use in practice.
+
+\subsection{Top-down parsing}
+
+There are two approaches to parsing. A top-down parser starts from the initial
+symbol and tries to generate a prefix of the input, expanding nonterminals.
+A bottom-up parser starts from the input as the leaves of the tree and tries
+to build the tree upward.
+
+Top-down parsing follows a leftmost derivation. For $2+3*1$ and the grammar
+without left recursion
+\begin{lstlisting}
+Exp    ::= Term Exp'
+Exp'   ::= + Term Exp' | λ
+Term   ::= Factor Term'
+Term'  ::= * Factor Term' | λ
+Factor ::= ( Exp ) | Num
+Num    ::= (0..9)+
+\end{lstlisting}
+the parser builds the tree of Figure~\ref{fig:td-tree} from the root,
+expanding the leftmost nonterminal each time. When it has to expand
+\texttt{Term'} after reading $2$, the next symbol is $+$, so it chooses
+$\mathit{Term'} ::= \lambda$; after reading $3$ the next symbol is $*$, so it chooses
+$\mathit{Term'} ::= * \mathit{Factor}\ \mathit{Term'}$. The question in every step is
+which rule to apply.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=3mm, l sep=3mm},
+  [Exp
+    [Term [Factor [Num [2]]] [Term$'$ [$\lambda$]]]
+    [Exp$'$
+      [+]
+      [Term [Factor [Num [3]]] [Term$'$ [*] [Factor [Num [1]]] [Term$'$ [$\lambda$]]]]
+      [Exp$'$ [$\lambda$]]
+    ]
+  ]
+\end{forest}
+\caption{Top-down parse tree of $2+3*1$.}
+\label{fig:td-tree}
+\end{figure}
+
+\paragraph{Recursive descent.} The direct implementation gives each nonterminal
+its own procedure. The lecture's sketch is
+\begin{lstlisting}
+void A() {
+  ProductionRule P = chooseRuleFor(A);
+  for (i <- 1..P.length) {
+    if (nonTerminals.contain(P[i])) P[i]();
+    else if (P[i] == word[j]) j += 1;
+    else ParserError();
+  }
+}
+\end{lstlisting}
+If \texttt{chooseRuleFor} guesses, the procedure has to backtrack to each
+decision point when a guess fails. A left-recursive grammar makes it loop
+forever: \texttt{Exp()} would call \texttt{Exp()} before reading anything. For
+the grammar above the choice can be made by looking at the next symbol, and
+the parser needs no backtracking. In Rascal, with the value of the expression
+computed along the way:
+\codelines{Rascal}{rascal/src/RecursiveDescent.rsc}{6}{48}
+Pattern matching on the list of tokens makes each rule one \texttt{if}: the
+pattern \texttt{["+", *rest]} says that the next token is \texttt{+}.
+
+\subsection{FIRST and FOLLOW}
+
+The choice of rule uses two functions of the grammar.
+
+\begin{definition}
+For $\alpha \in (N \cup \Sigma)^*$, $\mathit{first}(\alpha)$ is the set of terminals
+that begin the words derived from $\alpha$, plus $\lambda$ if $\alpha \Rightarrow^* \lambda$.
+It is computed with three rules:
+\begin{itemize}
+  \item if $X \in \Sigma$, then $\mathit{first}(X) = \{X\}$;
+  \item if $X ::= \alpha_1 \alpha_2 \cdots \alpha_k$, then $\sigma \in \mathit{first}(X)$
+    when $\sigma \in \mathit{first}(\alpha_i)$ for some $i$ and $\lambda$ belongs to
+    $\mathit{first}(\alpha_j)$ for every $j < i$; if $\lambda \in \mathit{first}(\alpha_j)$
+    for all $j$, then $\lambda \in \mathit{first}(X)$;
+  \item if $X ::= \lambda$, then $\lambda \in \mathit{first}(X)$.
+\end{itemize}
 \end{definition}
 
-\begin{definition}[FOLLOW set]
-$\mathrm{FOLLOW}(A)$ is the set of terminals that can appear immediately after $A$ in some
-derivation from the start symbol (plus the end-of-input marker, if $A$ can be the last
-symbol of a full derivation).
+\begin{definition}
+For a nonterminal $A$, $\mathit{follow}(A)$ is the set of terminals that can
+appear right after $A$ in a sentential form. It uses a symbol \$ that marks
+the end of the input and is not a symbol of the language:
+\begin{itemize}
+  \item add \$ to $\mathit{follow}(S)$ for the initial symbol $S$;
+  \item for a rule $A ::= \alpha B \beta$, every $\sigma \in \mathit{first}(\beta) \setminus \{\lambda\}$
+    is in $\mathit{follow}(B)$;
+  \item for a rule $A ::= \alpha B$, or $A ::= \alpha B \beta$ with $\lambda \in \mathit{first}(\beta)$,
+    $\mathit{follow}(A) \subseteq \mathit{follow}(B)$.
+\end{itemize}
 \end{definition}
 
-For the grammar above:
-\[
-\mathrm{FIRST}(E) = \mathrm{FIRST}(T) = \mathrm{FIRST}(F) = \{\texttt{NUMBER}, \texttt{(}\}
-\qquad
-\mathrm{FIRST}(E') = \{\texttt{+}, \texttt{-}, \varepsilon\}
-\]
-\[
-\mathrm{FOLLOW}(E) = \{\texttt{)}, \mathtt{EOF}\}
-\qquad
-\mathrm{FOLLOW}(E') = \mathrm{FOLLOW}(E)
-\]
+(The slides write $\alpha \in (N \cup \Sigma)$ for the argument of $\mathit{first}$
+and $X_{i-1}$ in the second rule; the argument is a string, $(N \cup \Sigma)^*$,
+and the index refers to $\alpha_{i-1}$. In the last rule of $\mathit{follow}$ the
+slide repeats $A ::= \alpha B \beta$ where the first case is $A ::= \alpha B$.)
 
-A grammar is \textbf{LL(1)} when, for every nonterminal with more than one alternative,
-looking at just the next token (comparing it against the FIRST sets of each alternative,
-and FOLLOW when $\varepsilon$ is in play) always tells you unambiguously which alternative
-to take. That's precisely what lets \texttt{Eprime} decide, with a single \texttt{peek()},
-whether to recurse or to stop: if the next token is in $\{\texttt{+}, \texttt{-}\}$ take
-the first branch, and if it's in $\mathrm{FOLLOW}(E') = \{\texttt{)}, \mathtt{EOF}\}$ take
-the $\varepsilon$ branch. If those sets ever overlapped, one token of lookahead wouldn't be
-enough, and plain recursive descent (without backtracking) couldn't handle the grammar
-as written.
+Both are computed by applying the rules until the sets stop changing.
+Table~\ref{tab:first-follow} gives them for the expression grammar. FIRST
+goes from the bottom of the grammar up: $\mathit{first}(\mathit{Factor})$ is
+\texttt{(} plus the digits, and $\mathit{Term}$ and $\mathit{Exp}$ start with a
+$\mathit{Factor}$. FOLLOW goes from the top down: $\mathit{Exp}$ is followed by
+\$ and by the \texttt{)} of $\mathit{Factor} ::= (\mathit{Exp})$, and since
+$\mathit{Exp'}$ can be empty, what follows $\mathit{Exp}$ also follows $\mathit{Term}$,
+together with the $+$ that begins $\mathit{Exp'}$.
 
-\subsection{grammar massaging: left recursion and left factoring}
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l}
+  \toprule
+  Nonterminal & first & follow \\
+  \midrule
+  Exp       & \{ (, 0..9 \}   & \{ ), \$ \} \\
+  Exp$'$    & \{ +, $\lambda$ \} & \{ ), \$ \} \\
+  Term      & \{ (, 0..9 \}   & \{ +, ), \$ \} \\
+  Term$'$   & \{ *, $\lambda$ \} & \{ +, ), \$ \} \\
+  Factor    & \{ (, 0..9 \}   & \{ +, *, ), \$ \} \\
+  Num       & \{ 0..9 \}      & \{ +, *, ), \$ \} \\
+  \bottomrule
+\end{tabular}
+\caption{FIRST and FOLLOW for the expression grammar.}
+\label{tab:first-follow}
+\end{table}
 
-Not every grammar you'd naturally write is LL(1), and recursive descent doesn't work at
-all on some of them --- it just hangs. Two transformations fix the common cases.
+In Rascal a grammar is a list of rules, and both functions are fixed points
+written with \texttt{solve}:
+\codelines{Rascal}{rascal/src/LL1.rsc}{24}{40}
+\codelines{Rascal}{rascal/src/LL1.rsc}{42}{54}
+The tests in \texttt{LL1.rsc} check the sets of Table~\ref{tab:first-follow}.
 
-\textbf{Left recursion.} The grammar $E ::= E\; \texttt{+}\; T \mid T$ is the natural way
-to write ``addition is left-associative,'' but translate it directly into a function and
-you get:
-\begin{lstlisting}[language=Python]
-def E():
-    E()      # infinite recursion before consuming a single token
-    expect("+")
-    T()
-\end{lstlisting}
-\texttt{E} calls itself before consuming any input, forever. The fix is exactly the
-transformation that produced the grammar we used above: rewrite
-$E ::= E\;\texttt{+}\;T \mid T$ as $E ::= T\;E'$, $E' ::= \texttt{+}\;T\;E' \mid
-\varepsilon$. This is a completely general rewrite (any left-recursive rule
-$A ::= A\alpha \mid \beta$ becomes $A ::= \beta A'$, $A' ::= \alpha A' \mid \varepsilon$)
-and it preserves the language while turning a self-call at the start of a production into
-a self-call after consuming a token --- which is exactly what a loop instead of unbounded
-recursion looks like.
+\subsection{LL(1) grammars and the parsing table}
 
-\textbf{Left factoring.} Two alternatives that start with the same token also break
-LL(1), even without recursion. Consider statements:
-\[
-\mathit{Stmt} ::= \texttt{if}\;(\mathit{E})\;\mathit{Stmt}
-\ \mid\ \texttt{if}\;(\mathit{E})\;\mathit{Stmt}\;\texttt{else}\;\mathit{Stmt}
-\]
-Both alternatives start with \texttt{if (E) Stmt}; peeking at the next token after that
-tells you nothing until you've already parsed the whole \texttt{if}-body. Left factoring
-pulls the common prefix into its own rule and defers the decision:
-\[
-\mathit{Stmt} ::= \texttt{if}\;(\mathit{E})\;\mathit{Stmt}\;\mathit{ElseOpt}
-\qquad
-\mathit{ElseOpt} ::= \texttt{else}\;\mathit{Stmt} \mid \varepsilon
-\]
-Now the choice (\texttt{else} or not) is made by a single, separate function that peeks at
-one token, exactly like \texttt{Eprime} above --- and as a bonus this is precisely the
-grammar shape that resolves the classic ``dangling else'' ambiguity in favor of attaching
-\texttt{else} to the nearest unmatched \texttt{if}.
+\begin{definition}
+A grammar is \textbf{LL(1)} if a predictive parser (recursive descent without
+backtracking) can parse it reading the input from left to right, following a
+leftmost derivation and looking at one symbol ahead.
+\end{definition}
 
-\subsection{Pratt parsing: precedence climbing for expressions}
-
-Recursive descent works, but writing a nonterminal per precedence level ($E$, $T$, $F$,
-and one more layer for every new operator) gets tedious fast, especially once you add
-exponentiation, comparisons, boolean \texttt{and}/\texttt{or}, and so on. \textbf{Pratt
-parsing} (also called \textbf{precedence climbing} or \textbf{operator-precedence
-parsing}) replaces that tower of nonterminals with a single loop driven by a table of
-numeric \emph{binding powers}.
-
-The idea: parse one ``atom'' (a number or a parenthesized expression), then keep looking
-at the next operator. If its binding power is at least as strong as the minimum we're
-currently allowed to accept, consume it, recursively parse the right-hand side (demanding
-one more unit of binding power, to force left-associativity), and fold the result into the
-left-hand side. Stop the moment the next operator is too weak, or there isn't one.
-
-\begin{lstlisting}[language=Python]
-PRECEDENCE = {"+": 1, "-": 1, "*": 2, "/": 2}
-
-def parse_expr(tokens, min_bp=0):
-    left = parse_atom(tokens)
-    while True:
-        op = tokens.peek()
-        if op not in PRECEDENCE or PRECEDENCE[op] < min_bp:
-            break
-        tokens.advance()
-        bp = PRECEDENCE[op]
-        right = parse_expr(tokens, bp + 1)   # +1: left-associative
-        left = ("BinOp", op, left, right)
-    return left
-
-def parse_atom(tokens):
-    tok = tokens.advance()
-    if tok == "(":
-        e = parse_expr(tokens, 0)
-        tokens.expect(")")
-        return e
-    return ("Num", tok)
-\end{lstlisting}
-
-Adding a new precedence level is now a one-line change to a dictionary, not a new
-function and a new grammar rule. This is the standard trick used in real
-implementations (it's how Pratt originally described it in 1973, and it's what most
-hand-written expression parsers use today, including the one built step by step in
-Nystrom's \emph{Crafting Interpreters}).
-
-\begin{example}[Tracing precedence climbing on \texttt{1 + 2 * 3}]
-Call \texttt{parse\_expr(tokens, min\_bp=0)}:
+For an LL(1) grammar, the parsing table $M$ stores the decision for each pair
+of a nonterminal and a lookahead symbol. It is built from FIRST and FOLLOW:
+for each rule $A ::= \alpha$,
 \begin{enumerate}
-  \item \texttt{left = parse\_atom()} $\to$ \texttt{Num(1)}.
-  \item Peek \texttt{+}: precedence 1 $\ge$ 0, so consume it. Recurse with
-    \texttt{min\_bp = 1 + 1 = 2}:
-    \begin{enumerate}
-      \item \texttt{left = parse\_atom()} $\to$ \texttt{Num(2)}.
-      \item Peek \texttt{*}: precedence 2 $\ge$ 2, so consume it. Recurse with
-        \texttt{min\_bp = 2 + 1 = 3}:
-        \begin{itemize}
-          \item \texttt{left = parse\_atom()} $\to$ \texttt{Num(3)}. No more tokens, return
-            \texttt{Num(3)}.
-        \end{itemize}
-      \item \texttt{left} becomes \texttt{BinOp(*, Num(2), Num(3))}. No more tokens,
-        return.
-    \end{enumerate}
-  \item \texttt{right} above is \texttt{BinOp(*, Num(2), Num(3))}. \texttt{left} becomes
-    \texttt{BinOp(+, Num(1), BinOp(*, Num(2), Num(3)))}.
+  \item for each terminal $\sigma \in \mathit{first}(\alpha)$, add $A ::= \alpha$ to $M[A, \sigma]$;
+  \item if $\lambda \in \mathit{first}(\alpha)$, add $A ::= \alpha$ to $M[A, \sigma']$ for each
+    terminal $\sigma' \in \mathit{follow}(A)$, and to $M[A, \$]$ if $\$ \in \mathit{follow}(A)$.
 \end{enumerate}
-The result is $1 + (2 \times 3)$, not $(1+2)\times 3$ --- multiplication's higher binding
-power forced it to bind to \texttt{2} before control returned to the outer \texttt{+}, with
-no explicit grammar rule for precedence anywhere in sight.
-\end{example}
+(The slide writes $M[A, \alpha]$ in the first step; the column is the terminal
+$\sigma$.) The grammar is LL(1) when no cell has two rules.
+Table~\ref{tab:ll1} is the table for the expression grammar. The empty cells
+are errors.
 
-\subsection{bottom-up parsing, briefly}
+\begin{table}[h]
+\centering
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{l l l l l l l}
+  \toprule
+       & 0..9      & $+$          & $*$          & (          & )         & \$ \\
+  \midrule
+  E    & T E$'$    &              &              & T E$'$     &           & \\
+  E$'$ &           & $+$ T E$'$   &              &            & $\lambda$ & $\lambda$ \\
+  T    & F T$'$    &              &              & F T$'$     &           & \\
+  T$'$ &           & $\lambda$    & $*$ F T$'$   &            & $\lambda$ & $\lambda$ \\
+  F    & Num       &              &              & ( E )      &           & \\
+  Num  & 0..9      &              &              &            &           & \\
+  \bottomrule
+\end{tabular}
+\caption{LL(1) table for the expression grammar, with E, T and F for Exp, Term and Factor. Each cell shows the right side of the rule for the nonterminal of its row.}
+\label{tab:ll1}
+\end{table}
 
-Recursive descent and Pratt parsing are both \textbf{top-down}: they start from the start
-symbol and work their way down to the tokens, guessing which production to expand based on
-lookahead. The other family, \textbf{LR (shift-reduce) parsing}, works \textbf{bottom-up}:
-it pushes tokens onto a stack (``shift'') and, whenever the top of the stack matches the
-right-hand side of some production, replaces it with the corresponding nonterminal
-(``reduce''), building the tree from the leaves up to the root.
+\codelines{Rascal}{rascal/src/LL1.rsc}{56}{73}
 
-LR parsers accept a strictly larger class of grammars than LL --- in particular, they
-handle left recursion natively and don't require left factoring. The price is that the
-parsing tables (which state does what on which lookahead token) are large and genuinely
-unpleasant to construct by hand; in practice nobody does. Tools like \texttt{yacc},
-\texttt{bison}, and ANTLR take a grammar and generate the table (and often the whole
-parser) for you. Table construction itself (SLR, LALR, canonical LR) is out of scope for
-these notes --- Aho, Lam, Sethi and Ullman's \emph{Compilers: Principles, Techniques, and
-Tools} devotes several chapters to it if you want the full theory. For hand-written
-parsers, which is the practical choice for most small languages and DSLs, top-down wins
-on readability and error-message quality, and that's what the rest of this block assumes.
+\paragraph{Nonrecursive predictive parsing.} The recursion of recursive descent
+can be replaced by an explicit stack, as in the pushdown automaton built from
+a grammar in the previous block. The parser keeps the input followed by \$,
+a stack that starts with $S\,\$$, and the table:
+\begin{lstlisting}
+void nonRecursiveParser(String w$) {
+  a = first(w);
+  X = stack.top();
+  while (X != $) {
+    if (X == a) { stack.pop(); a = next(); }
+    else if (terminals.contains(X)) error();
+    else if (M[X,a].isEmpty()) error();
+    else if (M[X,a] == X ::= Y1 Y2 ... Yk) {
+      output(X ::= Y1 Y2 ... Yk);
+      stack.pop();
+      stack.push(Yk Yk-1 ... Y1);
+    }
+    X = stack.top();
+  }
+}
+\end{lstlisting}
+The right side is pushed in reverse so that $Y_1$ ends up on top.
 
-\subsection{error recovery, briefly}
-
-A parser that stops dead at the first syntax error is unpleasant to use --- you fix one
-typo, rerun, and find the \emph{next} one, one at a time. The standard fix by hand is
-\textbf{panic mode}: on an error, discard tokens until you reach a known
-\emph{synchronization point} (a semicolon, a keyword that starts a new statement, a
-closing brace) and resume parsing from there, so the rest of the file still gets checked.
-This is exactly the strategy discussed in more depth, with a concrete DSL example, in the
-``Error Recovery'' part of \texttt{topics/06-dsl-design/sections/02-design-decisions.tex}
---- worth a look if you're implementing a real parser and want the fuller design
-discussion; here the point is just to know the technique exists and what it's called.
-
-\subsection{a worked example: parsing \texttt{3 + 4 * 2 - 1} by hand}
-
-Using the LL(1) grammar from the top of this section (not precedence climbing, so you can
-see the recursive-descent call structure explicitly), trace the token stream
-\texttt{NUMBER(3) PLUS NUMBER(4) STAR NUMBER(2) MINUS NUMBER(1) EOF}.
-
+\paragraph{Panic-mode recovery in a predictive parser.} Panic mode works as well
+as the choice of synchronizing symbols, and the parser should find one as soon
+as possible. The lecture lists good choices:
 \begin{enumerate}
-  \item \texttt{E()} calls \texttt{T()}, which calls \texttt{F()}: consumes \texttt{3}.
-    Back in \texttt{T()}, call \texttt{Tprime()}: peek is \texttt{+}, not in
-    $\{\texttt{*},\texttt{/}\}$, so \texttt{Tprime} takes the $\varepsilon$ branch. \texttt{T}
-    returns having matched just \texttt{3}.
-  \item Back in \texttt{E()}, call \texttt{Eprime()}: peek is \texttt{+}, consume it, call
-    \texttt{T()} again.
-  \item This inner \texttt{T()} calls \texttt{F()}: consumes \texttt{4}. Then
-    \texttt{Tprime()}: peek is \texttt{*}, consume it, call \texttt{F()}: consumes
-    \texttt{2}. \texttt{Tprime()} recurses: peek is \texttt{-}, not in
-    $\{\texttt{*},\texttt{/}\}$, take $\varepsilon$. This \texttt{T} has matched
-    \texttt{4 * 2}.
-  \item Back in the outer \texttt{Eprime()}, having matched \texttt{+ 4 * 2}, recurse into
-    \texttt{Eprime()} again: peek is \texttt{-}, consume it, call \texttt{T()}, which
-    matches just \texttt{1} (its own \texttt{Tprime} immediately sees \texttt{EOF} and
-    takes $\varepsilon$).
-  \item \texttt{Eprime()} recurses one more time: peek is \texttt{EOF}, take
-    $\varepsilon$, unwind everything.
+  \item the symbols in $\mathit{follow}(A)$: skip tokens until one of them and
+    pop $A$, and parsing can probably continue;
+  \item the symbols that begin higher-level constructs (for an expression, the
+    symbols that begin statements);
+  \item the symbols in $\mathit{first}(A)$, to resume parsing $A$ when one appears;
+  \item if a nonterminal produces $\lambda$, use that rule by default;
+  \item if a terminal on top of the stack does not match, pop it and report it
+    as inserted.
 \end{enumerate}
+With the first choice, the empty cells of Table~\ref{tab:ll1} in the columns
+of $\mathit{follow}(A)$ become \textit{synch}: pop $A$. The other empty cells
+mean skip the input symbol. Table~\ref{tab:panic} is the lecture's trace for
+the input $)4*+2$. The parser skips the initial $)$, because popping
+$\mathit{Exp}$ there would end the parse with the whole input left, and later
+pops $\mathit{Factor}$ when it finds $+$, which belongs to the follow set
+of $\mathit{Factor}$.
+It reports two errors and reaches the end of the input.
 
-Reading the calls in the order they combined values (not the order they were entered)
-gives the tree, using the same node-drawing convention the next section formalizes for
-full programs:
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l r l}
+  \toprule
+  Stack (top first) & Input & Action \\
+  \midrule
+  Exp \$                         & $)4*+2$\$ & error, skip ) \\
+  Exp \$                         & $4*+2$\$  & Exp ::= Term Exp$'$ \\
+  Term Exp$'$ \$                 & $4*+2$\$  & Term ::= Factor Term$'$ \\
+  Factor Term$'$ Exp$'$ \$       & $4*+2$\$  & Factor ::= Num, Num ::= 4 \\
+  4 Term$'$ Exp$'$ \$            & $4*+2$\$  & match 4 \\
+  Term$'$ Exp$'$ \$              & $*+2$\$   & Term$'$ ::= $*$ Factor Term$'$ \\
+  $*$ Factor Term$'$ Exp$'$ \$   & $*+2$\$   & match $*$ \\
+  Factor Term$'$ Exp$'$ \$       & $+2$\$    & error, $M[\mathit{Factor}, +]$ = synch \\
+  Term$'$ Exp$'$ \$              & $+2$\$    & Term$'$ ::= $\lambda$ \\
+  Exp$'$ \$                      & $+2$\$    & Exp$'$ ::= $+$ Term Exp$'$ \\
+  $+$ Term Exp$'$ \$             & $+2$\$    & match $+$ \\
+  Term Exp$'$ \$                 & $2$\$     & Term ::= Factor Term$'$ \\
+  Factor Term$'$ Exp$'$ \$       & $2$\$     & Factor ::= Num, Num ::= 2 \\
+  2 Term$'$ Exp$'$ \$            & $2$\$     & match 2 \\
+  Term$'$ Exp$'$ \$              & \$        & Term$'$ ::= $\lambda$ \\
+  Exp$'$ \$                      & \$        & Exp$'$ ::= $\lambda$ \\
+  \$                             & \$        & end \\
+  \bottomrule
+\end{tabular}
+\caption{Predictive parsing of $)4*+2$ with panic-mode recovery.}
+\label{tab:panic}
+\end{table}
+
+The parser in Rascal produces this trace step by step (the test
+\texttt{panic} checks the two errors):
+\codelines{Rascal}{rascal/src/LL1.rsc}{75}{113}
+
+\paragraph{Phrase-level recovery in a predictive parser.} The empty cells can
+also hold calls to error routines that change the input or the stack:
+\texttt{delete()} removes the input symbol, \texttt{insert()} inserts a missing
+symbol and \texttt{change()} replaces one. Each routine must make progress (for
+example, never insert in front of a symbol forever), or the parser can loop.
+
+\subsection{Bottom-up parsing}
+
+A bottom-up parser reduces the word to the initial symbol. At each step it
+matches a substring with the right side of a rule and replaces it by the
+rule's nonterminal. Given a word $\alpha\beta\omega$ and a rule $A ::= \beta$, the
+reduction gives $\alpha A \omega$, which corresponds to the derivation step
+$S_0 \Rightarrow^* \alpha A \omega \Rightarrow \alpha\beta\omega$. The choice of rule is not
+always unique; the parser needs to know when to reduce and which rule to use.
+
+With the grammar with left recursion of the previous block,
+\begin{lstlisting}
+Exp    ::= Exp + Term | Term
+Term   ::= Term * Factor | Factor
+Factor ::= ( Exp ) | Num
+\end{lstlisting}
+the reductions of $3*2$ are
 \[
-\begin{array}{c}
-\textsc{Minus} \\
-\swarrow \quad \searrow \\
-\textsc{Plus} \qquad 1 \\
-\swarrow \quad \searrow \\
-3 \qquad \textsc{Star} \\
-\quad\quad\quad \swarrow \ \searrow \\
-\quad\quad\quad 4 \quad\ \ 2
-\end{array}
+3*2 \;\to\; \mathit{Factor}*2 \;\to\; \mathit{Term}*2 \;\to\; \mathit{Term}*\mathit{Factor}
+\;\to\; \mathit{Term} \;\to\; \mathit{Exp},
 \]
-which is exactly $(3 + (4 \times 2)) - 1$ --- the grammar's built-in precedence
-(multiplication nested one level deeper than addition/subtraction) produced the right
-tree without any explicit binding-power bookkeeping, at the cost of four nonterminals
-instead of one loop.
+using $\mathit{Factor} ::= 3$, $\mathit{Term} ::= \mathit{Factor}$, $\mathit{Factor} ::= 2$,
+$\mathit{Term} ::= \mathit{Term}*\mathit{Factor}$ and $\mathit{Exp} ::= \mathit{Term}$. Read
+backward, this is the rightmost derivation of $3*2$.
+
+\paragraph{Shift-reduce.} The parser scans the input from left to right and
+pushes the symbols on a stack (shift). When the top of the stack matches the
+right side of a rule, it replaces those symbols by the nonterminal (reduce).
+It stops when the stack holds only the initial symbol and the input is
+empty. Table~\ref{tab:shift-reduce} is the trace for $3*2$. In the second row
+the parser could also shift $*$, and after the fourth row it could reduce
+$\mathit{Term}$ to $\mathit{Exp}$; the LR automaton below is what decides.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l r l}
+  \toprule
+  Stack (top first) & Input & Action \\
+  \midrule
+  \$                       & $3*2$\$ & shift \\
+  3 \$                     & $*2$\$  & reduce Factor ::= 3 \\
+  Factor \$                & $*2$\$  & reduce Term ::= Factor \\
+  Term \$                  & $*2$\$  & shift \\
+  $*$ Term \$              & $2$\$   & shift \\
+  2 $*$ Term \$            & \$      & reduce Factor ::= 2 \\
+  Factor $*$ Term \$       & \$      & reduce Term ::= Term $*$ Factor \\
+  Term \$                  & \$      & reduce Exp ::= Term \\
+  Exp \$                   & \$      & accept \\
+  \bottomrule
+\end{tabular}
+\caption{Shift-reduce parsing of $3*2$.}
+\label{tab:shift-reduce}
+\end{table}
+
+\paragraph{Conflicts.} With the grammar
+\begin{lstlisting}
+Stmt ::= if Cond then Stmt | if Cond then Stmt else Stmt | 0..9
+Cond ::= Var Op 0..9
+Var  ::= x | y
+Op   ::= > | =
+\end{lstlisting}
+and the input \texttt{if x>0 then 1 else 2}, the parser reaches the
+configuration with stack \texttt{1 then Cond if} and input \texttt{else 2\$}. It
+can reduce \texttt{1} to \texttt{Stmt}, and then it must decide: reduce
+\texttt{if Cond then Stmt} to \texttt{Stmt}, or shift \texttt{else} to build the
+longer rule. This is a \textbf{shift/reduce conflict}, and it is the dangling
+\texttt{else} of the previous block seen from the parser. Parser generators
+usually resolve it by shifting, which attaches the \texttt{else} to the nearest
+\texttt{if}.
+
+\subsection{LR parsing}
+
+\begin{definition}
+An \textbf{LR(k)} parser reads the input from left to right, produces a
+rightmost derivation in reverse and looks at $k$ symbols ahead to decide each
+step. A grammar is LR(k) if such a parser exists for it.
+\end{definition}
+
+The LR parser keeps a stack of states $s_m s_{m-1} \cdots$ instead of symbols.
+The states come from an automaton that tracks how much of each rule has been
+seen.
+
+\begin{definition}
+An \textbf{item} is a rule with a dot in its right side. The rule
+$\mathit{Factor} ::= (\mathit{Exp})$ has four items: $\cdot(\mathit{Exp})$ (nothing
+seen yet), $(\cdot\mathit{Exp})$ and $(\mathit{Exp}\cdot)$ (part seen, can still
+shift) and $(\mathit{Exp})\cdot$ (everything seen, can reduce).
+\end{definition}
+
+A state of the automaton is a set of items. Two operations build them. The
+closure of a set adds, for every item with the dot before a nonterminal $B$,
+the items $B ::= \cdot\gamma$ for all rules of $B$: if the parser expects a $B$,
+it also expects the beginning of any of its right sides. $\mathit{goTo}(I, X)$
+moves the dot over $X$ in the items of $I$ that have $X$ after the dot, and
+takes the closure.
+\begin{lstlisting}
+Set<Item> closure(State I) {
+  J = I;
+  for (item A ::= α.Bβ in J)
+    for (B ::= γ in G)
+      if (B ::= .γ not in J) add(B ::= .γ, J);
+  return J;
+}
+
+void items(Grammar G') {
+  C = { closure({S' ::= .S}) };
+  for (I in C)
+    for (X in N ∪ Σ)
+      if (!isEmpty(goTo(I, X))) add(goTo(I, X), C);
+}
+\end{lstlisting}
+The grammar is first augmented with a new initial rule $S' ::= S$, so that
+accepting is reducing that rule. For the expression grammar (with
+$\mathit{num}$ for numbers) the collection has twelve states.
+Table~\ref{tab:lr-items} lists their items and Figure~\ref{fig:lr-automaton}
+the transitions.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l}
+  \toprule
+  State & Items \\
+  \midrule
+  $I_0$    & $\mathit{Exp'} ::= \cdot\mathit{Exp}$, $\mathit{Exp} ::= \cdot\mathit{Exp}+\mathit{Term}$, $\mathit{Exp} ::= \cdot\mathit{Term}$, $\mathit{Term} ::= \cdot\mathit{Term}*\mathit{Factor}$, \\
+           & $\mathit{Term} ::= \cdot\mathit{Factor}$, $\mathit{Factor} ::= \cdot(\mathit{Exp})$, $\mathit{Factor} ::= \cdot\mathit{num}$ \\
+  $I_1$    & $\mathit{Exp'} ::= \mathit{Exp}\cdot$, $\mathit{Exp} ::= \mathit{Exp}\cdot+\mathit{Term}$ \\
+  $I_2$    & $\mathit{Exp} ::= \mathit{Term}\cdot$, $\mathit{Term} ::= \mathit{Term}\cdot*\mathit{Factor}$ \\
+  $I_3$    & $\mathit{Term} ::= \mathit{Factor}\cdot$ \\
+  $I_4$    & $\mathit{Factor} ::= (\cdot\mathit{Exp})$, plus the closure items of $I_0$ for $\mathit{Exp}$, $\mathit{Term}$, $\mathit{Factor}$ \\
+  $I_5$    & $\mathit{Factor} ::= \mathit{num}\cdot$ \\
+  $I_6$    & $\mathit{Exp} ::= \mathit{Exp}+\cdot\mathit{Term}$, plus the items for $\mathit{Term}$ and $\mathit{Factor}$ \\
+  $I_7$    & $\mathit{Term} ::= \mathit{Term}*\cdot\mathit{Factor}$, $\mathit{Factor} ::= \cdot(\mathit{Exp})$, $\mathit{Factor} ::= \cdot\mathit{num}$ \\
+  $I_8$    & $\mathit{Factor} ::= (\mathit{Exp}\cdot)$, $\mathit{Exp} ::= \mathit{Exp}\cdot+\mathit{Term}$ \\
+  $I_9$    & $\mathit{Exp} ::= \mathit{Exp}+\mathit{Term}\cdot$, $\mathit{Term} ::= \mathit{Term}\cdot*\mathit{Factor}$ \\
+  $I_{10}$ & $\mathit{Term} ::= \mathit{Term}*\mathit{Factor}\cdot$ \\
+  $I_{11}$ & $\mathit{Factor} ::= (\mathit{Exp})\cdot$ \\
+  \bottomrule
+\end{tabular}
+\caption{The states of the LR automaton for the expression grammar.}
+\label{tab:lr-items}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[auto, every state/.style={draw, minimum size=8mm, inner sep=0pt, font=\small}, font=\small]
+  \node[state, initial] (0) at (0,0) {$I_0$};
+  \node[state, accepting] (1) at (3,0) {$I_1$};
+  \node[state] (6) at (6,0) {$I_6$};
+  \node[state] (9) at (9,0) {$I_9$};
+  \node[state] (2) at (3,-2) {$I_2$};
+  \node[state] (7) at (6,-2) {$I_7$};
+  \node[state] (10) at (9,-2) {$I_{10}$};
+  \node[state] (3) at (3,-4) {$I_3$};
+  \node[state] (4) at (0,-6) {$I_4$};
+  \node[state] (8) at (3,-6) {$I_8$};
+  \node[state] (11) at (6,-6) {$I_{11}$};
+  \node[state] (5) at (0,-8) {$I_5$};
+  \path[->]
+    (0) edge node {Exp} (1)
+    (0) edge node[pos=0.6] {Term} (2)
+    (0) edge node[swap, pos=0.75] {Factor} (3)
+    (0) edge node[swap, pos=0.2] {(} (4)
+    (0) edge[bend right=50] node[swap, pos=0.85] {num} (5)
+    (1) edge node {$+$} (6)
+    (6) edge node {Term} (9)
+    (9) edge node[pos=0.4] {$*$} (7)
+    (2) edge node {$*$} (7)
+    (7) edge node {Factor} (10)
+    (4) edge node[pos=0.55] {Term} (2)
+    (4) edge node[swap, pos=0.6] {Factor} (3)
+    (4) edge node {Exp} (8)
+    (4) edge[loop left] node {(} ()
+    (4) edge node {num} (5)
+    (8) edge node {)} (11)
+    (8) edge[bend right=20] node[swap, pos=0.2] {$+$} (6);
+\end{tikzpicture}
+\caption{Transitions of the LR automaton. Not drawn: from $I_6$ and $I_7$ on \texttt{(} to $I_4$ and on $\mathit{num}$ to $I_5$, and from $I_6$ on $\mathit{Factor}$ to $I_3$.}
+\label{fig:lr-automaton}
+\end{figure}
+
+The parser reads the next symbol and looks at the current state. If the state
+has an item with that terminal after the dot, it shifts and moves to the
+target of the transition. If the state has a complete item $A ::= \beta\cdot$ and
+the next symbol is in $\mathit{follow}(A)$, it reduces: it pops one state per
+symbol of $\beta$ and follows the transition on $A$ from the state now on top.
+This is the SLR method (simple LR). For $3*2$: in $I_0$ the parser shifts
+$\mathit{num}$ to $I_5$; in $I_5$ the next symbol $*$ is in
+$\mathit{follow}(\mathit{Factor})$, so it reduces $\mathit{Factor} ::= \mathit{num}$
+and goes from $I_0$ to $I_3$; in $I_3$ it reduces $\mathit{Term} ::= \mathit{Factor}$
+and goes to $I_2$; in $I_2$ the item $\mathit{Term} ::= \mathit{Term}\cdot*\mathit{Factor}$
+says to shift $*$, while the item $\mathit{Exp} ::= \mathit{Term}\cdot$ would reduce
+only on $+$, $)$ or \$. That is how the automaton resolves the choice of the
+shift-reduce trace.
+
+In Rascal, items, closure and \texttt{goTo} are a few lines each:
+\codelines{Rascal}{rascal/src/LR.rsc}{18}{45}
+and the SLR table and the parser:
+\codelines{Rascal}{rascal/src/LR.rsc}{49}{95}
+The tests check that the collection has twelve states, that the table has no
+conflicts, that the trace of $3*2$ is the one of Table~\ref{tab:shift-reduce}
+and that the grammar of the \texttt{if} statement has a conflict on
+\texttt{else}.
+
+\subsection{Precedence climbing}
+
+This subsection goes beyond the slides. Writing one nonterminal per
+precedence level becomes tedious when a language has many operators.
+Precedence climbing, or Pratt parsing, uses a table of binding powers
+instead. It parses an atom, then keeps reading operators while their
+precedence is at least the current minimum, parsing each right operand with
+a higher minimum so that operators of the same level associate to the left:
+\codelines{Python}{python/pratt.py}{18}{37}
+For $1+2*3$ the call for the right operand of $+$ has minimum 2, so it takes
+$2*3$ whole before returning, and the result is $1 + (2*3)$. Adding a level is
+one entry in the table. Nystrom's book builds its expression parser this way.
 
 \subsection{Exercises}
-\begin{itemize}
-  \item Eliminate left recursion from
-    $\mathit{Cmp} ::= \mathit{Cmp}\ \texttt{<}\ E \mid \mathit{Cmp}\ \texttt{>}\ E \mid E$,
-    then write the corresponding recursive-descent functions.
-  \item Compute $\mathrm{FIRST}$ and $\mathrm{FOLLOW}$ for every nonterminal in
-    $S ::= \texttt{if}\ (E)\ S\ \mathit{ElseOpt} \mid \texttt{print}\ E$,
-    $\mathit{ElseOpt} ::= \texttt{else}\ S \mid \varepsilon$. Is this grammar LL(1)?
-  \item Trace the precedence-climbing code on \texttt{2 * 3 + 4 * 5}, showing the sequence
-    of recursive calls and the final tree, the way the worked example does for
-    \texttt{1 + 2 * 3}.
-  \item Extend \texttt{PRECEDENCE} and \texttt{parse\_expr} to support a right-associative
-    exponentiation operator \texttt{\^{}} (binding tighter than \texttt{*}/\texttt{/}).
-    Hint: right-associativity means the recursive call on the right should \emph{not} add
-    1 to the minimum binding power.
-  \item Using the LL(1) grammar from this section, hand-parse
-    \texttt{(1 + 2) * 3} step by step and draw the resulting tree.
-  \item In your own words: why does left recursion break plain recursive descent but pose
-    no problem at all for a bottom-up (shift-reduce) parser?
-\end{itemize}
+
+\begin{exercise}
+Compute FIRST and FOLLOW for the grammar
+$S ::= aB \mid bA \mid \lambda$, $A ::= aS \mid bAA$, $B ::= bS \mid aBB$ of the
+previous block. Is it LL(1)?
+\end{exercise}
+
+\paragraph{Solution.} $\mathit{first}(S) = \{a, b, \lambda\}$, $\mathit{first}(A) =
+\{a, b\}$, $\mathit{first}(B) = \{a, b\}$. $\mathit{follow}(S) = \{\$\} \cup
+\mathit{follow}(A) \cup \mathit{follow}(B)$, because $S$ ends the rules $A ::= aS$
+and $B ::= bS$; $\mathit{follow}(A)$ contains $\mathit{follow}(S)$ and
+$\mathit{first}(A) = \{a, b\}$ (from $bAA$), and the same for $B$. So every
+FOLLOW set is $\{a, b, \$\}$. The grammar is not LL(1): $M[S, a]$ holds
+$S ::= aB$ (from FIRST) and $S ::= \lambda$ (because $a \in \mathit{follow}(S)$).
+
+\begin{exercise}
+Run the predictive parser of Table~\ref{tab:ll1} on $(1+2)*3$ and write the
+rules it outputs.
+\end{exercise}
+
+\paragraph{Solution.} Exp ::= Term Exp$'$, Term ::= Factor Term$'$,
+Factor ::= ( Exp ), Exp ::= Term Exp$'$, Term ::= Factor Term$'$, Factor ::= Num,
+Num ::= 1, Term$'$ ::= $\lambda$, Exp$'$ ::= $+$ Term Exp$'$, Term ::= Factor Term$'$,
+Factor ::= Num, Num ::= 2, Term$'$ ::= $\lambda$, Exp$'$ ::= $\lambda$, Term$'$ ::= $*$
+Factor Term$'$, Factor ::= Num, Num ::= 3, Term$'$ ::= $\lambda$, Exp$'$ ::= $\lambda$.
+This is the leftmost derivation of the word, rule by rule.
+
+\begin{exercise}
+Write the shift-reduce trace for \texttt{if x>0 then 1 else 2} up to the
+conflict, and say which action resolves it the usual way.
+\end{exercise}
+
+\paragraph{Solution.} Shift \texttt{if}, shift \texttt{x}, reduce
+\texttt{Var ::= x}, shift \texttt{>}, reduce \texttt{Op ::= >}, shift \texttt{0},
+reduce \texttt{Cond ::= Var Op 0}, shift \texttt{then}, shift \texttt{1}, reduce
+\texttt{Stmt ::= 1}. Now the stack is \texttt{Stmt then Cond if} and the next
+symbol is \texttt{else}: shift or reduce \texttt{Stmt ::= if Cond then Stmt}.
+Shifting \texttt{else} gives the usual meaning.
+
+\begin{exercise}
+Compute $\mathit{goTo}(I_0, \texttt{(})$ for the expression grammar and check that
+it is $I_4$.
+\end{exercise}
+
+\paragraph{Solution.} The only item of $I_0$ with \texttt{(} after the dot is
+$\mathit{Factor} ::= \cdot(\mathit{Exp})$. Moving the dot gives
+$\mathit{Factor} ::= (\cdot\mathit{Exp})$. The closure adds the items for
+$\mathit{Exp}$ (dot before $\mathit{Exp}$), then for $\mathit{Term}$ and
+$\mathit{Factor}$, which are the same closure items as in $I_0$, without
+$\mathit{Exp'} ::= \cdot\mathit{Exp}$.

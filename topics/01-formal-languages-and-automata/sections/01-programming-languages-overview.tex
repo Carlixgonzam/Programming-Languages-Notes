@@ -1,265 +1,403 @@
-% !TeX root = ../main.tex
 \section{Programming languages: an overview}
+\label{sec:overview}
 
-\subsection{Why study the theory instead of just the practice}
+\subsection{What is a programming language}
 
-You already know how to program. That's not what this course is about. Knowing how to
-write a \texttt{for} loop in Java or a list comprehension in Python tells you almost
-nothing about \emph{why} those constructs exist, why some languages have them and others
-don't, or why a language designer chose one syntax over another. This course is about
-building the vocabulary and the formal tools to reason about programming languages as
-objects of study in their own right --- not as tools you use, but as artifacts you can
-analyze, compare, and design.
-
-This matters for a very practical reason: at some point in your career you will have to
-choose a language for a project, defend that choice to a team, learn a new language in a
-week because the job requires it, or --- if you're unlucky enough to end up here again ---
-design one. None of that is served by knowing syntax. It's served by understanding the
-underlying dimensions along which languages differ: how they bind names, how they manage
-memory, what they consider a value, what guarantees they make at compile time versus
-runtime. Once you see those dimensions clearly, learning the 40th language is fast because
-you're just asking ``where does this one sit on axes I already know?''
-
-The rest of this course builds the formal backbone for that kind of reasoning: grammars
-and automata (this block), lexing and parsing (next), type systems, semantics, and runtime
-systems. Before diving into the formalism, it's worth being explicit about what a
-programming language actually is and what tensions show up whenever someone designs one.
-
-\subsection{What is a programming language, formally}
+The course starts from a short definition.
 
 \begin{definition}
-A \textbf{programming language} is a formal notation for describing computations, equipped
-with (1) a \emph{syntax} that determines which strings are well-formed programs, and (2) a
-\emph{semantics} that determines what each well-formed program computes.
+A \textbf{programming language} is a system to write computer programs.
 \end{definition}
 
-That's it. Everything else --- standard libraries, tooling, package managers, IDEs --- is
-built on top of that core and, while practically important, isn't part of the formal
-object we study here. Notice this definition says nothing about being ``Turing-complete,''
-``general-purpose,'' or even ``executed by a computer.'' SQL is a programming language
-under this definition. So is a regular expression, in a narrow sense. So is the notation
-you use to specify a finite automaton. The formal tools you're about to learn (grammars for
-syntax, automata and later operational/denotational semantics for meaning) apply to all of
-them.
+The definition is short on purpose, and the rest of the course fills it in.
+Figure~\ref{fig:pl-components} shows the parts that the first lecture adds to
+it. The syntax of a language says how programs look: which symbols can be
+used and how they combine into structures. The semantics says how programs
+work: what type each expression has, which environment gives values to the
+names, how names are bound, and how the program is represented internally
+when it runs. Around both sits the tooling (editors, compilers, debuggers),
+which does not change what a program means but decides how pleasant the
+language is to use.
 
-\subsection{A brief history, in three generations}
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=4mm, l sep=6mm, align=center, draw, rounded corners=1pt, inner sep=3pt}
+  [Programming language
+    [{Syntax\\\footnotesize how programs look}
+      [Symbols] [Structure]]
+    [{Semantics\\\footnotesize how programs work}
+      [Type system] [Environment] [Bindings] [{Internal\\representation}]]
+    [Tooling]
+  ]
+\end{forest}
+\caption{The components of a programming language, as presented in the first lecture.}
+\label{fig:pl-components}
+\end{figure}
 
-You don't need to memorize dates, but the shape of the history explains \emph{why} certain
-ideas exist.
+Each block of these notes takes one of the boxes. Symbols and structure are
+the subject of this block and the next one (grammars, automata, lexing,
+parsing). Type systems, environments and bindings come after that, and
+internal representation is the subject of the runtime block.
 
-\begin{description}
-  \item[First generation --- machine and assembly (1940s--1950s).] Programs were sequences
-    of numeric opcodes, later given mnemonic names (assembly). No abstraction: one line of
-    code, one machine instruction. Portability was zero --- code was tied to a specific CPU.
-  \item[Second generation --- early high-level languages (1950s--1960s).] FORTRAN (1957),
-    COBOL (1959), and Lisp (1958) introduced the idea that source code doesn't have to
-    mirror hardware. FORTRAN gave scientists array operations and expressions instead of
-    register juggling. Lisp went further and introduced code-as-data, recursion as a
-    primary control structure, and garbage collection --- ideas that took decades to reach
-    the mainstream.
-  \item[Third generation and onward --- structured, then managed, then multi-paradigm
-    (1970s--today).] Pascal and C brought structured control flow (no more \texttt{goto}
-    spaghetti). Smalltalk and later C++/Java brought objects. ML and Haskell refined
-    typed functional programming with type inference. Python, JavaScript, and friends
-    prioritized programmer productivity over raw performance. Rust (2010s) revived the
-    idea that a type system can eliminate a whole class of runtime bugs (memory safety)
-    without a garbage collector. The trend across all of this: each generation trades a bit
-    of low-level control for a formal guarantee or a productivity gain, and the theory
-    (types, semantics) is what lets you state precisely what was gained.
-\end{description}
+\subsection{What is a program}
+
+Take this text from the lecture:
+\begin{lstlisting}
+fun arithmetic_logic(x,y) {
+  a = 3+foo;
+  x and y;
+}
+\end{lstlisting}
+Whether it is a program depends on the language. A string is a program of a
+language $L$ only if it follows the syntax of $L$, and it is a meaningful
+program only if it also follows the semantic rules of $L$. Without fixing $L$
+the question has no answer.
+
+In the lecture the text is given to a parser for a small language whose
+statements are assignments and expressions. Figure~\ref{fig:arith-logic} shows
+the tree the parser builds. Function definition, parameters and the second
+statement \texttt{x and y;} all fit the grammar. The first statement does not:
+the grammar of that language has no \texttt{+} operator, so after
+\texttt{a = 3} the parser finds \texttt{+foo} where it expects \texttt{;}. It
+reports the error at \texttt{foo} (dashed box in the figure), skips the
+offending tokens and continues. So the text is not a program of that
+language, even though every token in it is valid.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  arbol,
+  [program
+    [def
+      [arithmetic\_logic] [(] [x] [{,}] [y] [)] [\{]
+      [stat
+        [a] [=] [expr [3]] [foo, draw, dashed, inner sep=2pt] [;]]
+      [stat
+        [expr [expr [x]] [and] [expr [y]]] [;]]
+      [\}]
+    ]
+    [<EOF>]
+  ]
+\end{forest}
+\caption{Parse tree for \texttt{arithmetic\_logic}. The parser cannot place
+\texttt{foo} and marks it as an error.}
+\label{fig:arith-logic}
+\end{figure}
+
+Passing the parser is not enough either. If the grammar had \texttt{+}, the
+statement \texttt{a = 3+foo} would still need \texttt{foo} to be bound to
+something, and \texttt{x and y} would need \texttt{x} and \texttt{y} to be
+booleans. Those checks belong to the semantics, and different languages make
+them at different moments.
+
+The lecture shows this with a single line typed into seven interactive
+interpreters (Table~\ref{tab:abc}). The text \texttt{a = b + c} is the same in
+all of them, and none of them runs it.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l}
+  \toprule
+  Language & Response to \texttt{a = b + c} & When the problem is found \\
+  \midrule
+  JavaScript & \texttt{ReferenceError: b is not defined} & while running \\
+  Ruby       & \texttt{NameError: undefined local variable or method `b'} & while running \\
+  Python     & \texttt{NameError: name 'b' is not defined} & while running \\
+  Elixir     & \texttt{undefined variable "b"}, \texttt{CompileError} & before running \\
+  Haskell    & \texttt{Variable not in scope: b}, and the same for \texttt{c} & before running \\
+  C++        & \texttt{Use of undeclared identifier 'a'} & before running \\
+  Prolog     & \texttt{false.} & while running \\
+  \bottomrule
+\end{tabular}
+\caption{The same line in seven languages. Each one reads it with its own semantics.}
+\label{tab:abc}
+\end{table}
+
+The differences are not in the text but in the rules each language applies to
+it. JavaScript, Ruby and Python look up \texttt{b} when the line is executed
+and fail there. Elixir, Haskell and C++ check names before the program runs.
+C++ complains about \texttt{a} first because it requires every variable to be
+declared before its first use, including the one being assigned. Prolog does
+not read \texttt{=} as assignment at all: it reads \texttt{a = b + c} as the
+question ``does the atom \texttt{a} unify with the term \texttt{b + c}?'', and
+the answer is no.
+
+\subsection{Languages seen in class}
+
+In the first lecture each student writes a function that computes the
+factorial of a number, and then the same function is shown in several
+languages. Table~\ref{tab:languages} summarizes them. The point is that the
+same algorithm can look very different depending on what the language was
+designed for.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l p{0.68\textwidth}}
+  \toprule
+  Language & What it shows \\
+  \midrule
+  Ada & Structured, statically typed, imperative and object-oriented. Strong
+        typing, design by contract and concurrency are built in; the
+        compiler is expected to catch errors before the program runs. The
+        factorial uses subtypes \texttt{Positive} and \texttt{Natural}, so a
+        negative argument is a type error. \\
+  Prolog & Logic programming. A program is a set of facts and rules that
+           define relations, and computation starts with a query. The
+           factorial is two clauses relating \texttt{X} and \texttt{F}. \\
+  Scratch & Block-based visual language for children aged 8 to 16. Programs
+            are built by snapping blocks together, so syntax errors cannot
+            be written. \\
+  ASCII Dots & Esoteric language based on ASCII art. Dots travel along paths
+               drawn with characters and are transformed by the operators
+               they cross. \\
+  CLU & Introduced abstract data types, call by sharing, iterators, multiple
+        return values and type-safe parameterized types. Its factorial
+        \texttt{signals negative} instead of returning a wrong value. \\
+  UML & General-purpose visual modeling language with structure, behavior
+        and interaction diagrams. \\
+  Action! & Procedural language for Atari 8-bit computers, similar to
+            ALGOL, compiled to fast 6502 code. Its factorial reports errors
+            through a pointer argument because the result type cannot hold
+            them. \\
+  0815 & Esoteric language based on a queue; the factorial is written with
+         jumps and labels such as \texttt{\}:f:} and \texttt{\^{}:f:}. \\
+  Piet & Stack-based esoteric language whose programs are images. It uses 20
+         colors; transitions between colors encode the operations. \\
+  SCuLPT & Simple Cubic Language for Programming Tasks. Programs are built
+           from tangible 3D pieces instead of typed text, and the language
+           is Turing complete. \\
+  \bottomrule
+\end{tabular}
+\caption{Languages used in the first lecture.}
+\label{tab:languages}
+\end{table}
+
+For reference, here is the factorial in the two languages used for code in
+these notes. In Scheme:
+\codelines{Scheme}{scheme/factorial.scm}{2}{5}
+and in Rascal:
+\codelines{Rascal}{rascal/src/Factorial.rsc}{3}{3}
+Both are recursive definitions by cases, and both files include tests.
+
+\subsection{What makes a good programming language}
+
+Pratt and Zelkowitz~\cite{pratt2001design} give eight criteria, and the
+lecture follows them.
+
+\paragraph{Clarity, simplicity and unity of concepts.} A language is a tool
+for thinking about algorithms, writing them down and communicating them. It
+should offer a small set of concepts, with simple and regular rules to combine
+them, and it should be unambiguous. The dangling \texttt{else} of
+Section~\ref{sec:cfl} is an example of a construct where the grammar alone
+does not say what a program means.
+
+\paragraph{Clarity of program structure.} The syntax should not mislead, and
+the structure of a program should reflect the logical structure of the
+algorithm.
+
+\paragraph{Naturalness for the application.} The language should provide the
+data structures, operations, control structures and syntax that the problem
+needs. The date language of Section~\ref{sec:regular} is natural for dates and
+useless for anything else, which is what a domain-specific language aims for.
+
+\paragraph{Ease of extension.} Extensions should use simple mechanisms built
+from primitive features of the language, so that they feel like part of it.
+
+\paragraph{External support.} Tools for testing, editing and storing
+programs, and good documentation, decide much of a language's success.
+
+\paragraph{Ease of verification.} Programs can be proven correct with a formal
+method, validated by tests that compare outputs against the specification, or
+desk-checked by reading them. In all three cases, simple syntax and semantics
+make the work easier.
+
+\paragraph{Portability.} Programs should move between computing environments
+without changes.
+
+\paragraph{Efficiency and cost.} There are several costs: executing the
+program (compiler optimizations and runtime support), translating it (fast
+compilation matters for programs compiled often and run rarely), creating it
+(design, coding, testing, modifying) and maintaining it.
+
+MacLennan~\cite{maclennan1999principles} gives a longer list of design
+principles, shown in Table~\ref{tab:maclennan}. Several of them come back
+later in the course: orthogonality and regularity when we compare grammars,
+information hiding when we discuss scopes, security when we discuss type
+systems.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l p{0.7\textwidth}}
+  \toprule
+  Principle & Meaning \\
+  \midrule
+  Abstraction & Do not require something to be stated more than once; factor out recurring patterns. \\
+  Automation & Automate mechanical, tedious or error-prone activities. \\
+  Defense in depth & Have a series of defenses, so an error missed by one is caught by another. \\
+  Information hiding & Users of a module get all the information they need and nothing more; implementers get all they need to implement it. \\
+  Labeling & Do not require the user to know absolute positions in a list; give items meaningful labels. \\
+  Localized cost & Users pay only for what they use. \\
+  Manifest interface & All interfaces are apparent in the syntax. \\
+  Orthogonality & Independent functions are controlled by independent mechanisms. \\
+  Portability & Avoid features that depend on a particular machine. \\
+  Preservation of information & Let the user state what they know and the compiler might need. \\
+  Regularity & Regular rules without exceptions are easier to learn, use, describe and implement. \\
+  Security & No program that violates the definition of the language should escape detection. \\
+  Simplicity & A minimum number of concepts with simple rules for combining them. \\
+  Structure & The static structure of the program corresponds to the dynamic structure of the computation. \\
+  Syntactic consistency & Similar things look similar; different things look different. \\
+  Zero-one-infinity & The only reasonable numbers are zero, one and infinity. \\
+  \bottomrule
+\end{tabular}
+\caption{MacLennan's principles of language design.}
+\label{tab:maclennan}
+\end{table}
+
+\subsection{A brief history}
+
+The history of programming languages explains why some ideas exist. Three
+periods are enough for this course.
+
+The first languages were machine code and assembly (1940s and 1950s). A
+program was a sequence of numeric opcodes, later written with mnemonic names.
+One line was one machine instruction, and a program only ran on the processor
+it was written for.
+
+The early high-level languages came next (1950s and 1960s). FORTRAN (1957),
+Lisp (1958) and COBOL (1959) separated source code from the hardware. FORTRAN
+gave scientists expressions and arrays instead of registers. Lisp introduced
+code as data, recursion as the main control structure and garbage collection.
+
+From the 1970s on, Pascal and C brought structured control flow without
+\texttt{goto}, Smalltalk and then C++ and Java brought objects, and ML and
+Haskell brought typed functional programming with type inference. Each step
+gave up some low-level control in exchange for a guarantee or for less work
+for the programmer. Types and semantics, which come later in the course, are
+the tools that state precisely what was gained.
 
 \subsection{Design goals in tension}
 
-No programming language is good at everything, and that's not a failure of design --- it's
-a mathematical necessity. Every design decision optimizes for something at the expense of
-something else. The four tensions below show up constantly, in this course and in real
-language debates.
+The criteria of the previous section pull in different directions, and every
+language resolves the conflicts in its own way.
 
-\subsubsection{Expressiveness vs.\ simplicity}
+\paragraph{Expressiveness and simplicity.} A more expressive language lets
+programmers say more, often in fewer lines, but a larger language is harder to
+learn, to implement and to reason about. This is the tension between the first
+criterion (simplicity) and the third (naturalness for the application).
 
-A more expressive language lets you say more things, often more concisely, but a bigger
-language is harder to learn, harder to implement correctly, and harder to reason about.
-Scala's type system can express things Java's can't, but good luck finding two Scala
-programmers who agree on the ``idiomatic'' way to write something. Go famously went the
-other way: no generics for over a decade, no exceptions, a deliberately tiny spec.
-The trade-off is real: Go programs are boringly uniform (a feature, for large teams);
-Scala programs can be breathtakingly concise (a feature, for small expert teams).
+\paragraph{Safety and flexibility.} A safe language rejects some programs on
+purpose. A type checker that rejects a program before it runs removes a class
+of runtime errors, and it also rejects some programs that would have run
+correctly. Table~\ref{tab:abc} shows both choices: Haskell rejects
+\texttt{a = b + c} before running, Python runs it and fails.
 
-\subsubsection{Safety vs.\ flexibility}
+\paragraph{Performance and abstraction.} Garbage collection, dynamic dispatch
+and generic containers make programs easier to write and reuse, and they cost
+time and memory. A Python list of integers holds pointers to boxed objects in
+the heap; a C array of \texttt{int} is a contiguous block of machine integers.
+The runtime block of the course returns to this difference.
 
-A safe language stops you from doing certain things, on purpose. Rust's borrow checker
-rejects programs that would compile fine in C, including some that would have run
-correctly. You lose flexibility (you can't just alias a pointer however you like) in
-exchange for a guarantee (no data races, no use-after-free) enforced \emph{before the
-program runs}. C gives you the flexibility back and pushes the safety burden entirely onto
-the programmer. Neither choice is ``correct'' in the abstract --- it depends on whether
-you'd rather fight the compiler or fight a segfault in production at 3am.
+\paragraph{Readability and writability.} A notation that is quick to write can
+be slow to read. Verbose languages are slow to write and easy to read cold.
+Most general-purpose languages lean toward readability, since code is read
+more often than it is written. Domain-specific languages sometimes go the other
+way, because their users already know the notation of the domain.
 
-\subsubsection{Performance vs.\ abstraction}
+\subsection{Paradigms}
 
-Higher abstraction (garbage collection, dynamic dispatch, generic containers) makes code
-easier to write and more reusable, but it costs cycles. A Python list of integers is a list
-of pointers to boxed heap objects; a C array of \texttt{int} is a contiguous block of raw
-bytes. The C version is dramatically faster and more memory-efficient, and dramatically
-more dangerous to get wrong (buffer overruns, manual memory management). This is why
-performance-critical systems (databases, browsers, kernels) are still overwhelmingly
-written in C/C++/Rust, while the layers built on top of them (application logic, glue code,
-data science) lean on higher-abstraction languages that trade speed for development speed.
+A \textbf{paradigm} is a way of thinking about computation: what a step is,
+what state means, and how control flow is expressed. Most languages mix
+paradigms.
 
-\subsubsection{Readability vs.\ writability}
+In the imperative paradigm a program is a sequence of statements that change
+the state; the basic unit is the assignment and control flow is explicit.
+In the functional paradigm a program is an expression built from function
+applications, and computation is evaluation; in the pure case there is no
+mutable state. In the logic paradigm a program is a set of facts and rules and
+running it means asking a query; Prolog in Table~\ref{tab:languages} is the
+example. In the object-oriented paradigm a program is a set of objects that
+group state and behavior and communicate by calling methods.
 
-APL famously lets you write a matrix transpose-and-sum in a handful of symbols; almost
-nobody can read APL without training, including people who wrote the line themselves six
-months earlier. Verbose languages (Java, with its \texttt{public static void main} boilerplate)
-are painfully slow to write but nearly anyone can read them cold. A language optimized for
-writability speeds up the author at the expense of every future reader (including future
-you); a language optimized for readability does the reverse. Most mainstream languages
-today lean toward readability, because code is read far more often than it's written ---
-but domain-specific languages (see the last block of this course) sometimes deliberately
-go the other way, betting that their narrow audience already speaks the notation.
+The same small problem, adding the even numbers of a list, looks different in
+each style. Imperative, in Python:
+\codelines{Python}{python/sum_evens.py}{1}{6}
+The accumulator and the loop are explicit. Functional, in Haskell:
+\codelines{Haskell}{haskell/SumEvens.hs}{1}{2}
+There is no accumulator and no loop: \texttt{filter even} selects the
+elements and \texttt{sum} adds them, and the two functions are composed.
+Declarative, in SQL:
+\codelines{SQL}{sql/sum_evens.sql}{3}{3}
+The query states the result and leaves the strategy to the database engine.
+A logic version in Prolog would be three clauses: the sum of the empty list is
+0, an even head is added to the sum of the tail, and an odd head is skipped.
 
-\subsection{A taxonomy of paradigms}
+\subsection{Why formal definitions}
 
-A \textbf{paradigm} is a way of thinking about computation --- what a ``step'' of
-computation is, what state means, and how you express control flow. Most real languages mix
-paradigms, but it's useful to separate the pure ideas first.
-
-\begin{description}
-  \item[Imperative.] A program is a sequence of statements that mutate state. The core
-    unit is the \emph{assignment}, and control flow is explicit (loops, conditionals,
-    \texttt{goto}). C, Pascal, and (mostly) Python and Java fall here. Mental model:
-    ``do this, then do that, updating memory as you go.''
-  \item[Functional.] A program is an expression built out of function application, with no
-    mutable state (in the pure case). Computation is expression evaluation, not statement
-    execution. Haskell is the purest mainstream example; OCaml, Scheme, and (as a strong
-    influence within a multi-paradigm language) large parts of modern JavaScript and Python
-    lean this way. Mental model: ``the answer is this expression, evaluated.''
-  \item[Logic / declarative.] A program is a set of facts and rules, and ``running'' the
-    program means asking a query and letting the engine search for an answer that satisfies
-    the rules. Prolog is the classic example; SQL is declarative in the same spirit (you
-    state what you want, not how to get it) though it isn't logic programming in the strict
-    Prolog sense. Mental model: ``here are the constraints, you (the engine) find a
-    solution.''
-  \item[Object-oriented.] A program is a set of objects that bundle state and behavior, and
-    computation happens by objects sending messages to each other (calling methods).
-    Smalltalk is the origin; Java, C++, and Python support it as a first-class paradigm.
-    Mental model: ``the world is made of things that respond to messages.''
-\end{description}
-
-\subsubsection{The same problem, four ways}
-
-Concreteness beats taxonomy. Here's one tiny problem --- \emph{sum the even numbers in a
-list} --- solved in a style native to each paradigm.
-
-\textbf{Imperative (Python):}
-\begin{lstlisting}[language=Python]
-def sum_evens(xs):
-    total = 0
-    for x in xs:
-        if x % 2 == 0:
-            total += x
-    return total
-\end{lstlisting}
-You explicitly manage an accumulator and step through the list one element at a time. The
-\emph{how} is entirely spelled out.
-
-\textbf{Functional (Haskell):}
-\begin{lstlisting}[language=Haskell]
-sumEvens :: [Int] -> Int
-sumEvens = sum . filter even
-\end{lstlisting}
-No accumulator variable, no explicit loop. \texttt{filter even} describes \emph{what}
-subset of the list you want, and \texttt{sum} describes what to do with it; the two are
-composed, not sequenced. There's no mutable state anywhere in this definition.
-
-\textbf{Declarative (SQL-ish):}
-\begin{lstlisting}[language=SQL]
-SELECT SUM(value) FROM numbers WHERE value % 2 = 0;
-\end{lstlisting}
-You never say how to iterate, filter, or accumulate. You state the result you want as a
-condition on the data, and the engine (the query planner) decides the execution strategy.
-This is the most extreme point on the ``what, not how'' spectrum among these four.
-
-\textbf{Logic (Prolog-style):}
-\begin{lstlisting}
-sum_evens([], 0).
-sum_evens([X|Xs], S) :- X mod 2 =:= 0, sum_evens(Xs, Rest), S is Rest + X.
-sum_evens([X|Xs], S) :- X mod 2 =\= 0, sum_evens(Xs, S).
-\end{lstlisting}
-This looks almost like a mathematical definition by cases: the sum of an empty list is 0;
-otherwise, either the head is even and contributes to the sum, or it doesn't. There's no
-notion of ``stepping through'' at all in the source --- it's a set of facts and inference
-rules, and the engine performs the traversal via unification and backtracking.
-
-\subsubsection{What each style optimizes for}
-
-\begin{itemize}
-  \item The \textbf{imperative} version is the most explicit about performance: you can see
-    exactly one pass over the list, constant extra memory. It's also the most verbose and
-    the easiest to introduce an off-by-one bug into.
-  \item The \textbf{functional} version is the most composable: \texttt{filter even} and
-    \texttt{sum} are independently reusable, testable pieces, glued with function
-    composition. The cost is that naive implementations may build intermediate lists
-    (though a smart compiler can fuse them).
-  \item The \textbf{declarative} (SQL) version is the shortest and the most optimizable ---
-    the engine is free to choose an index scan, parallelize, or reorder work, because you
-    never committed to an execution strategy. The cost is that you have very little control
-    over performance details when you need it.
-  \item The \textbf{logic} version is the most declarative about \emph{structure}: it reads
-    like a specification (``a sum is either this base case or this recursive case''), which
-    makes it a strong fit for problems that are naturally about search, constraints, or
-    relationships (parsers, expert systems) rather than numeric computation.
-\end{itemize}
-
-None of these is strictly ``better.'' Choosing one over another for a real project is a
-design decision, exactly like the tensions from the previous subsection, and defending that
-choice is a skill this course is explicitly trying to build in you.
-
-\subsection{Why formal tools, not vibes}
-
-Everything above --- paradigms, trade-offs, ``this language feels more readable'' --- was
-argued informally, in prose, by appeal to intuition. That's fine for a first pass, but it
-doesn't scale and it doesn't settle disagreements. Formal tools exist to make these
-arguments precise:
-
-\begin{itemize}
-  \item \textbf{Grammars} let you say exactly which strings of characters are legal
-    programs, instead of ``it looks about right.'' This is the subject of the next section.
-  \item \textbf{Automata} give you a computational model --- often startlingly simple ---
-    for recognizing whole classes of languages, and let you prove things like ``no regular
-    expression can match balanced parentheses,'' not just observe it empirically.
-  \item \textbf{Type systems} (later in this course) let you state and prove properties
-    like ``this program cannot go wrong at runtime in this specific way,'' before ever
-    running it.
-  \item \textbf{Operational and denotational semantics} (later) let you state precisely
-    what a program \emph{means}, so that ``these two programs are equivalent'' or ``this
-    optimization preserves behavior'' are theorems, not opinions.
-\end{itemize}
-
-The rest of this block builds the first layer of that toolkit: formal languages, grammars,
-and automata. It's the same toolkit compiler and interpreter writers use to describe what a
-valid program looks like, and it's the toolkit you'll use in the next block to actually
-build a lexer and parser for a small language.
+Everything in this section so far was argued in prose. Prose is enough to
+start, but it does not settle disagreements. Whether \texttt{arithmetic\_logic}
+is a program, or whether \texttt{a = b + c} is an error, can only be decided
+with a precise definition of the language. The course builds that definition
+in layers. Grammars say which strings are programs (Section~\ref{sec:grammars}).
+Automata give a model of computation that recognizes them and let us prove
+facts such as ``no finite automaton recognizes balanced parentheses''
+(Sections~\ref{sec:automata} and~\ref{sec:regular}). Type systems and
+semantics, later in the course, state what programs mean and which ones are
+rejected.
 
 \subsection{Exercises}
 
-\begin{itemize}
-  \item Pick two languages you already know reasonably well (e.g.\ Python and C, or
-    JavaScript and Java). For each of the four design tensions in this section, say which
-    language leans which way, with a concrete example from each language backing up your
-    claim.
-  \item Write \texttt{sum\_evens} (or an equivalent small problem of your choice, e.g.\
-    ``reverse a list'' or ``find the maximum'') in a fifth language/paradigm combination not
-    shown above (e.g.\ object-oriented Java using a visitor, or a shell one-liner using
-    \texttt{awk}). Identify which paradigm it is closest to and why.
-  \item MacLennan lists ``readability vs.\ writability'' as one of several competing
-    goals in language design. Find (or construct) one more tension not discussed in this
-    section --- e.g.\ ``orthogonality vs.\ familiarity,'' or ``static checking vs.\
-    fast iteration'' --- and argue for it with an example.
-  \item Is SQL a programming language under the definition given in this section? Is a
-    regular expression? Defend your answer using the syntax/semantics definition, not
-    intuition.
-  \item Think about a language you actively dislike using. Articulate \emph{precisely}
-    which design tension it resolved in a way you disagree with, rather than just saying
-    ``it's ugly'' or ``it's slow.''
-\end{itemize}
+\begin{exercise}
+Write a function that computes the factorial of a number in a language you
+know. Then answer: what does your function do with a negative argument, and
+how would Ada, CLU and Action! handle that case according to
+Table~\ref{tab:languages}?
+\end{exercise}
+
+\paragraph{Solution.} The recursive definition used in these notes returns 1
+for every $n < 2$, so it returns 1 for negative numbers, which is not a
+factorial. Ada declares the parameter as \texttt{Positive}, so a negative
+argument is a type error. CLU declares \texttt{signals (negative)} and raises
+that signal. Action! writes an error code through the pointer \texttt{err}
+(1 for negative, 2 for a result that does not fit) and returns 0.
+
+\begin{exercise}
+Is \texttt{arithmetic\_logic} a program? Answer for the grammar of
+Figure~\ref{fig:arith-logic}, and then for a grammar that also has
+\texttt{+}. In the second case, what else would the language need to check?
+\end{exercise}
+
+\paragraph{Solution.} For the grammar of the figure it is not a program: the
+first statement cannot be derived because there is no rule for \texttt{+}.
+With \texttt{+} in the grammar the text is syntactically a program. The
+language would still need to check that \texttt{foo} is bound (a scope rule),
+that \texttt{3+foo} adds two numbers and that \texttt{x and y} combines two
+booleans (type rules). Whether \texttt{a} needs a declaration depends on the
+language, as the C++ row of Table~\ref{tab:abc} shows.
+
+\begin{exercise}
+For each language in Table~\ref{tab:abc}, say whether the problem with
+\texttt{a = b + c} is found by the syntax or by the semantics, and explain why
+Prolog answers \texttt{false} instead of reporting an error.
+\end{exercise}
+
+\paragraph{Solution.} In all seven languages the line is syntactically valid;
+every response comes from the semantics. Six languages complain about a name
+with no binding, at run time or before it. Prolog reads \texttt{=} as
+unification. The left side is the atom \texttt{a} and the right side is the
+compound term \texttt{+(b, c)}; an atom unifies only with itself or with a
+variable, so unification fails and the query answers \texttt{false}.
+
+\begin{exercise}
+Choose two of Pratt and Zelkowitz's criteria and one language from
+Table~\ref{tab:languages}. Explain how the language satisfies or fails each
+criterion, with a concrete example.
+\end{exercise}
+
+\begin{exercise}
+Pick two languages you know. For each of the four tensions of this section,
+say which way each language leans, with an example from each.
+\end{exercise}

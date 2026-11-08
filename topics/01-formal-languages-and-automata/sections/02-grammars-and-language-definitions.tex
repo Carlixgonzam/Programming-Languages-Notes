@@ -1,335 +1,484 @@
-% !TeX root = ../main.tex
 \section{Grammars and language definitions}
+\label{sec:grammars}
 
-\subsection{Alphabets, strings, and languages}
+A programming language is defined by its syntax and its semantics. This
+section is about the syntactic definition, which is given by a grammar. The
+presentation follows Lee~\cite[Ch.~2]{lee2017foundations}.
 
-Before we can define what a \emph{grammar} is, we need the raw material grammars operate
-on: strings over an alphabet. This is deliberately the most bare-bones layer of the whole
-theory --- no notion of ``meaning'' yet, just symbols and sequences.
+\subsection{Grammars}
 
 \begin{definition}
-An \textbf{alphabet} $\Sigma$ is a finite, nonempty set of symbols. A \textbf{string}
-(or \textbf{word}) over $\Sigma$ is a finite sequence of symbols from $\Sigma$. The
-\textbf{empty string} is written $\varepsilon$, and $\Sigma^*$ denotes the set of
-\emph{all} strings over $\Sigma$ (including $\varepsilon$).
+A \textbf{grammar} is a 4-tuple $\mathcal{G} = \langle N, \Sigma, S_0, P \rangle$ where
+$N$ is a finite set of \textbf{nonterminal} symbols (the syntactic categories),
+$\Sigma$ is a finite set of \textbf{terminal} symbols (the alphabet the syntax is
+made of), disjoint from $N$, $S_0 \in N$ is the \textbf{initial} symbol, and
+$P \subseteq (N \cup \Sigma)^* \times (N \cup \Sigma)^*$ is a finite set of
+\textbf{production rules}, written $\alpha \to \beta$, where $\alpha$ contains
+at least one nonterminal.
 \end{definition}
 
-For example, if $\Sigma = \{0, 1\}$, then $\varepsilon, 0, 1, 01, 101, 0011 \in \Sigma^*$.
-Note $\Sigma^*$ is always infinite (as long as $\Sigma$ is nonempty), even though $\Sigma$
-itself is finite --- this is the first hint of why we need finite machinery (grammars,
-automata) to describe infinite sets of strings.
+The production rules define how the words of the language are formed. Most
+grammars in this course have a single nonterminal on the left of every rule;
+those are the context-free grammars of Section~\ref{sec:cfl}. The general form
+is stated here so that the Chomsky hierarchy at the end of the section makes
+sense.
+
+\subsection{Alphabets, words and languages}
 
 \begin{definition}
-A \textbf{language} over $\Sigma$ is any subset $L \subseteq \Sigma^*$.
+An \textbf{alphabet} $\Sigma$ is a finite, nonempty set of symbols. A
+\textbf{word} of length $m$ over $\Sigma$ is a sequence of $m$ symbols of
+$\Sigma$, written $\omega = \sigma_1 \sigma_2 \cdots \sigma_m$, with
+$|\omega| = m$. The \textbf{empty word}, of length 0, is written $\lambda$ (or
+$\varepsilon$). $\Sigma^*$ is the set of all words over $\Sigma$, including
+$\lambda$.
 \end{definition}
 
-That's a deceptively simple definition, and it's worth sitting with it: a language is just
-a set of strings, full stop. ``The set of syntactically valid Python programs'' is a
-language in this sense (over the alphabet of Unicode characters, or ASCII if you like).
-So is ``the set of strings with an equal number of \texttt{a}'s and \texttt{b}'s,'' and so
-is ``the set of binary strings representing even numbers.'' Programming languages are
-languages in the formal sense, plus a semantics on top --- which is exactly the layering
-from the previous section.
-
-\subsubsection{Operations on languages}
-
-Since languages are sets of strings, set operations (union, intersection, complement) apply
-directly. But there are two operations specific to strings/languages that are worth
-naming explicitly, because they show up constantly in grammars, regular expressions, and
-automata:
-
-\begin{itemize}
-  \item \textbf{Concatenation.} For strings $x, y$, $xy$ is $x$ followed by $y$. For
-    languages, $L_1 L_2 = \{ xy \mid x \in L_1, y \in L_2 \}$ --- every string formed by
-    gluing a string from $L_1$ to a string from $L_2$.
-  \item \textbf{Kleene star.} $L^* = \bigcup_{i \ge 0} L^i$, where $L^0 = \{\varepsilon\}$
-    and $L^{i+1} = L \cdot L^i$. In words: zero or more strings from $L$, concatenated in
-    any combination. $\Sigma^*$ itself is exactly the Kleene star of $\Sigma$ viewed as a
-    language of length-1 strings.
-\end{itemize}
-
-\begin{example}
-Let $\Sigma = \{a, b\}$, $L_1 = \{a, ab\}$, $L_2 = \{b, \varepsilon\}$. Then
-$L_1 L_2 = \{ab, a, abb, ab\} = \{a, ab, abb\}$ (as a set, duplicates collapse). And
-$L_1^* $ contains $\varepsilon, a, ab, aa, aab, aba, \dots$ --- every string you can build by
-gluing together zero or more copies of $a$ or $ab$.
-\end{example}
-
-Union, concatenation, and Kleene star are the three operations regular expressions are
-built from (file 04). Keep them in mind.
-
-\subsection{Grammars: generating languages instead of just naming them}
-
-Set-builder notation (``$L = \{a^n b^n \mid n \ge 0\}$'') is fine for tiny examples, but it
-doesn't give you an algorithm for anything --- you can't hand it to a machine and ask
-``is this string in $L$?'' or ``generate me a string in $L$.'' A \textbf{grammar} is a
-finite, mechanical description of a (possibly infinite) language: a finite set of rewriting
-rules that, applied repeatedly, generate exactly the strings of the language.
+The lecture uses three alphabets: the Spanish letters $\{a, b, \dots, z\}$, the
+digits $\{0, 1, \dots, 9\}$ and a set of emoji. \texttt{hola} is a word of
+length 4 over the first one, and \texttt{iokdafpodsaf} is a word of length 12
+over the same alphabet even though it means nothing in Spanish. A word only
+needs its symbols to come from the alphabet. Whether it belongs to a language
+is a separate question.
 
 \begin{definition}
-A \textbf{grammar} is a 4-tuple $G = (N, \Sigma, P, S)$ where:
-\begin{itemize}
-  \item $N$ is a finite set of \textbf{nonterminal} symbols (syntactic categories, like
-    ``expression'' or ``statement''),
-  \item $\Sigma$ is a finite set of \textbf{terminal} symbols (the alphabet of the actual
-    strings we're generating), disjoint from $N$,
-  \item $P$ is a finite set of \textbf{production rules}, each of the form $\alpha \to \beta$
-    with $\alpha \in (N \cup \Sigma)^*$ containing at least one nonterminal, and
-    $\beta \in (N \cup \Sigma)^*$,
-  \item $S \in N$ is the \textbf{start symbol}.
-\end{itemize}
+A \textbf{language} over $\Sigma$ is a set of words $L \subseteq \Sigma^*$. When
+$L$ is given by a grammar, it contains the words that the production rules
+can generate.
 \end{definition}
 
-The general form above (arbitrary $\alpha$ on the left) is the \emph{unrestricted} grammar,
-the top of the Chomsky hierarchy we'll get to shortly. Most of what we do in this course
-restricts $\alpha$ to be a single nonterminal, giving context-free grammars (file 05); this
-section still states things at the general level so you see where the restriction comes
-from.
-
-\subsubsection{Derivations}
-
-A grammar generates strings by \textbf{derivation}: start from $S$, and repeatedly replace
-some substring matching the left side of a rule with the rule's right side, until only
-terminals remain.
-
-\begin{definition}
-Given $\alpha \to \beta \in P$, and a string $\gamma \alpha \delta$, we say
-$\gamma \alpha \delta \Rightarrow \gamma \beta \delta$ (``$\gamma\alpha\delta$
-\textbf{derives} $\gamma\beta\delta$ in one step''). We write $\Rightarrow^*$ for zero or
-more derivation steps. Any string reachable from $S$ via $\Rightarrow^*$ (including $S$
-itself) is called a \textbf{sentential form}. The \textbf{language generated by} $G$ is
+Two examples from the lecture. The language of even binary numbers is
 \[
-  L(G) = \{ w \in \Sigma^* \mid S \Rightarrow^* w \}.
+  L_{\mathit{even}} = \{ \sigma_1 \cdots \sigma_m \in \{0,1\}^* \mid m \ge 1,\ \sigma_m = 0 \},
 \]
-\end{definition}
+the binary words that end in 0. The language $\{\lambda\}$ has exactly one
+word, the empty one. It is different from the empty language $\emptyset$,
+which has no words at all. The empty word belongs to $\Sigma^*$ for every
+alphabet, but a particular language may or may not contain it: $\lambda \in
+\{\lambda\}$, while $\lambda \notin L_{\mathit{even}}$.
 
-A sentential form may still contain nonterminals (it's a snapshot mid-derivation); a string
-in $L(G)$ is a sentential form with \emph{no} nonterminals left. When there's a choice of
-which nonterminal to expand next, two conventions matter for later parsing work:
-
-\begin{itemize}
-  \item a \textbf{leftmost derivation} always expands the leftmost nonterminal in the
-    current sentential form,
-  \item a \textbf{rightmost derivation} always expands the rightmost one.
-\end{itemize}
-
-These give (in general) different sequences of sentential forms for the same string, even
-though the final string and the shape of the parse tree are the same. Leftmost derivations
-correspond to top-down parsing; rightmost derivations (in reverse) correspond to bottom-up
-parsing --- more on that in the next block.
-
-\subsubsection{A worked example: arithmetic expressions}
-
-Let's generate simple arithmetic expressions over identifiers, \texttt{+}, and \texttt{*},
-with parentheses, and actually derive a string.
-
-\[
-\begin{aligned}
-  N &= \{E\}, \qquad \Sigma = \{ \texttt{id}, +, *, (, ) \}, \qquad S = E \\
-  P: \quad & E \to E + E \\
-           & E \to E * E \\
-           & E \to (E) \\
-           & E \to \texttt{id}
-\end{aligned}
-\]
-
-\begin{example}
-Leftmost derivation of $\texttt{id} + \texttt{id} * \texttt{id}$:
-\[
-\begin{array}{lll}
-E & \Rightarrow E + E & (\text{rule } E \to E+E) \\
-  & \Rightarrow \texttt{id} + E & (\text{rule } E \to \texttt{id, leftmost } E) \\
-  & \Rightarrow \texttt{id} + E * E & (\text{rule } E \to E*E) \\
-  & \Rightarrow \texttt{id} + \texttt{id} * E & (\text{rule } E \to \texttt{id}) \\
-  & \Rightarrow \texttt{id} + \texttt{id} * \texttt{id} & (\text{rule } E \to \texttt{id})
-\end{array}
-\]
-Every intermediate line ($E+E$, $\texttt{id}+E$, $\texttt{id}+E*E$, \dots) is a sentential
-form. The last line has no nonterminals left, so it's a string in $L(G)$.
-\end{example}
+\paragraph{Operations on languages.} Since languages are sets, union,
+intersection and complement apply directly. Two more operations come from
+words. The \textbf{concatenation} of $L_1$ and $L_2$ is
+$L_1 L_2 = \{ xy \mid x \in L_1,\ y \in L_2 \}$. The \textbf{Kleene star} of
+$L$ is $L^* = \bigcup_{i \ge 0} L^i$, where $L^0 = \{\lambda\}$ and
+$L^{i+1} = L L^i$. With $L_1 = \{a, ab\}$ and $L_2 = \{b, \lambda\}$ we get
+$L_1 L_2 = \{ab, a, abb\}$ (the word $ab$ appears twice and counts once), and
+$L_1^*$ contains $\lambda, a, ab, aa, aab, aba, \dots$. Union, concatenation
+and star are the three operations behind regular expressions
+(Section~\ref{sec:regular}).
 
 \subsection{BNF and EBNF}
 
-In practice, nobody writes grammars as bare tuples $(N, \Sigma, P, S)$ --- you write the
-production rules in \textbf{Backus-Naur Form} (BNF) or its extended version, \textbf{EBNF},
-and everything else ($N$, $\Sigma$, $S$) is inferred from context (nonterminals are
-angle-bracketed or capitalized; the start symbol is the one on the left of the first rule,
-by convention).
+Writing grammars as 4-tuples is not practical. John Backus and Peter Naur
+defined a notation for the production rules when they specified ALGOL 60, and
+it is still the standard way to write grammars. In \textbf{BNF}:
+\begin{itemize}
+  \item production rules are written with \texttt{::=};
+  \item terminal symbols are written between quotes;
+  \item nonterminals are written without quotes;
+  \item rules for the same nonterminal are grouped with \texttt{|}.
+\end{itemize}
+For example, \lstinline{S ::= "a" S "b" | "ab"} generates $ab$, $aabb$,
+$aaabbb$ and so on. The extended form, \textbf{EBNF}, adds the operators of
+regular expressions: parentheses group symbols, \texttt{*} means zero or more
+repetitions of the previous item, \texttt{+} one or more, and \texttt{?} makes
+it optional.
 
-BNF is exactly the productions from above, written with \texttt{::=} instead of $\to$ and
-\texttt{|} to combine right-hand sides that share a left-hand side:
+EBNF does not generate more languages than BNF. Every repetition can be
+replaced by a new nonterminal with a recursive rule. In the lecture this is
+shown with the grammar of BNF written in BNF: rules such as
+\lstinline{opt-whitespace ::= " " opt-whitespace | ""} use recursion where EBNF
+would write \lstinline{" "*}.
 
+\subsection{Concrete syntax}
+
+A grammar defines the \textbf{concrete syntax} of a language: the exact form
+programs take when written. Ada's factorial (Section~\ref{sec:overview}), a
+UML class diagram and a Scratch program have very different concrete syntax.
+
+The lecture asks for a BNF definition of lists from this description: the
+empty list \texttt{[]} is a list, and a number followed by \texttt{|} and a list
+is a list. The answer is
 \begin{lstlisting}
-<expr> ::= <expr> "+" <expr>
-         | <expr> "*" <expr>
-         | "(" <expr> ")"
-         | "id"
+LIST   ::= "[" "]" | NUMBER "|" LIST
+NUMBER ::= ("0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")+
 \end{lstlisting}
+Table~\ref{tab:lists} checks the candidates from the lecture against the
+grammar. Only the first two can be derived. A list always ends with
+\texttt{[]}, the only thing to the left of a \texttt{|} is a number, and the
+grammar has no brackets around elements, no commas, no signs and no strings.
 
-EBNF adds regular-expression-style operators (\texttt{?} for optional, \texttt{*} for zero
-or more, \texttt{+} for one or more, grouping with parentheses) purely as \emph{notational
-sugar} --- every EBNF rule can be mechanically rewritten into an equivalent set of plain BNF
-rules, usually by introducing an extra nonterminal. Here's a small config-language grammar
-in EBNF, the kind you'd actually reach for in a real parser:
-
-\begin{lstlisting}
-config     ::= entry*
-entry      ::= KEY '=' value NEWLINE
-value      ::= STRING | NUMBER | list
-list       ::= '[' (value (',' value)*)? ']'
-\end{lstlisting}
-
-The \texttt{entry*} says ``zero or more entries,'' and \texttt{(',' value)*} says ``zero or
-more comma-separated repetitions.'' Written in plain BNF this would need two extra helper
-nonterminals (say \texttt{entries} and \texttt{value\_list}) just to express the repetition
-recursively. EBNF is strictly more convenient to write and read; it generates exactly the
-same class of languages as BNF, nothing more.
-
-\subsection{The Chomsky hierarchy: a map of what's ahead}
-
-Not all grammars are equally hard to parse, and it turns out there's a clean four-level
-classification, due to Chomsky, based purely on the shape of the allowed production rules.
-This is the map for the rest of this course (and the next block): each level corresponds to
-a different class of recognizing machine, with different computational cost.
-
-\begin{center}
-\begin{tabular}{p{2.6cm}p{5cm}p{4.3cm}}
-\hline
-\textbf{Type} & \textbf{Restriction on rules} & \textbf{Recognized by} \\
-\hline
-Type 3 --- Regular & $A \to a$ or $A \to aB$ (right-linear), $A, B \in N$, $a \in \Sigma$ &
-  Finite automata (file 03) \\
-Type 2 --- Context-free & $A \to \beta$, single nonterminal on the left &
-  Pushdown automata (file 05) \\
-Type 1 --- Context-sensitive & $\alpha A \beta \to \alpha \gamma \beta$, $|\gamma| \ge 1$ &
-  Linear-bounded automata \\
-Type 0 --- Recursively enumerable & no restriction &
-  Turing machines \\
-\hline
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l c l}
+  \toprule
+  Word & In \texttt{LIST}? & Reason \\
+  \midrule
+  \texttt{3 | 14 | []}                        & yes & two numbers, then the empty list \\
+  \texttt{[]}                                 & yes & the base rule \\
+  \texttt{[-7, 3, 14]}                        & no  & \texttt{-} and \texttt{,} are not terminals of the grammar \\
+  \texttt{[1 | "hello" | 3.14 | True]}        & no  & \texttt{"hello"}, \texttt{3.14} and \texttt{True} are not numbers \\
+  \texttt{1 | [] | 7 | 9 | 3 | []}            & no  & after \texttt{[]} nothing else can follow \\
+  \texttt{1 | [] | [7 | 9 | 3 ]}              & no  & same, and \texttt{[7 | 9 | 3 ]} does not end in \texttt{[]} \\
+  \bottomrule
 \end{tabular}
-\end{center}
+\caption{The list examples of the lecture.}
+\label{tab:lists}
+\end{table}
 
-Each level is a strict subset of the next: regular $\subsetneq$ context-free $\subsetneq$
-context-sensitive $\subsetneq$ recursively enumerable. Every regular language is
-context-free (just never use more than one nonterminal ``in flight''), but not every
-context-free language is regular (we'll \emph{prove} $\{a^n b^n \mid n \ge 0\}$ isn't
-regular in file 04, and it's a totally ordinary context-free language). Most of a
-programming language's syntax lives at the context-free level; the things that don't ---
-``this variable must be declared before use,'' ``this function call must have the right
-number of arguments'' --- are context-sensitive \emph{in spirit} but are essentially never
-handled with a real context-sensitive grammar in practice. Instead, they are pushed into a
-separate semantic-analysis phase after parsing (next block), precisely because
-context-sensitive grammars are a nightmare to parse efficiently. This is the same move we
-already saw in the DSL block: keep the grammar simple, push hard constraints to a later
-phase.
+The same grammar in Rascal, where \texttt{lexical} defines the shape of
+numbers, \texttt{layout} says that spaces may appear between symbols, and each
+alternative gets a label:
+\codelines{Rascal}{rascal/src/Lists.rsc}{6}{12}
+The module \texttt{Lists.rsc} has one test per row of Table~\ref{tab:lists}.
+
+\subsection{Abstract syntax}
+
+The \textbf{abstract syntax} of a language is a high-level representation of
+its programs that keeps the structure and drops the notation. It does not
+depend on the concrete syntax: the same abstract syntax could be written with
+brackets, with indentation or with blocks. Figure~\ref{fig:list-trees} shows
+the difference for the list \texttt{3 | 14 | []}. The parse tree has a leaf for
+every symbol of the text, including \texttt{|}, \texttt{[} and \texttt{]}. The
+abstract syntax tree (AST) only keeps what matters: a list built from 3, then
+14, then the empty list.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  arbol,
+  [LIST
+    [NUMBER [3]] [|]
+    [LIST
+      [NUMBER [14]] [|]
+      [LIST [{[}] [{]}]]
+    ]
+  ]
+\end{forest}
+\hspace{2cm}
+\begin{forest}
+  arbol,
+  [cons
+    [3]
+    [cons
+      [14]
+      [empty]
+    ]
+  ]
+\end{forest}
+\caption{Parse tree (left) and abstract syntax tree (right) of \texttt{3 | 14 | []}.}
+\label{fig:list-trees}
+\end{figure}
+
+\textbf{Algebraic data types} are the usual way to define an abstract syntax.
+A type is defined by its constructors, and each constructor says which parts
+a node has. In Rascal:
+\codelines{Rascal}{rascal/src/Lists.rsc}{14}{19}
+\texttt{implode} turns a parse tree into a value of the data type, matching
+each labeled alternative of the grammar with the constructor of the same name.
+For \texttt{3 | 14 | []} it returns \texttt{cons(3, cons(14, empty()))}.
+
+The lecture gives the abstract syntax of a small expression language with
+this grammar:
+\begin{lstlisting}
+expr    ::= literal | unary | binary
+unary   ::= "¬" expr
+binary  ::= expr "*" expr | expr "/" expr | expr "+" expr | expr "-" expr
+literal ::= "0" .. "9" | "true" | "false"
+\end{lstlisting}
+and this data type:
+\codelines{Rascal}{rascal/src/Expr.rsc}{3}{12}
+(The slide declares the right operand as \texttt{Express rhs}; the type is
+\texttt{Expr}. It also lists a constructor \texttt{var(Id id)}, which has no
+rule in the grammar above.)
+
+Of the three inputs \texttt{3 * 4}, \texttt{¬ false + true} and
+\texttt{1 + 1 + 1}, all three follow the grammar. The second is not a
+well-formed program: it adds a boolean (\texttt{¬ false}) to another boolean.
+The grammar cannot see this, because \texttt{expr} does not distinguish
+numbers from booleans. A function over the abstract syntax can:
+\codelines{Rascal}{rascal/src/Expr.rsc}{14}{20}
+This function is a first, very small type checker. Type systems are the
+subject of a later block.
+
+\subsection{A complete example: a spreadsheet language}
+\label{sec:spreadsheet}
+
+The lecture builds a grammar for spreadsheet formulas from this description.
+A spreadsheet is made of cells, and a cell contains a value, a reference to
+another cell or a formula. In A1-style addressing a cell is referenced by
+column and row, as in \texttt{D7}. A reference is relative or absolute; a
+\texttt{\$} in front of a part makes that part absolute, so \texttt{\$D7} fixes
+the column and leaves the row relative. Functions operate on groups of cells
+given as ranges: \texttt{SUM(A1:A5)} adds \texttt{A1} through \texttt{A5}.
+
+The first step is to collect the symbols. From inputs such as
+\texttt{=SUM(A1:A5)}, \texttt{=B7 + 3} and \texttt{=AVERAGE(AB\$13, 9, 3.14, Z1480)}:
+\[
+\Sigma = \{\texttt{=}, \texttt{\$}, \texttt{*}, \texttt{+}, \texttt{/}, \texttt{(}, \texttt{)},
+  \texttt{-}, \texttt{:}, \texttt{,}, \texttt{.}, \texttt{SUM}, \texttt{AVERAGE}, \texttt{MOD},
+  \texttt{0} .. \texttt{9}, \texttt{A} .. \texttt{Z}\}.
+\]
+The second step is to name the categories of elements: values, formulas
+(simple, compound, enumerated, range), references (relative and fixed),
+functions, operations, digits and letters. These become the nonterminals. The
+third step is the production rules:
+\begin{lstlisting}
+ss                 ::= value | formula
+formula            ::= "=" internal-formula
+internal-formula   ::= value | ref | simple-formula
+                     | compound-formula | enumerated-formula
+simple-formula     ::= internal-formula operation internal-formula
+compound-formula   ::= enumerated-formula | function "(" ref ":" ref ")"
+enumerated-formula ::= function "(" (ref | value) ("," (ref | value))* ")"
+ref                ::= "$"? letter letter? "$"? digit digit?
+operation          ::= "+" | "-" | "*" | "/"
+function           ::= "MOD" | "SUM" | "AVERAGE"
+value              ::= digit+
+letter             ::= "A" .. "Z"
+digit              ::= "0" .. "9"
+\end{lstlisting}
+The slides use \texttt{operation} without giving its rule; the rule above
+takes the operators from $\Sigma$.
+
+Here is a derivation of \texttt{=B7 + 3}. Each step replaces one nonterminal
+with the right side of one of its rules:
+\[
+\begin{array}{l l}
+\mathit{ss} & \Rightarrow \mathit{formula} \\
+& \Rightarrow \texttt{=}\ \mathit{internal} \\
+& \Rightarrow \texttt{=}\ \mathit{simple} \\
+& \Rightarrow \texttt{=}\ \mathit{internal}\ \mathit{operation}\ \mathit{internal} \\
+& \Rightarrow \texttt{=}\ \mathit{ref}\ \mathit{operation}\ \mathit{internal} \\
+& \Rightarrow \texttt{=}\ \mathit{ref}\ \texttt{+}\ \mathit{internal} \\
+& \Rightarrow \texttt{=}\ \mathit{ref}\ \texttt{+}\ \mathit{value} \\
+& \Rightarrow \texttt{=}\ \mathit{letter}\ \mathit{digit}\ \texttt{+}\ \mathit{value} \\
+& \Rightarrow \texttt{=}\ \texttt{B}\ \mathit{digit}\ \texttt{+}\ \mathit{value} \\
+& \Rightarrow \texttt{=}\ \texttt{B7}\ \texttt{+}\ \mathit{value} \\
+& \Rightarrow \texttt{=}\ \texttt{B7}\ \texttt{+}\ \mathit{digit} \\
+& \Rightarrow \texttt{=}\ \texttt{B7}\ \texttt{+}\ \texttt{3}
+\end{array}
+\]
+(\textit{internal} and \textit{simple} abbreviate \textit{internal-formula} and
+\textit{simple-formula}.) Figure~\ref{fig:b7} shows the same derivation as a
+tree.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=3mm, l sep=4mm, align=center},
+  [ss
+    [formula
+      [\texttt{=}]
+      [internal-formula
+        [simple-formula
+          [internal-formula [ref [letter [\texttt{B}]] [digit [\texttt{7}]]]]
+          [operation [\texttt{+}]]
+          [internal-formula [value [digit [\texttt{3}]]]]
+        ]
+      ]
+    ]
+  ]
+\end{forest}
+\caption{Derivation tree of \texttt{=B7 + 3} in the spreadsheet grammar.}
+\label{fig:b7}
+\end{figure}
+
+The grammar in Rascal follows the BNF almost line by line. Letters, digits,
+values and references are \texttt{lexical} because no spaces are allowed
+inside them:
+\codelines{Rascal}{rascal/src/Spreadsheet.rsc}{5}{31}
+The tests in \texttt{Spreadsheet.rsc} check every input of the lecture,
+including the ones in the exercises below.
+
+\subsection{Derivations}
+
+A grammar generates words by derivation. Start from $S_0$ and repeatedly
+replace a nonterminal with the right side of one of its rules, until only
+terminals remain.
+
+\begin{definition}
+If $\alpha \to \beta \in P$, then $\gamma \alpha \delta \Rightarrow \gamma \beta
+\delta$ (one derivation step). $\Rightarrow^*$ is zero or more steps. A
+\textbf{sentential form} is any string reachable from $S_0$, and the language
+generated by $\mathcal{G}$ is
+$L(\mathcal{G}) = \{ \omega \in \Sigma^* \mid S_0 \Rightarrow^* \omega \}$.
+\end{definition}
+
+When a sentential form has several nonterminals there is a choice of which one
+to replace. A \textbf{leftmost derivation} always replaces the leftmost
+nonterminal and a \textbf{rightmost derivation} the rightmost one. The
+derivation of \texttt{=B7 + 3} above is leftmost. Both orders build the same
+tree; they matter for parsing, where top-down parsers follow leftmost
+derivations and bottom-up parsers follow rightmost derivations in reverse
+(Section~\ref{sec:cfl} and the next block).
+
+\subsection{The Chomsky hierarchy}
+
+Grammars are classified by the shape of their rules
+(Table~\ref{tab:chomsky}). Each class is strictly contained in the next one
+(Figure~\ref{fig:chomsky}), and each corresponds to a kind of machine that
+recognizes it.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l}
+  \toprule
+  Type & Rules & Recognized by \\
+  \midrule
+  3, regular            & $A \to a$, $A \to aB$ (or $A \to Ba$)                     & finite automata (Section~\ref{sec:automata}) \\
+  2, context-free       & $A \to \beta$                                               & pushdown automata (Section~\ref{sec:cfl}) \\
+  1, context-sensitive  & $\alpha A \beta \to \alpha \gamma \beta$, $\gamma \ne \lambda$ & linear-bounded automata \\
+  0, unrestricted       & $\alpha \to \beta$                                          & Turing machines \\
+  \bottomrule
+\end{tabular}
+\caption{The Chomsky hierarchy. $A, B \in N$, $a \in \Sigma$, $\alpha, \beta, \gamma \in (N \cup \Sigma)^*$.}
+\label{tab:chomsky}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[lab/.style={anchor=north west, font=\small, inner sep=4pt}]
+  \draw[rounded corners] (-4.5,-2.0) rectangle (4.5,2.0);
+  \draw[rounded corners] (-4.0,-1.7) rectangle (4.0,1.4);
+  \draw[rounded corners] (-3.5,-1.4) rectangle (3.5,0.8);
+  \draw[rounded corners] (-3.0,-1.1) rectangle (3.0,0.2);
+  \node[lab] at (-4.5,2.0) {Type 0: unrestricted};
+  \node[lab] at (-4.0,1.4) {Type 1: context-sensitive};
+  \node[lab] at (-3.5,0.8) {Type 2: context-free};
+  \node[font=\small] at (0,-0.45) {Type 3: regular};
+\end{tikzpicture}
+\caption{Each class of languages contains the one below it.}
+\label{fig:chomsky}
+\end{figure}
+
+The list grammar and the spreadsheet grammar are context-free. Most of the
+syntax of a programming language is context-free. Rules such as ``a variable
+must be declared before it is used'' are not, and in practice they are checked
+after parsing, in semantic analysis, instead of with a context-sensitive
+grammar.
 
 \subsection{Ambiguity}
 
 \begin{definition}
-A grammar $G$ is \textbf{ambiguous} if some string $w \in L(G)$ has two distinct
-\emph{parse trees} (equivalently, two distinct leftmost derivations).
+A grammar is \textbf{ambiguous} if some word of its language has two different
+derivation trees.
 \end{definition}
 
-Ambiguity is not a small cosmetic issue --- it means the grammar alone doesn't determine the
-structure of the program, so a compiler would have no principled way to decide what a
-program means. Two classic examples are worth internalizing because they show up
-constantly in real language design.
+The spreadsheet grammar is ambiguous. In \texttt{=1 + 2 * 3}, the rule
+\begin{lstlisting}
+simple-formula ::= internal-formula operation internal-formula
+\end{lstlisting}
+can split the formula at the \texttt{+} or at the \texttt{*}
+(Figure~\ref{fig:ss-amb}). The two trees group the operations differently,
+and if the formula were evaluated they would give 7 and 9. The Rascal tests
+confirm that the parser finds both trees. Section~\ref{sec:cfl} shows how to
+rewrite a grammar so that precedence and associativity are decided by the
+rules.
 
-\subsubsection{Expression precedence}
-
-Take a sloppier version of the arithmetic grammar from before, without separating addition
-and multiplication into different nonterminals:
-
-\[
-E \to E + E \mid E * E \mid \texttt{id}
-\]
-
-The string $\texttt{id} + \texttt{id} * \texttt{id}$ has two different leftmost derivations,
-corresponding to two different parse trees:
-
-\begin{center}
-\begin{tikzpicture}[level distance=1.1cm, sibling distance=1.6cm, every node/.style={font=\small}]
-\node {$E$}
-  child { node {$E$} child {node {id}} }
-  child { node {$+$} }
-  child { node {$E$}
-    child { node {$E$} child {node {id}} }
-    child { node {$*$} }
-    child { node {$E$} child {node {id}} }
-  };
-\end{tikzpicture}
-\hspace{1.5cm}
-\begin{tikzpicture}[level distance=1.1cm, sibling distance=1.6cm, every node/.style={font=\small}]
-\node {$E$}
-  child { node {$E$}
-    child { node {$E$} child {node {id}} }
-    child { node {$+$} }
-    child { node {$E$} child {node {id}} }
-  }
-  child { node {$*$} }
-  child { node {$E$} child {node {id}} };
-\end{tikzpicture}
-\end{center}
-
-The left tree groups as $\texttt{id} + (\texttt{id} * \texttt{id})$ (multiplication binds
-tighter, the reading every programmer expects). The right tree groups as
-$(\texttt{id} + \texttt{id}) * \texttt{id}$. Same string, two different computed values
-if you evaluated it, and the grammar itself gives no reason to prefer one over the other.
-
-\textbf{The fix} is to encode precedence directly in the grammar, using one nonterminal per
-precedence level, lowest precedence at the top:
-
-\[
-\begin{aligned}
-E &\to E + T \mid T \\
-T &\to T * F \mid F \\
-F &\to (E) \mid \texttt{id}
-\end{aligned}
-\]
-
-Now multiplication (built from $T$) can only ever appear \emph{nested inside} an addition
-(built from $E$), never the other way around, so the grammar itself forces $*$ to bind
-tighter. This grammar is unambiguous, and it's exactly the pattern real language grammars
-use for arithmetic expressions.
-
-\subsubsection{Dangling else}
-
-The other classic case:
-
-\[
-S \to \mathbf{if}\ b\ \mathbf{then}\ S \mid \mathbf{if}\ b\ \mathbf{then}\ S\ \mathbf{else}\ S \mid \dots
-\]
-
-The string $\mathbf{if}\ b_1\ \mathbf{then}\ \mathbf{if}\ b_2\ \mathbf{then}\ S_1\ \mathbf{else}\ S_2$
-is ambiguous: the $\mathbf{else}$ could bind to the \emph{inner} $\mathbf{if}$ (the usual
-convention, ``else matches the nearest unmatched if'') or to the \emph{outer} one. Both are
-valid parse trees under this grammar. We'll come back to this exact example in file 05 and
-fix it properly by restructuring the grammar to distinguish ``matched'' from ``unmatched''
-if-statements as separate nonterminals --- for now, just notice that the informal rule
-(``nearest unmatched if'') that most languages use is a \emph{disambiguation convention}
-bolted on top of an ambiguous grammar, rather than a property of an unambiguous one, unless
-you do the grammar surgery.
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=2mm, l sep=3mm},
+  [simple
+    [1] [+]
+    [simple [2] [*] [3]]
+  ]
+\end{forest}
+\hspace{2cm}
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=2mm, l sep=3mm},
+  [simple
+    [simple [1] [+] [2]]
+    [*] [3]
+  ]
+\end{forest}
+\caption{Two trees for \texttt{=1 + 2 * 3} (only the \texttt{simple-formula} nodes are shown).}
+\label{fig:ss-amb}
+\end{figure}
 
 \subsection{Exercises}
 
+\begin{exercise}
+For each word, decide whether the spreadsheet grammar generates it. If it
+does not, find where the derivation gets stuck.
+\texttt{=MOD(M9,L)}, \texttt{A5}, \texttt{=A3 ++ 7},
+\texttt{=AVERAGE(A1:A5)SUM(A1:A5)}, \texttt{=SUM(A1,A2,)}, \texttt{=3A + B5}.
+\end{exercise}
+
+\paragraph{Solution.} None of them is in the language.
 \begin{itemize}
-  \item Let $\Sigma = \{a, b\}$, $L_1 = \{\varepsilon, a\}$, $L_2 = \{b, bb\}$. Write out
-    $L_1 L_2$ and the first four ``levels'' of $L_1^*$ (strings obtainable from 0, 1, 2,
-    and 3 concatenated copies of elements of $L_1$).
-  \item Give a grammar $G$ (4-tuple, or BNF) that generates
-    $L = \{a^n b^n \mid n \ge 0\}$. Give a leftmost derivation of $aabb$ using your grammar,
-    showing every sentential form.
-  \item Convert the EBNF config-language grammar in this section into plain BNF (no
-    \texttt{*}, \texttt{?}, or grouping), introducing helper nonterminals as needed.
-  \item Where does $L = \{a^n b^n \mid n \ge 0\}$ sit in the Chomsky hierarchy? Is it
-    regular? (You'll be able to prove this rigorously after file 04 --- for now, just give
-    your best argument for why no DFA with finitely many states could track $n$ for
-    arbitrarily large $n$.)
-  \item Take the ambiguous expression grammar $E \to E+E \mid E*E \mid \texttt{id}$ from
-    this section and show a string with \emph{three} distinct parse trees (hint: you'll
-    need at least two operators of the same kind).
-  \item The dangling-else grammar above is ambiguous. Sketch (in prose, you don't need the
-    full production rules) how you'd introduce two nonterminals --- one for ``statements
-    where every if has a matching else'' and one for ``statements that may have a dangling
-    if'' --- to remove the ambiguity. We'll do this properly in file 05.
+  \item \texttt{=MOD(M9,L)}. The lecture first tries
+    \texttt{compound-formula}:
+    \[
+      \ldots \Rightarrow \texttt{= function(ref:ref)}
+      \Rightarrow \texttt{= MOD(ref:ref)} \Rightarrow \texttt{= MOD(M9:ref)}.
+    \]
+    The next symbol of the word is \texttt{,}, not \texttt{:}, so this path
+    fails. With \texttt{enumerated-formula} the first argument works, but the
+    second, \texttt{L}, is neither a \texttt{ref} (a reference needs at least
+    one digit) nor a \texttt{value}.
+  \item \texttt{A5}. Without \texttt{=} it can only be a \texttt{value}, and a
+    value is made of digits.
+  \item \texttt{=A3 ++ 7}. \texttt{simple-formula} puts exactly one
+    \texttt{operation} between two formulas, and \texttt{+7} is not a formula.
+  \item \texttt{=AVERAGE(A1:A5)SUM(A1:A5)}. Two formulas next to each other
+    need an \texttt{operation} between them.
+  \item \texttt{=SUM(A1,A2,)}. In \texttt{enumerated-formula} every comma must
+    be followed by a reference or a value.
+  \item \texttt{=3A + B5}. \texttt{3A} is not a value (it has a letter) and not
+    a reference (a reference starts with a letter).
 \end{itemize}
+
+\begin{exercise}
+Which of the inputs on the ``Language symbols'' slide are in the language?
+\texttt{=SUM(A1:A5)}, \texttt{=B7 + 3}, \texttt{=AVERAGE(AB\$13, 9, 3.14, Z1480)},
+\texttt{9}, \texttt{=mod(M9,L8)}, \texttt{=SUM(A1;A5) + 3}.
+\end{exercise}
+
+\paragraph{Solution.} \texttt{=SUM(A1:A5)}, \texttt{=B7 + 3} and \texttt{9} are.
+The \texttt{AVERAGE} formula is not: \texttt{value ::= digit+} has no decimal
+point, so \texttt{3.14} cannot be derived, and \texttt{ref} allows at most two
+digits, so \texttt{Z1480} cannot either. The symbol \texttt{.} is in $\Sigma$,
+but no rule uses it. To accept the formula, \texttt{value} would need an
+optional fractional part and \texttt{ref} more digits. \texttt{=mod(M9,L8)}
+fails because function names are uppercase, and \texttt{=SUM(A1;A5) + 3}
+because \texttt{;} is not in $\Sigma$.
+
+\begin{exercise}
+Write a BNF grammar for lists whose elements may be numbers or lists, so that
+\texttt{1 | [] | [7 | 9 | 3 | []]} is a list. Give the derivation tree of
+\texttt{1 | [] | []}.
+\end{exercise}
+
+\paragraph{Solution.} An element can be a number or a list in brackets:
+\begin{lstlisting}
+LIST    ::= "[" "]" | ELEMENT "|" LIST
+ELEMENT ::= NUMBER | "[" LIST "]" | "[" "]"
+\end{lstlisting}
+The alternative \lstinline{"[" "]"} in \texttt{ELEMENT} is the empty list used as
+an element. In \texttt{1 | [] | []} the root is \texttt{LIST} with children
+\texttt{ELEMENT} (deriving \texttt{1}), \texttt{|} and \texttt{LIST}; that
+\texttt{LIST} has children \texttt{ELEMENT} (deriving \texttt{[]}), \texttt{|} and
+\texttt{LIST} (deriving the final \texttt{[]}).
+
+\begin{exercise}
+Give a grammar for $\{a^n b^n \mid n \ge 0\}$ and a leftmost derivation of
+$aabb$.
+\end{exercise}
+
+\paragraph{Solution.} \lstinline{S ::= "a" S "b" | ""}. Then
+$S \Rightarrow aSb \Rightarrow aaSbb \Rightarrow aabb$. The lecture's rule
+\lstinline{S ::= "a" S "b" | "ab"} generates the same language without the
+empty word.
+
+\begin{exercise}
+Let $L_1 = \{\lambda, a\}$ and $L_2 = \{b, bb\}$. Write $L_1 L_2$ and the
+words of $L_1^*$ of length at most 3.
+\end{exercise}
+
+\paragraph{Solution.} $L_1 L_2 = \{b, bb, ab, abb\}$. Every word of $L_1^*$ is
+a sequence of $a$'s, so the words of length at most 3 are $\lambda, a, aa, aaa$.
