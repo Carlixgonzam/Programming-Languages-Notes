@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Finite automata}
 \label{sec:automata}
 
@@ -149,9 +148,9 @@ set of initial states, a set of final states and a relation of transitions.
 The empty string \texttt{""} is used as the label of a $\lambda$-transition,
 which is needed in the next subsection. A DFA is the case with one initial
 state and one transition per state and symbol.
-\coderange{Rascal}{rascal/src/Automata.rsc}{types}
+\codelines{Rascal}{rascal/src/Automata.rsc}{7}{9}
 The automaton of Figure~\ref{fig:contains01} is written as
-\coderange{Rascal}{rascal/src/Automata.rsc}{contains01}
+\codelines{Rascal}{rascal/src/Automata.rsc}{58}{62}
 and \texttt{Automata.rsc} checks it against the words of
 Table~\ref{tab:contains01} and against every word of length up to 8.
 
@@ -265,11 +264,11 @@ contain the string cat or the string hat'', which can also be read as
 ``contains neither''. Under that reading the automaton is wrong, since it
 accepts \texttt{hat} and \texttt{cathat}. Exercise~\ref{ex:neither} builds
 the automaton for the second reading. In Rascal:
-\coderange{Rascal}{rascal/src/Automata.rsc}{cathat}
+\codelines{Rascal}{rascal/src/Automata.rsc}{98}{108}
 Running an NFA means keeping the set of states where some path could be.
 Before reading and after every symbol, the set is closed under
 $\lambda$-transitions:
-\coderange{Rascal}{rascal/src/Automata.rsc}{run}
+\codelines{Rascal}{rascal/src/Automata.rsc}{11}{27}
 
 \subsection{From NFA to DFA}
 
@@ -315,7 +314,7 @@ state.
 
 In Rascal the whole construction is a search over sets of states. Each set
 is named by listing its states, so \texttt{\{A,S\}} is a state of the DFA:
-\coderange{Rascal}{rascal/src/Automata.rsc}{determinize}
+\codelines{Rascal}{rascal/src/Automata.rsc}{165}{186}
 
 \paragraph{Example.} Exercise~6 of the lecture asks to convert the NFA on the
 left of Figure~\ref{fig:ex6} to a DFA. S reads $a$ and may stay in S or go to
@@ -474,7 +473,7 @@ reading a word of $L(\mathcal{A}_1)$.
 
 The three constructions in Rascal (\texttt{rename} prefixes the states of each
 automaton so that they are disjoint):
-\coderange{Rascal}{rascal/src/Automata.rsc}{combine}
+\codelines{Rascal}{rascal/src/Automata.rsc}{226}{242}
 
 \paragraph{Product construction.} Intersection and difference cannot be built
 with $\lambda$-transitions, because the automaton has to read the word with both
@@ -538,7 +537,7 @@ it is $(N, s_2)$; for the union it is every pair with $Y$ or $s_2$.
 
 In Rascal the product is built by searching the reachable pairs, and a
 function decides which pairs are final:
-\coderange{Rascal}{rascal/src/Automata.rsc}{product}
+\codelines{Rascal}{rascal/src/Automata.rsc}{248}{275}
 The tests compare each combination of $L_b$ and $L_{2a}$ with its definition
 on every word of length up to 8. They also confirm that the star from the
 slide accepts $a$ and the corrected one does not.
@@ -613,7 +612,7 @@ complete DFA.
 \end{figure}
 
 The Rascal version builds the transitions on digits with a comprehension:
-\coderange{Rascal}{rascal/src/Automata.rsc}{lists}
+\codelines{Rascal}{rascal/src/Automata.rsc}{81}{90}
 
 \begin{exercise}
 Write an NFA over $\{a, b\}$ that recognizes the words containing the pattern
@@ -700,7 +699,7 @@ $bbb$, which are not in the language, and it rejects the empty word, which is.
 \label{fig:abstar}
 \end{figure}
 
-\coderange{Rascal}{rascal/src/Automata.rsc}{abstar}
+\codelines{Rascal}{rascal/src/Automata.rsc}{158}{162}
 
 \begin{exercise}
 Compute the $\lambda$-closure of each state of the automaton with transitions

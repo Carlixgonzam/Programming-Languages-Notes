@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Virtual machines}
 \label{sec:vm}
 
@@ -46,7 +45,7 @@ the register machine needs a more complex compiler.
 
 The core of the virtual machine is a \textbf{dispatch loop}: fetch the next
 instruction, select the code for it, run it, repeat.
-\coderange{C}{c/vm.c}{run}
+\codelines{C}{c/vm.c}{12}{24}
 The \texttt{switch} is usually compiled to a jump table, like the one of
 Section~\ref{sec:representation}, and every instruction goes back to the top
 of the loop. Faster virtual machines replace the central \texttt{switch} by
@@ -58,7 +57,7 @@ virtual machines keep the \texttt{switch}.
 \subsection{A trace}
 
 The program \texttt{print (2 + 3) * 4} compiles to
-\coderange{C}{c/vm.c}{program}
+\codelines{C}{c/vm.c}{27}{31}
 where each \texttt{OP\_CONSTANT} is followed by an index into the table of
 constants. Table~\ref{tab:vm-trace} shows the stack after each instruction,
 and Figure~\ref{fig:vm-stack} the same stack drawn at each step. Each row is

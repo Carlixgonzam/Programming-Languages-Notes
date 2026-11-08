@@ -1,10 +1,7 @@
 public class Overloading {
-    // <<overload>>
     static int add(int a, int b) { return a + b; }
     static String add(String a, String b) { return a + b; }
-    // <<overload.end>>
 
-    // <<bounded>>
     interface Speak { String speak(); }
 
     record Dog() implements Speak { public String speak() { return "Woof"; } }
@@ -13,7 +10,6 @@ public class Overloading {
     static <T extends Speak> String greet(T x) {
         return "Hello, " + x.speak();
     }
-    // <<bounded.end>>
 
     public static void main(String[] args) {
         assert add(1, 2) == 3;

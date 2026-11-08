@@ -1,6 +1,5 @@
 import re
 
-# <<internal>>
 class TrainingPlan:
     def __init__(self):
         self.days = {}
@@ -23,13 +22,10 @@ plan = (TrainingPlan()
         .on('Monday')
         .run(10, intensity='threshold')
         .rest(15))
-# <<internal.end>>
 
 assert plan.days == {'Monday': [('run', 10000, 'threshold'), ('rest', 15, None)]}
 
-# <<regex>>
 pattern = re.compile(r'[A-Z][a-z]+\d{4}')
-# <<regex.end>>
 assert pattern.fullmatch('Bogota2026')
 assert not pattern.fullmatch('bogota2026')
 assert not pattern.fullmatch('Bogota26')

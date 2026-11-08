@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Recursive types}
 \label{sec:recursive}
 
@@ -71,8 +70,8 @@ their inference.
 
 The data types of Haskell are recursive types where the constructors are the
 folds and pattern matching is the unfold:
-\coderange{Haskell}{haskell/RecursiveTypes.hs}{types}
-\coderange{Haskell}{haskell/RecursiveTypes.hs}{functions}
+\codelines{Haskell}{haskell/RecursiveTypes.hs}{1}{3}
+\codelines{Haskell}{haskell/RecursiveTypes.hs}{5}{11}
 \texttt{Cons} takes an element and a list (one unfolding of the type) and
 returns a list; the equation \texttt{len (Cons \_ xs)} opens one layer.
 Recursive types do not reopen what the occurs check closed: ordinary type

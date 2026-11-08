@@ -4,25 +4,19 @@
   (if (not (equal? expected got)) (display "  FAIL"))
   (newline))
 
-;; <<cons>>
 (define list-ptr (list 'e1 'e2 'e3 'e4))
-(define list-ptr2 (cons 'e0 list-ptr))   ; one new node pointing to the old list
-;; <<cons.end>>
+(define list-ptr2 (cons 'e0 list-ptr))
 (check "new list" '(e0 e1 e2 e3 e4) list-ptr2)
 (check "old list unchanged" '(e1 e2 e3 e4) list-ptr)
 (check "tail is shared, not copied" #t (eq? (cdr list-ptr2) list-ptr))
 
-;; <<record>>
-;; label(k1 : v1, k2 : v2) as a list of (key . value) pairs
 (define point (list (cons 'x 3) (cons 'y 4)))
 (define (field r k) (cdr (assq k r)))
-;; <<record.end>>
 (check "field y" 4 (field point 'y))
 
-;; <<object>>
-(define count 0)                         ; static: one for all the objects
+(define count 0)
 (define (make-list-object x)
-  (let ((info x) (next '()))             ; fields: one copy per object
+  (let ((info x) (next '()))
     (set! count (+ count 1))
     (define (self message . args)
       (cond ((eq? message 'info) info)
@@ -30,7 +24,6 @@
             ((eq? message 'last)
              (if (null? next) info (next 'last)))))
     self))
-;; <<object.end>>
 (define lst1 (make-list-object 1))
 (define lst2 (make-list-object 2))
 (lst1 'set-next! lst2)
@@ -39,20 +32,16 @@
 (check "last of lst2" 2 (lst2 'last))
 (check "info of lst1" 1 (lst1 'info))
 
-;; <<closure>>
 (define (make-adder n)
-  (lambda (x) (+ x n)))     ; code: (+ x n); free variable: n
+  (lambda (x) (+ x n)))
 (define add5 (make-adder 5))
 (define add100 (make-adder 100))
-;; <<closure.end>>
 (check "add5" 8 (add5 3))
 (check "add100" 103 (add100 3))
 
-;; <<homoiconic>>
-(define square (lambda (x) (* x x)))          ; a function
-(define my-func (list 'lambda '(x) '(* x x))) ; a list that looks like code
+(define square (lambda (x) (* x x)))
+(define my-func (list 'lambda '(x) '(* x x)))
 (define square2 (eval my-func (environment '(scheme base))))
-;; <<homoiconic.end>>
 (check "my-func is a list" 3 (length my-func))
 (check "square" 25 (square 5))
 (check "evaluated list" 25 (square2 5))

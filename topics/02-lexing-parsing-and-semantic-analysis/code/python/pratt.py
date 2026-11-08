@@ -1,4 +1,3 @@
-# Precedence climbing (Pratt parsing) for + - * / and parentheses.
 
 class Tokens:
     def __init__(self, items):
@@ -16,7 +15,6 @@ class Tokens:
     def expect(self, tok):
         assert self.advance() == tok, "expected " + tok
 
-# <<pratt>>
 PRECEDENCE = {"+": 1, "-": 1, "*": 2, "/": 2}
 
 def parse_expr(tokens, min_bp=0):
@@ -26,7 +24,7 @@ def parse_expr(tokens, min_bp=0):
         if op not in PRECEDENCE or PRECEDENCE[op] < min_bp:
             break
         tokens.advance()
-        right = parse_expr(tokens, PRECEDENCE[op] + 1)   # +1: left-associative
+        right = parse_expr(tokens, PRECEDENCE[op] + 1)
         left = (op, left, right)
     return left
 
@@ -37,7 +35,6 @@ def parse_atom(tokens):
         tokens.expect(")")
         return e
     return int(tok)
-# <<pratt.end>>
 
 def parse(text):
     return parse_expr(Tokens(list(text.replace(" ", ""))))

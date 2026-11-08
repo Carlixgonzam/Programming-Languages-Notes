@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Garbage collection}
 \label{sec:gc}
 
@@ -30,9 +29,9 @@ reference counting as its main mechanism.
 
 Reference counting does not recover cycles: objects that point to each other,
 with no reference from outside, keep their counts above zero.
-\coderange{Python}{python/refcount.py}{cycle}
+\codelines{Python}{python/refcount.py}{5}{12}
 After
-\coderange{Python}{python/refcount.py}{del}
+\codelines{Python}{python/refcount.py}{17}{18}
 no name reaches the two objects, but each count is still 1, held by the field
 \texttt{other} of the other object. The test disables the cycle detector of
 CPython and checks with a weak reference that the objects survive; after
@@ -65,7 +64,7 @@ pointers have not been followed yet. \emph{Black} objects have been reached
 and all their pointers followed. Marking takes a gray object, colors gray the
 white objects it points to, and colors it black, until no gray object
 remains (Figure~\ref{fig:mark-sweep}).
-\coderange{Python}{python/collectors.py}{mark}
+\codelines{Python}{python/collectors.py}{2}{17}
 
 \begin{figure}[h]
 \centering
@@ -105,7 +104,7 @@ halves are exchanged. \textbf{Cheney's algorithm} does the copy without a stack:
 to-space itself is the queue of pending objects. A scan pointer walks
 to-space; for each object it copies the objects it points to that were not
 copied yet, at the end of to-space, until the scan pointer reaches the end.
-\coderange{Python}{python/collectors.py}{cheney}
+\codelines{Python}{python/collectors.py}{19}{30}
 The copied objects end up contiguous, so there is no fragmentation and no
 separate compaction. The cost of a collection is proportional to the live
 data, not to the size of the heap. The price is that half of the heap is

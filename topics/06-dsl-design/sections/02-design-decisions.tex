@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Design decisions}
 \label{sec:design}
 
@@ -145,7 +144,7 @@ the program runs. The type of each exercise is known from its name:
 \texttt{rest} has type $\mathit{Duration} \to \mathit{Activity}$, so the user
 never writes a type annotation. The checker of the training DSL implements
 these rules, and also requires positive amounts:
-\coderange{Rascal}{rascal/src/Training.rsc}{check}
+\codelines{Rascal}{rascal/src/Training.rsc}{23}{41}
 The tests check the messages for \texttt{run: 10min}, \texttt{rest: 5km} and
 \texttt{run: 0km}. A negative amount, \texttt{run: -5km}, does not even reach
 the checker: the grammar has no minus sign, so it is a syntax error.
@@ -171,7 +170,7 @@ denotations of its days,
 and two programs with the same denotation mean the same, even if they are
 written differently. A simple evaluator walks the checked tree and computes,
 for instance, the total distance of the plan:
-\coderange{Rascal}{rascal/src/Training.rsc}{eval}
+\codelines{Rascal}{rascal/src/Training.rsc}{43}{51}
 For the example plan the result is 12000 meters, 10 km of running and 2000 m
 of swimming.
 

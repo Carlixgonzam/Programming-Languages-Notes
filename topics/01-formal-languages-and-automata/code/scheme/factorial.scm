@@ -1,13 +1,9 @@
-;; Factorial, the class exercise from the first lecture.
 
-;; <<factorial>>
 (define (factorial n)
   (if (< n 2)
       1
       (* n (factorial (- n 1)))))
-;; <<factorial.end>>
 
-;; Tests
 (define (check name expected got)
   (display name) (display ": expected ") (write expected)
   (display ", got ") (write got)

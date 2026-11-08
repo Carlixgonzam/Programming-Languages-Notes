@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Type inference}
 \label{sec:inference}
 
@@ -148,7 +147,7 @@ substitution(t0, tvar, t1) : Type {
 between the variable found, $t_0$, and the variable being replaced.) A
 substitution maps several variables to types. In Rascal, \texttt{apply} follows
 chains such as $t_1 = t_2$, $t_2 = \mathit{Int}$:
-\coderange{Rascal}{rascal/src/Infer.rsc}{subst}
+\codelines{Rascal}{rascal/src/Infer.rsc}{7}{17}
 
 \paragraph{Unification.} Given two types, the unifier returns a substitution in
 which they are equal:
@@ -188,14 +187,14 @@ no-occurrence?(tvar, t) : Boolean {
 }
 \end{lstlisting}
 In Rascal:
-\coderange{Rascal}{rascal/src/Infer.rsc}{unify}
+\codelines{Rascal}{rascal/src/Infer.rsc}{19}{40}
 
 \paragraph{Types for expressions.} A missing annotation becomes a fresh
 variable (\texttt{optionaltype-2-type}), and the inference function follows
 the rules, calling the unifier at each premise that requires two types to be
 equal. For an application it creates a variable for the result and unifies
 the type of the operator with $t_{\mathit{rand}} \to t_{\mathit{res}}$:
-\coderange{Rascal}{rascal/src/Infer.rsc}{infer}
+\codelines{Rascal}{rascal/src/Infer.rsc}{42}{98}
 The tests run the four examples of this section: \texttt{foo} gets
 \texttt{int -> int}, Example 2 gets \texttt{(int -> int) -> int -> int}, Example 3
 fails with a unification failure and Example 4 with a no-occurrence violation.
@@ -223,8 +222,8 @@ better with subtyping.
 
 \paragraph{Generics in Java.} Java infers the type parameters at each call of a
 generic method, a restricted form of the same problem:
-\coderange{Java}{java/Generics.java}{generics}
-\coderange{Java}{java/Generics.java}{use}
+\codelines{Java}{java/Generics.java}{4}{8}
+\codelines{Java}{java/Generics.java}{11}{14}
 For \texttt{p} the compiler infers \texttt{MyPair<Integer, String>}, for
 \texttt{q} and \texttt{result} \texttt{Integer}, and for \texttt{pairs}
 \texttt{List<MyPair<Integer, String>>}.

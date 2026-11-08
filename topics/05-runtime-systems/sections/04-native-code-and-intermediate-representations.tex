@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Native code and intermediate representations}
 \label{sec:ir}
 
@@ -33,7 +32,7 @@ x  = a + t1
 \end{lstlisting}
 The translation of expressions is a recursion over the AST that emits the
 code of the operands before the operation:
-\coderange{Python}{python/tac.py}{tac}
+\codelines{Python}{python/tac.py}{1}{17}
 
 Control structures disappear in three-address code, replaced by labels and
 jumps. The \texttt{if} statement \texttt{if (x > 10) \{ y = 1; \} else \{ y = 2; \}}

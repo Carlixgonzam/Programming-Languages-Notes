@@ -1,9 +1,5 @@
-# <<tac>>
-# Translates ('var', x), ('add', e1, e2), ('sub', e1, e2), ('mul', e1, e2)
-# into three-address code. Returns the name that holds the value.
 OPS = {'add': '+', 'sub': '-', 'mul': '*'}
 
-# The last operation writes to target; the others to new temporaries.
 def tac(expr, code, counter, target=None):
     if expr[0] == 'var':
         return expr[1]
@@ -19,7 +15,6 @@ def assign(name, expr):
     code = []
     tac(expr, code, [0], name)
     return code
-# <<tac.end>>
 
 a, b, c, d = ('var', 'a'), ('var', 'b'), ('var', 'c'), ('var', 'd')
 assert assign('x', ('add', a, ('mul', b, c))) == ['t1 = b * c', 'x = a + t1']

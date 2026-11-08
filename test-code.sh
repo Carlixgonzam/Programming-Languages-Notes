@@ -1,20 +1,4 @@
 #!/usr/bin/env bash
-# Corre todas las pruebas del código de las notas.
-#
-# Uso:   ./test-code.sh            (todos los temas)
-#        ./test-code.sh 04         (solo el tema que empieza por 04)
-#
-# Rascal se corre con el jar de la terminal, nunca con la extensión de VS Code.
-# La ruta del jar se puede cambiar con la variable RASCAL_JAR.
-#
-# Convenciones:
-#   topics/NN-*/code/rascal/   proyecto Rascal (META-INF/RASCAL.MF, módulos en src/)
-#                              con funciones "test bool"; se corren con :test.
-#   topics/NN-*/code/scheme/   archivos .scm en R7RS small; cada caso imprime
-#                              "nombre: expected X, got Y" y "FAIL" si no coinciden.
-#   topics/NN-*/code/lisp/     archivos .lisp para SBCL, con la misma convención.
-#   topics/NN-*/code/<otro>/   python, haskell, c, java, js, sql, swift, perl, bash: el programa
-#                              termina con código distinto de 0 si algo falla.
 
 set -u
 RASCAL_JAR="${RASCAL_JAR:-$HOME/Downloads/rascal-shell-stable.jar}"
@@ -30,7 +14,6 @@ for topic in "$ROOT"/topics/"$FILTER"*/; do
   [ -d "$code" ] || continue
   echo "== $(basename "$topic")"
 
-  # Rascal: un solo REPL por proyecto, importando todos los módulos.
   if [ -d "$code/rascal/src" ]; then
     mods=$(cd "$code/rascal/src" && find . -name '*.rsc' | sed -e 's|^\./||' -e 's|\.rsc$||' -e 's|/|::|g' | sort)
     input=""

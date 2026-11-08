@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Runtime data representation}
 \label{sec:representation}
 
@@ -73,9 +72,9 @@ every value except 1 to \texttt{clause\_E}.
 \end{figure}
 
 The same idea in C: the \texttt{switch}
-\coderange{C}{c/jump_table.c}{case}
+\codelines{C}{c/jump_table.c}{4}{12}
 and its version with an explicit table
-\coderange{C}{c/jump_table.c}{table}
+\codelines{C}{c/jump_table.c}{14}{20}
 give the same clause for every value from $-3$ to 14 in the tests.
 
 \subsection{Run-time storage}
@@ -186,14 +185,14 @@ points to the corresponding value (Figure~\ref{fig:record}).
 \end{figure}
 
 In Scheme a record of this kind is an association list:
-\coderange{Scheme}{scheme/representation.scm}{record}
+\codelines{Scheme}{scheme/representation.scm}{13}{14}
 
 \subsection{Objects and functions}
 
 Following the same representation, other program elements such as objects
 and functions can be represented. The lecture's example is a class of linked
 lists with a global counter of instances:
-\coderange{C++}{cpp/objects.cpp}{list}
+\codelines{C++}{cpp/objects.cpp}{4}{19}
 An object of this class is a block with one cell for each field,
 \texttt{next} and \texttt{info}, and cells that point to the code of its
 methods, \texttt{last} and the constructor \texttt{list}. The counter
@@ -240,12 +239,12 @@ variables of the closure, the methods are the cases of a function that
 receives a message, and the static counter is a global variable. The tests
 build \texttt{lst1} and \texttt{lst2}, link them and check that
 \texttt{count} is 2 and that \texttt{last} of \texttt{lst1} is 2.
-\coderange{Scheme}{scheme/representation.scm}{object}
+\codelines{Scheme}{scheme/representation.scm}{17}{26}
 
 \paragraph{Functions.} Creating a function $f = \mathbf{fun}\ x_0 \dots
 x_{k-1} \to e$ creates a function object $F$ that holds the values of its free
 variables and the address of its code. In
-\coderange{Scheme}{scheme/representation.scm}{closure}
+\codelines{Scheme}{scheme/representation.scm}{35}{38}
 \texttt{add5} and \texttt{add100} share the code \texttt{(+ x n)} and differ in
 the value of the free variable \texttt{n}.
 
@@ -303,11 +302,11 @@ In a homoiconic language code and data are intertwined: the program can build
 new code and manipulate it as data at run time. In Lisp the fundamental type
 is the list. The same text can be read as data or as code; quoting it tells
 Lisp not to evaluate it:
-\coderange{CommonLisp}{lisp/homoiconic.lisp}{datacode}
+\codelines{CommonLisp}{lisp/homoiconic.lisp}{1}{3}
 Figure~\ref{fig:data-code} shows the two readings as trees. The lecture's
 example builds the expression $\sin(1.1) \cdot \cos(2.03)$ as a list, takes it
 apart, changes \texttt{cos} into \texttt{sin}, and evaluates the result:
-\coderange{CommonLisp}{lisp/homoiconic.lisp}{expression}
+\codelines{CommonLisp}{lisp/homoiconic.lisp}{5}{9}
 The result is $\sin(1.1) \cdot \sin(2.03) \approx 0.79888$. The slide prints the
 expression with \texttt{print-to-string}; the standard Common Lisp function is
 \texttt{prin1-to-string}.
@@ -329,7 +328,7 @@ expression with \texttt{print-to-string}; the standard Common Lisp function is
 
 Scheme works the same way: a list that looks like a \texttt{lambda} becomes a
 function when it is evaluated.
-\coderange{Scheme}{scheme/representation.scm}{homoiconic}
+\codelines{Scheme}{scheme/representation.scm}{42}{44}
 The lecture also shows the idea in Prolog, where \texttt{clause(ten(X), Y)}
 returns the body \texttt{X is 2*5} of a clause as a term that can be
 inspected or called; in Julia, where \texttt{:(x + 1)} is a value of type
@@ -406,7 +405,7 @@ In a statically typed language the layout of a record is fixed at compile
 time: each field has a byte offset from the start of the record, and reading
 \texttt{p.y} loads from the address of \texttt{p} plus the offset of
 \texttt{y}.
-\coderange{C}{c/layout.c}{point}
+\codelines{C}{c/layout.c}{5}{5}
 A language whose objects can gain and lose fields at run time cannot fix the
 offsets. It stores the fields in a dictionary indexed by name, as the records
 of Figure~\ref{fig:record}, or caches the layout the first time it sees it.
@@ -430,7 +429,7 @@ jumps to the code for that variant.
 A closure is a record with a pointer to the code of the function and a
 pointer to the environment with its free variables, the function object $F$
 described above. The Python version of a counter
-\coderange{Python}{python/counter.py}{counter}
+\codelines{Python}{python/counter.py}{1}{7}
 allocates one environment with \texttt{n} on each call to
 \texttt{make\_counter}. The returned function always runs the same code
 against that environment, so \texttt{n} keeps its value between calls.
@@ -439,7 +438,7 @@ Each non-tail call needs an \textbf{activation record} (stack frame) for its
 local state, pushed on entry and popped on return. It holds the return
 address, the saved frame pointer of the caller, the parameters and the local
 variables. During \texttt{fact(3)}
-\coderange{C}{c/layout.c}{fact}
+\codelines{C}{c/layout.c}{7}{10}
 there are four frames on the stack when \texttt{fact(0)} is about to return
 (Figure~\ref{fig:frames}). Each frame has its own \texttt{n}, which is why the
 recursive calls do not overwrite each other's variables.
@@ -477,7 +476,7 @@ $e_1$, and a new list pointer \texttt{<list\_ptr'>} points to it
 (Figure~\ref{fig:cons}). The old list is not copied: \texttt{<list\_ptr>} still
 points to $[e_1, e_2, e_3, e_4]$, and both lists share its nodes. The slide's
 figure draws a fifth node $e_5$ after $e_4$, which is not part of the list.
-\coderange{Scheme}{scheme/representation.scm}{cons}
+\codelines{Scheme}{scheme/representation.scm}{7}{8}
 The tests check that the tail of the new list is \texttt{eq?} to the old list.
 
 \begin{figure}[h]

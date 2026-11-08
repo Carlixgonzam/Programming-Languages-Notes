@@ -2,7 +2,6 @@ module LDBL
 
 import ParseTree;
 
-// <<grammar>>
 layout Layout = [\ \t\n\r]* !>> [\ \t\n\r];
 
 keyword Reserved = "ADD" | "REMOVE" | "SEARCH" | "VIEW" | "ADDIMAGE" | "SUBTRACTIMAGE"
@@ -41,7 +40,6 @@ syntax Statement
 syntax Condition = Atom Comparison Atom;
 syntax Atom = Name | Value;
 lexical Comparison = "\>" | "\<" | "==";
-// <<grammar.end>>
 
 bool isProgram(str x) {
   try { parse(#start[Command], x); return true; }

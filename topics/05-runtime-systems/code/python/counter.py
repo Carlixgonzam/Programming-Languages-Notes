@@ -1,4 +1,3 @@
-# <<counter>>
 def make_counter(start):
     n = start
     def bump():
@@ -6,7 +5,6 @@ def make_counter(start):
         n += 1
         return n
     return bump
-# <<counter.end>>
 
 c1 = make_counter(5)
 c2 = make_counter(100)

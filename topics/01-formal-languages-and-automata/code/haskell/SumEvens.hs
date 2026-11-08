@@ -1,7 +1,5 @@
--- <<sumevens>>
 sumEvens :: [Int] -> Int
 sumEvens = sum . filter even
--- <<sumevens.end>>
 
 main :: IO ()
 main

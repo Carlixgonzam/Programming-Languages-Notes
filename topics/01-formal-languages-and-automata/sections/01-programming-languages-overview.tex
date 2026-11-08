@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Programming languages: an overview}
 \label{sec:overview}
 
@@ -178,9 +177,9 @@ designed for.
 
 For reference, here is the factorial in the two languages used for code in
 these notes. In Scheme:
-\coderange{Scheme}{scheme/factorial.scm}{factorial}
+\codelines{Scheme}{scheme/factorial.scm}{2}{5}
 and in Rascal:
-\coderange{Rascal}{rascal/src/Factorial.rsc}{factorial}
+\codelines{Rascal}{rascal/src/Factorial.rsc}{3}{3}
 Both are recursive definitions by cases, and both files include tests.
 
 \subsection{What makes a good programming language}
@@ -325,13 +324,13 @@ group state and behavior and communicate by calling methods.
 
 The same small problem, adding the even numbers of a list, looks different in
 each style. Imperative, in Python:
-\coderange{Python}{python/sum_evens.py}{sumevens}
+\codelines{Python}{python/sum_evens.py}{1}{6}
 The accumulator and the loop are explicit. Functional, in Haskell:
-\coderange{Haskell}{haskell/SumEvens.hs}{sumevens}
+\codelines{Haskell}{haskell/SumEvens.hs}{1}{2}
 There is no accumulator and no loop: \texttt{filter even} selects the
 elements and \texttt{sum} adds them, and the two functions are composed.
 Declarative, in SQL:
-\coderange{SQL}{sql/sum_evens.sql}{sumevens}
+\codelines{SQL}{sql/sum_evens.sql}{3}{3}
 The query states the result and leaves the strategy to the database engine.
 A logic version in Prolog would be three clauses: the sum of the empty list is
 0, an even head is added to the sum of the tail, and an odd head is skipped.

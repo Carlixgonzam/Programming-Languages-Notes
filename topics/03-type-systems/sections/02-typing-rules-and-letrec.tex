@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Typing rules and LETREC}
 \label{sec:letrec}
 
@@ -72,8 +71,8 @@ third.
 
 In Rascal, the syntax with optional types (used also for inference in
 Section~\ref{sec:inference}) and the abstract syntax are:
-\coderange{Rascal}{rascal/src/Letrec.rsc}{syntax}
-\coderange{Rascal}{rascal/src/Letrec.rsc}{ast}
+\codelines{Rascal}{rascal/src/Letrec.rsc}{6}{26}
+\codelines{Rascal}{rascal/src/Letrec.rsc}{28}{43}
 In the concrete syntax a function type is written \texttt{(int -> int)}. In the
 abstract syntax it is \texttt{procType(intType(), intType())}.
 
@@ -150,7 +149,7 @@ fun type-of(tenv, exp) {
 \end{lstlisting}
 In Rascal there is one equation per rule, and each \texttt{checkEqual} is a
 premise:
-\coderange{Rascal}{rascal/src/Letrec.rsc}{typeof}
+\codelines{Rascal}{rascal/src/Letrec.rsc}{76}{125}
 The tests type the program \texttt{double} as \texttt{int -> int}, its
 application to 6 as \texttt{int}, and reject an \texttt{if} whose branches have
 different types and the application of a number.
@@ -189,7 +188,7 @@ converts the value implicitly.
 
 \paragraph{Type inference.} The programmer does not provide all the types, and
 the checker infers them from their use. In Haskell,
-\coderange{Haskell}{haskell/DoubleSmall.hs}{double}
+\codelines{Haskell}{haskell/DoubleSmall.hs}{1}{3}
 has no type annotation. \texttt{x > 100} needs \texttt{x} to be something that
 can be compared, and \texttt{x * 2} something that can be multiplied, so the
 function goes from numbers to numbers. The lecture writes this as
@@ -212,7 +211,7 @@ environment for \texttt{otherval} and, inside it, another one where a new
 \texttt{someval} of type \texttt{int} hides the first. The program prints
 \texttt{3 world}. Figure~\ref{fig:tenv} shows the three environments. The same
 structure in Scheme:
-\coderange{Scheme}{scheme/dynamic.scm}{env}
+\codelines{Scheme}{scheme/dynamic.scm}{17}{21}
 
 \begin{figure}[h]
 \centering

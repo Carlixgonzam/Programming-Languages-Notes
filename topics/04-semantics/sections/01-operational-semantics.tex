@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Operational semantics}
 \label{sec:operational}
 
@@ -69,7 +68,7 @@ the swap \texttt{z := !x ; (x := !y ; y := !z)} and the factorial
 
 In Rascal the grammar has a priority for the sequence, so that
 \texttt{;} binds less than the other commands:
-\coderange{Rascal}{rascal/src/Simp.rsc}{syntax}
+\codelines{Rascal}{rascal/src/Simp.rsc}{8}{41}
 
 \subsection{An abstract machine}
 
@@ -229,7 +228,7 @@ $\langle \mathit{nil}, \mathit{nil}, m[\mathit{fac} \mapsto 24, l \mapsto 0] \ra
 
 In Rascal each transition is one equation of \texttt{machineStep}, with the
 head of each list as the top of the stack:
-\coderange{Rascal}{rascal/src/Simp.rsc}{machine}
+\codelines{Rascal}{rascal/src/Simp.rsc}{69}{118}
 The tests run $3 * (4 + 5)$, the factorial and $10 - 3$ (which checks the order
 of the operands).
 
@@ -325,7 +324,7 @@ $\langle n, s' \rangle$ or $\langle b, s' \rangle$ (for expressions) or $\langle
 
 In Rascal, each \texttt{step} function returns the next configuration, or an
 empty list when the configuration is final:
-\coderange{Rascal}{rascal/src/Simp.rsc}{small}
+\codelines{Rascal}{rascal/src/Simp.rsc}{120}{170}
 The tests check that the swap takes the eight steps above and ends with
 $z = 1$, $x = 2$, $y = 1$, and that \texttt{x := !w} stops at a blocked
 configuration.
@@ -385,7 +384,7 @@ Figure~\ref{fig:big-proof} draws the tree for the first two assignments.
 
 In Rascal big-step semantics is a recursive evaluator with one equation per
 rule:
-\coderange{Rascal}{rascal/src/Simp.rsc}{big}
+\codelines{Rascal}{rascal/src/Simp.rsc}{189}{203}
 Small step is the natural model of a debugger: it shows each intermediate
 state, and it can describe programs that do not terminate (an infinite
 sequence of steps). Big step is the natural model of an interpreter, and a
@@ -418,7 +417,7 @@ end
 \end{lstlisting}
 the body runs in $s'[l \mapsto s(x)]$ and gives $s_1 = s[l \mapsto s(x), x \mapsto s(y), y \mapsto s(x)]$;
 the whole program gives $s_2 = s[x \mapsto s(y), y \mapsto s(x)]$, with no $z$.
-\coderange{Rascal}{rascal/src/Simp.rsc}{blockbig}
+\codelines{Rascal}{rascal/src/Simp.rsc}{212}{219}
 
 \subsection{More constructs}
 
@@ -436,8 +435,8 @@ times as the value of $E$, evaluated once. In small step:
 Once $E$ is a numeral it is never evaluated again, even if $C$ changes the
 variables of $E$. The base case is $n \le 0$ and not $n = 0$: with only
 $n = 0$, a negative count would leave the configuration blocked.
-\coderange{Rascal}{rascal/src/Simp.rsc}{repeatsmall}
-\coderange{Rascal}{rascal/src/Simp.rsc}{repeatbig}
+\codelines{Rascal}{rascal/src/Simp.rsc}{172}{176}
+\codelines{Rascal}{rascal/src/Simp.rsc}{205}{208}
 The tests run \texttt{repeat !k times (x := !x + 1; k := !k + 1)} with $k = 2$,
 which runs the body twice although $k$ grows, and a negative count.
 
@@ -450,7 +449,7 @@ initialization is reduced first and then the loop unfolds into an
 \and
 \inferrule*[right=For-Skip]{ }{\langle \mathtt{for}\,(\mathtt{skip}; B; C_s)\,\{C_b\}, s \rangle \to \langle \mathtt{if}\ B\ \mathtt{then}\ (C_b ; C_s ; \mathtt{for}\,(\mathtt{skip}; B; C_s)\,\{C_b\})\ \mathtt{else}\ \mathtt{skip}, s \rangle}
 \end{mathpar}
-\coderange{Rascal}{rascal/src/Simp.rsc}{forsmall}
+\codelines{Rascal}{rascal/src/Simp.rsc}{178}{181}
 
 \paragraph{Lists.} Big step also defines functions on data. With the
 constructors $\nil$ and $\cons{h}{t}$, adding an element at the end of a list

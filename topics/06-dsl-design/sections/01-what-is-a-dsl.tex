@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Domain-specific languages}
 \label{sec:dsl}
 
@@ -65,7 +64,7 @@ The following examples go beyond the slides.
 
 \paragraph{SQL.} The domain is relational data. A query says which rows are
 wanted, not how to find them:
-\coderange{SQL}{sql/workouts.sql}{query}
+\codelines{SQL}{sql/workouts.sql}{5}{8}
 There are no loops and no iteration order. Whether the join uses a hash table,
 nested loops or an index is decided by the database engine, and SQL engines
 can reorder joins and filters because the queries have no side effects.
@@ -76,7 +75,7 @@ graph, not a sequence of commands; \texttt{make} orders the targets
 topologically and rebuilds only those whose dependencies changed.
 
 \paragraph{Regular expressions.} The domain is string patterns. The pattern
-\coderange{Python}{python/internal.py}{regex}
+\codelines{Python}{python/internal.py}{28}{28}
 matches a capitalized word followed by four digits, which would take a loop
 and several conditions in a GPL. The density that makes regular expressions
 short also makes them hard to read for someone who does not know the
@@ -107,7 +106,7 @@ Exercise  ::= "run" | "swim" | "cycle" | "strength" | "rest"
 Unit      ::= "km" | "m" | "min" | "h"
 \end{lstlisting}
 Each rule can be chosen by its first token, so the grammar is LL(1). In Rascal:
-\coderange{Rascal}{rascal/src/Training.rsc}{grammar}
+\codelines{Rascal}{rascal/src/Training.rsc}{6}{19}
 
 \subsection{A formal definition}
 
@@ -132,7 +131,7 @@ whole implementation has to be built.
 An \textbf{internal} (embedded) DSL is written inside a host language, with the
 host's functions, method chaining or macros, and every program is also a
 program of the host:
-\coderange{Python}{python/internal.py}{internal}
+\codelines{Python}{python/internal.py}{3}{24}
 The parser, type checker and debugger of the host come for free. In exchange
 the program still looks like Python, and its errors are Python errors. Lisp
 and Scheme are the classic hosts for internal DSLs, because their code is a

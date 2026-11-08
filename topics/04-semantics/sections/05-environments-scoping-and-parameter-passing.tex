@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Environments, scoping and parameter passing}
 \label{sec:scoping}
 
@@ -28,7 +27,7 @@ variable is valid and visible.
 
 Scopes manage declarations (as symbol tables do) and let the same name be
 reused without undesired side effects. In
-\coderange{Scheme}{scheme/scoping.scm}{let}
+\codelines{Scheme}{scheme/scoping.scm}{7}{12}
 the outer \texttt{let} creates a scope with $x = 3$ and $y = 4$, the inner one a
 scope with $x = y + 5 = 9$, and each application of \texttt{*} and \texttt{+}
 runs in a scope of its own. Figure~\ref{fig:let-envs} shows the environments
@@ -75,7 +74,7 @@ definitions create a scope in which each parameter is a variable, plus the
 variables of the body. A function runs in the scope where it was defined:
 its free variables are bound by the declarations around its definition, not
 around its call.
-\coderange{Scheme}{scheme/scoping.scm}{lexical}
+\codelines{Scheme}{scheme/scoping.scm}{15}{19}
 \texttt{(g)} returns 10: the \texttt{x} in the body of \texttt{f} is the global
 one, the declaration around the definition of \texttt{f}, even though \texttt{f}
 is called from inside the \texttt{let} of \texttt{g}.
@@ -84,7 +83,7 @@ is called from inside the \texttt{let} of \texttt{g}.
 name as an outer one \textbf{shadows} it: inside the inner scope the outer
 variable is not visible, and the region where it is hidden is a hole in its
 scope.
-\coderange{C++}{cpp/scoping.cpp}{shadows}
+\codelines{C++}{cpp/scoping.cpp}{9}{23}
 The program prints \texttt{3 2}, \texttt{1 4}, \texttt{1 2} and \texttt{1 1}
 (Figure~\ref{fig:shadows}). In the first inner block, \texttt{a = 3} shadows
 the outer \texttt{a} and \texttt{b = 2} is visible from the enclosing block.
@@ -111,7 +110,7 @@ visible. After the blocks, each name refers to its outer declaration again.
 it is valid. Bindings are usually valid while the block that defines them
 runs, but they can live longer, even indefinitely, when a closure that
 refers to them is returned:
-\coderange{Scheme}{scheme/scoping.scm}{closure}
+\codelines{Scheme}{scheme/scoping.scm}{22}{26}
 \texttt{count} belongs to a call of \texttt{make-counter} that has finished,
 but the returned function still uses it. Scope is a property of the text;
 extent is a property of the execution.
@@ -153,7 +152,7 @@ variable.
 \end{definition}
 
 The lecture shows the difference in Perl:
-\coderange{Perl}{perl/dynamic.pl}{perl}
+\codelines{Perl}{perl/dynamic.pl}{4}{6}
 With static scoping, the \texttt{\$x} of \texttt{f} is the global one and
 \texttt{g()} returns 10. With dynamic scoping, when \texttt{f} runs the most
 recent active function that declares \texttt{\$x} is \texttt{g}, so \texttt{g()}
@@ -161,11 +160,11 @@ returns 20; Perl's \texttt{local} gives exactly this behavior, and the test
 checks that \texttt{g()} is 20 and \texttt{f()} alone is 10. In Common Lisp,
 variables declared with \texttt{defvar} are dynamically scoped (special), and
 the same program reads:
-\coderange{CommonLisp}{lisp/dynamic.lisp}{dynamic}
+\codelines{CommonLisp}{lisp/dynamic.lisp}{5}{11}
 A variable bound with \texttt{let} that was not declared special is lexical:
-\coderange{CommonLisp}{lisp/dynamic.lisp}{lexical}
+\codelines{CommonLisp}{lisp/dynamic.lisp}{16}{22}
 \texttt{(g-lex)} returns 10. Shell variables are also dynamic:
-\coderange{bash}{bash/dynamic.sh}{bash}
+\codelines{bash}{bash/dynamic.sh}{1}{3}
 
 The lecture's second Perl example adds \texttt{sub h(param) \{ local \$x = param
 + 5; return f(); \}} and calls \texttt{h(rand(100))} from \texttt{g}: now
@@ -179,7 +178,7 @@ sets the global \texttt{x} to \texttt{"foo} and calls \texttt{test1 "bar}.
 \texttt{test2} called alone prints \texttt{foo}, the global value. Called from
 \texttt{test1 "bar}, it prints \texttt{bar}: the most recent active procedure
 with \texttt{x} is \texttt{test1}, whose parameter \texttt{x} is \texttt{"bar}.
-\coderange{CommonLisp}{lisp/dynamic.lisp}{logo}
+\codelines{CommonLisp}{lisp/dynamic.lisp}{26}{28}
 
 \paragraph{Advantages and disadvantages.} Dynamic scoping favors flexibility:
 variables can be accessed from anywhere, which can help reuse and adaptation
@@ -233,8 +232,8 @@ passing modes below are differences in how $\rho$ and $\sigma$ are extended.
 \paragraph{Closures in loops.} A closure captures a binding, not a value. In
 Python a loop has one variable for all its iterations; JavaScript's
 \texttt{let} creates a new one in each iteration:
-\coderange{Python}{python/loopvar.py}{loopvar}
-\coderange{JavaScript}{js/loopvar.js}{loopvar}
+\codelines{Python}{python/loopvar.py}{1}{7}
+\codelines{JavaScript}{js/loopvar.js}{2}{9}
 
 \subsection{Parameter passing}
 
@@ -249,7 +248,7 @@ function). Changes to the formal parameters do not affect the caller.
 \paragraph{Call by reference.} The address of the actual parameter is passed,
 and the function uses it directly. The formal parameter is another name for
 the caller's variable.
-\coderange{C++}{cpp/scoping.cpp}{swap}
+\codelines{C++}{cpp/scoping.cpp}{27}{28}
 In the lecture's program, \texttt{swap(x, y)} with $x = 1$, $y = 2$ prints
 \texttt{After Swapping in function x: 2, y: 1} in both cases, but
 \texttt{main} prints \texttt{x: 1, y: 2} with call by value and
@@ -263,7 +262,7 @@ each time the parameter is used (with variables renamed if needed). With
 1, \texttt{x = y} evaluates the expression of \texttt{y} and writes 10,
 \texttt{y = t} writes 1: the program prints \texttt{x: 10, y: 1}. In Scheme the
 names can be passed as functions that read and write the caller's variables:
-\coderange{Scheme}{scheme/scoping.scm}{byname}
+\codelines{Scheme}{scheme/scoping.scm}{33}{42}
 
 \paragraph{Passing parameters between procedures.} The lecture compares the
 modes with one program:
@@ -307,7 +306,7 @@ the change to $y$ is not visible during the call, so \texttt{v[y]} still means
 \texttt{v[1]}. In C++ a reference parameter is \texttt{int\&}, a parameter by
 name can be a function that returns a reference, and value-result is a copy
 made by hand:
-\coderange{C++}{cpp/scoping.cpp}{params}
+\codelines{C++}{cpp/scoping.cpp}{30}{39}
 
 \paragraph{Other kinds.} The lecture also lists call by move (Emerald),
 adaptive parameter passing, streaming semantics, cache semantics and lazy

@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Types}
 \label{sec:types}
 
@@ -146,7 +145,7 @@ uses Prolog to show it. A predicate
 list it gives $N = 4$, and called as \texttt{list\_length(9, N)} the tags say
 that an \texttt{Int} is not a \texttt{List}, and the error is found only when
 the call runs. The same idea in Scheme, with explicit tags:
-\coderange{Scheme}{scheme/dynamic.scm}{tagged}
+\codelines{Scheme}{scheme/dynamic.scm}{2}{15}
 The test calls \texttt{list-length} with a value tagged \texttt{int} and checks
 that the error says \texttt{int is-not list}. Dynamic typing is more flexible
 when programming, but execution costs more (the checks are repeated every
@@ -180,7 +179,7 @@ expression can also be determined by its behavior. ``If it talks like a duck
 and walks like a duck, then it is a duck.'' The lecture shows a Go interface
 \texttt{Quacker} that any type with a method \texttt{Quack()} satisfies without
 declaring it. In Python the check happens at run time:
-\coderange{Python}{python/duck.py}{duck}
+\codelines{Python}{python/duck.py}{2}{15}
 \texttt{make\_it\_quack} accepts a \texttt{Duck} and a \texttt{Robot}, which have
 nothing in common except the method. With a \texttt{Dog} the error appears when
 the call runs.
@@ -194,7 +193,7 @@ $T$ or nothing. It is used for function results that may have no meaningful
 value. The lecture writes it in Scala, with \texttt{Some(42)} and
 \texttt{None}; in Swift \texttt{Int?} is the same type, with \texttt{nil} for
 nothing:
-\coderange{Swift}{swift/optionals.swift}{option}
+\codelines{Swift}{swift/optionals.swift}{2}{7}
 To use the value the program has to open the option (\texttt{if let}), so the
 case without a value cannot be forgotten.
 
@@ -203,7 +202,7 @@ expression of a reference type may suddenly be \texttt{null}. A nullable type
 system separates $T$ (always a valid reference) from $T?$ (a reference or
 \texttt{null}), as in Figure~\ref{fig:nullable}, and the compiler checks that
 a $T?$ is never used as a $T$ without a check.
-\coderange{Swift}{swift/optionals.swift}{nullable}
+\codelines{Swift}{swift/optionals.swift}{9}{18}
 \texttt{greetUser} takes a \texttt{String}, not a \texttt{String?}, so the call
 \texttt{greetUser(username: nil)} is rejected at compile time with
 \texttt{'nil' is not compatible with expected argument type 'String'}.

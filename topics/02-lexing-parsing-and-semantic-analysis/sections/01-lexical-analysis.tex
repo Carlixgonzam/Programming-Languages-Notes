@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Lexical analysis}
 \label{sec:lexing}
 
@@ -131,7 +130,7 @@ Most languages use the same token classes (Table~\ref{tab:token-classes}).
 
 In Rascal a token can be a constructor with its name, its lexeme and its
 position:
-\coderange{Rascal}{rascal/src/Lexer.rsc}{token}
+\codelines{Rascal}{rascal/src/Lexer.rsc}{7}{7}
 
 \subsection{Symbol tables}
 
@@ -165,12 +164,9 @@ or a stack) of hash tables, one per scope:
 \texttt{symbolTables = [st$_1$, st$_2$, \dots, st$_n$]}. Figure~\ref{fig:symtab-stack}
 shows the tables for the lecture's example:
 \begin{lstlisting}[language=C]
-// Declare an external function
 extern double bar(double x);
-// Define a public function
 double foo(int count) {
   double sum = 0.0;
-  // Sum all the values bar(1) to bar(count)
   for (int i = 1; i <= count; i++)
     sum += bar((double) i);
   return sum;
@@ -334,7 +330,7 @@ character to the input.
 The automaton becomes code by giving each state a case. The lecture writes it
 as a \texttt{switch} on the state inside a loop; the version below collapses
 the states into the checks they make:
-\coderange{Rascal}{rascal/src/Lexer.rsc}{relop}
+\codelines{Rascal}{rascal/src/Lexer.rsc}{9}{24}
 
 \subsection{A lexer in Rascal}
 
@@ -344,7 +340,7 @@ the beginning of the remaining input, from the most specific pattern to the
 least specific, and advances the position. Separators and comments are
 matched and dropped; reserved words are looked up in a set; any other
 character is a lexical error.
-\coderange{Rascal}{rascal/src/Lexer.rsc}{scan}
+\codelines{Rascal}{rascal/src/Lexer.rsc}{26}{60}
 Each regular expression in the \texttt{if} chain is one pattern. The pattern for
 identifiers takes the longest run of letters and digits, so \texttt{iffyNum} is
 one lexeme, and only then is it compared with the reserved words. The tests in
@@ -397,7 +393,7 @@ Id(2) Bec() Id(1) Mop(Mul) Id(1) Aop(Sub) Intconst(7) Sem()
 \end{lstlisting}
 (The slide writes \texttt{Aop("")} for the minus sign in the scanning line;
 it is \texttt{Aop("-")}.) A screening step on top of the Rascal lexer:
-\coderange{Rascal}{rascal/src/Lexer.rsc}{screen}
+\codelines{Rascal}{rascal/src/Lexer.rsc}{89}{103}
 
 \paragraph{Responsibilities of the lexer.} To summarize the lecture's list: the
 lexer generates tokens; it detects errors in the characters of the program,
@@ -483,7 +479,7 @@ loop that ends at label 5 with \texttt{I} from 1 to 25. Its tokens are
 \lstinline{Do Int Identifier Equal Int , Int}. The two statements are the same up
 to the comma, so the lexer cannot classify \texttt{DO} until it has looked
 ahead past the \texttt{=}:
-\coderange{Rascal}{rascal/src/Lexer.rsc}{fortran}
+\codelines{Rascal}{rascal/src/Lexer.rsc}{111}{120}
 
 \begin{exercise}
 Tokenize the following inputs and draw the automaton that recognizes the

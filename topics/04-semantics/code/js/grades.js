@@ -1,6 +1,5 @@
 const assert = require("assert");
 
-// <<grades>>
 function grade(studentScore) {
   let studentGrade;
   if (studentScore >= 90) {
@@ -16,7 +15,6 @@ function grade(studentScore) {
   }
   return studentGrade;
 }
-// <<grades.end>>
 
 assert.strictEqual(grade(78), "C");
 assert.strictEqual(grade(95), "A");

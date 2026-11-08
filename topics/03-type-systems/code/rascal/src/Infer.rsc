@@ -4,25 +4,18 @@ import Letrec;
 import List;
 import String;
 
-// <<subst>>
-// A substitution maps type variables to types.
 alias Subst = map[int, Type];
 
-// substitution(t0, tvar, t1): replace the variable tvar by t1 inside t0.
 Type substitution(intType(), int _, Type _)  = intType();
 Type substitution(boolType(), int _, Type _) = boolType();
 Type substitution(procType(a, r), int n, Type t1)
   = procType(substitution(a, n, t1), substitution(r, n, t1));
 Type substitution(tvar(m), int n, Type t1)   = m == n ? t1 : tvar(m);
 
-// Apply every binding of a substitution, following chains t1 = t2 = int.
 Type apply(tvar(n), Subst s)       = n in s ? apply(s[n], s) : tvar(n);
 Type apply(procType(a, r), Subst s) = procType(apply(a, s), apply(r, s));
 default Type apply(Type t, Subst _) = t;
-// <<subst.end>>
 
-// <<unify>>
-// no-occurrence?(tvar, t): the variable does not appear inside t.
 bool noOccurrence(int n, tvar(m))         = n != m;
 bool noOccurrence(int n, procType(a, r))  = noOccurrence(n, a) && noOccurrence(n, r);
 default bool noOccurrence(int _, Type _)  = true;
@@ -45,13 +38,10 @@ Subst unifier(Type t1, Type t2, Subst s, Exp e) {
   }
   throw "Unification failure: <show(t1)> and <show(t2)>";
 }
-// <<unify.end>>
 
-// <<infer>>
 int counter = 0;
 Type fresh() { counter += 1; return tvar(counter); }
 
-// optionaltype-2-type: a missing type becomes a new type variable.
 Type otype2type(noType())   = fresh();
 Type otype2type(aType(t))   = t;
 
@@ -106,9 +96,7 @@ Result infer(e:letrec(ores, f, x, ox, fBody, body), TEnv env, Subst s) {
   s = unifier(tb, tres, s, e);
   return infer(body, env2, s);
 }
-// <<infer.end>>
 
-// Rename the remaining variables t1, t5, ... to t0, t1, ... in order of appearance.
 Type normalize(Type t) {
   list[int] seen = [];
   visit (t) { case tvar(n): if (n notin seen) seen += [n]; }
@@ -124,7 +112,6 @@ str inferType(str src, TEnv env = ()) {
   catch str msg: return "error: <msg>";
 }
 
-// The examples of the lecture.
 test bool foo() = inferType("letrec foo (x) = if zero?(x) then 1 else -(x, (foo -(x,1))) in foo") == "int -\> int";
 test bool fx() = inferType("proc (f) proc (x) -((f 3), (f x))") == "(int -\> int) -\> int -\> int";
 test bool ifX() = startsWith(inferType("proc (x) if x then -(x,1) else 0"), "error: Unification failure");
@@ -134,11 +121,9 @@ test bool identity() = inferType("proc (x) x") == "t0 -\> t0";
 test bool double() = inferType("letrec double (x) = if zero?(x) then 0 else -((double -(x,1)), -2) in (double 6)") == "int";
 test bool partial() = inferType("proc (x : int) proc (y) -(x, y)") == "int -\> int -\> int";
 
-// substitution on the example of the lecture: t0 = tvar -> tx -> ty -> int -> tvar
 test bool subst() {
   Type t0 = procType(tvar(0), procType(tvar(1), procType(tvar(2), procType(intType(), tvar(0)))));
   return show(substitution(t0, 0, boolType())) == "bool -\> t1 -\> t2 -\> int -\> bool";
 }
 test bool twice() = inferType("proc (f) proc (x) (f (f x))") == "(t0 -\> t0) -\> t0 -\> t0";
-// Without let-generalization, both uses of i share one type variable.
 test bool noLetPoly() = startsWith(inferType("let i = proc (x) x in if (i zero?(0)) then (i 1) else 2"), "error: Unification failure");

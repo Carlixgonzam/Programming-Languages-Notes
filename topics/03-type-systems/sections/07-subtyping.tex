@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Subtyping}
 \label{sec:subtyping}
 
@@ -70,7 +69,7 @@ the input is broader and the output narrower.
 \end{figure}
 
 Java expresses variance at the use of a generic type, with wildcards:
-\coderange{Java}{java/Flyer.java}{variance}
+\codelines{Java}{java/Flyer.java}{8}{11}
 \texttt{List<? extends Animal>} accepts a \texttt{List<Dog>}: reading animals
 from it is safe. Writing is not, which is why a mutable list cannot be
 covariant without the wildcard.
@@ -84,7 +83,7 @@ Subsumption is the typing side of it; the variance rules keep it sound.
 
 In a \textbf{nominal} system the relation has to be declared. In Java a class
 is a subtype of an interface only if it says \texttt{implements}:
-\coderange{Java}{java/Flyer.java}{nominal}
+\codelines{Java}{java/Flyer.java}{2}{6}
 Without \texttt{implements Flying}, \texttt{Flying f = new Duck();} is rejected
 with \texttt{incompatible types: Duck cannot be converted to Flying}, even
 though \texttt{Duck} has the method. In a \textbf{structural} system the shape is

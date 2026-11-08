@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Polymorphism}
 \label{sec:polymorphism}
 
@@ -45,7 +44,7 @@ Section~\ref{sec:inference} possible.
 \end{figure}
 
 \paragraph{Generalization happens at \texttt{let}.} In Haskell
-\coderange{Haskell}{haskell/Polymorphism.hs}{letpoly}
+\codelines{Haskell}{haskell/Polymorphism.hs}{3}{5}
 type checks: the \texttt{let}-bound \texttt{ident} gets the type
 $\forall \alpha.\, \alpha \to \alpha$, and each use instantiates it. The same thing with a
 parameter, \lstinline|(\i -> (i 3, i True)) (\x -> x)|, is rejected with
@@ -61,21 +60,21 @@ another.
 
 Overloading binds one name to unrelated implementations, chosen at compile
 time by the types of the arguments:
-\coderange{Java}{java/Overloading.java}{overload}
+\codelines{Java}{java/Overloading.java}{2}{3}
 Haskell's type classes give this a structure: a class declares operations
 and each instance implements them for one type. A function constrained by a
 class is parametric in the type and ad hoc in the operation it calls:
-\coderange{Haskell}{haskell/Polymorphism.hs}{classes}
+\codelines{Haskell}{haskell/Polymorphism.hs}{7}{19}
 Java gets the same effect with an interface as a bound on a type parameter
 (Rust uses traits for this):
-\coderange{Java}{java/Overloading.java}{bounded}
+\codelines{Java}{java/Overloading.java}{5}{12}
 
 \subsection{Higher-rank polymorphism}
 
 Hindley--Milner only allows $\forall$ at the outside of a type. A function that
 receives a polymorphic function and uses it at two types needs a $\forall$
 inside the argument, a rank-2 type:
-\coderange{Haskell}{haskell/Polymorphism.hs}{rank2}
+\codelines{Haskell}{haskell/Polymorphism.hs}{21}{22}
 Inference cannot find this type (the first use would fix the type of
 \texttt{f}), but checking against the written signature works. Haskell allows
 it with the \texttt{RankNTypes} extension.

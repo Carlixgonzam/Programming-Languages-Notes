@@ -1,7 +1,6 @@
 #include <cassert>
 #include <cstdio>
 
-// <<list>>
 int count = 0;
 
 class list {
@@ -18,7 +17,6 @@ public:
         else return next->last();
     }
 };
-// <<list.end>>
 
 int main() {
     list *lst1 = new list(1);
@@ -26,7 +24,6 @@ int main() {
     lst1->next = lst2;
     assert(count == 2);
     assert(lst1->last() == 2);
-    // Two objects, two copies of info and next, one function last.
     assert(lst1 != lst2);
     std::printf("objects: ok\n");
     delete lst1;

@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Denotational semantics}
 \label{sec:denotational}
 
@@ -38,7 +37,7 @@ whose operations are defined by cases:
 The expressions are syntax; \texttt{Bool} and its operations are the domain.
 The semantic function maps each expression to an element of the domain,
 given the values of the variables:
-\coderange{Scheme}{scheme/denotational.scm}{booleans}
+\codelines{Scheme}{scheme/denotational.scm}{8}{14}
 
 \subsection{Numbers and expressions}
 
@@ -52,7 +51,7 @@ m\llbracket E_1 + E_2 \rrbracket = m\llbracket E_1 \rrbracket +_{\mathbb{N}} m\l
 The $+$ inside the brackets is a symbol of the language; $+_{\mathbb{N}}$ is the
 addition of natural numbers. The rule for $N\,D$ reads a number digit by
 digit: $m\llbracket 123 \rrbracket = (1 * 10 + 2) * 10 + 3$.
-\coderange{Scheme}{scheme/denotational.scm}{numbers}
+\codelines{Scheme}{scheme/denotational.scm}{19}{28}
 
 \paragraph{Infix expressions.} For the grammar $E ::= E + T \mid T$,
 $T ::= T * F \mid F$, $F ::= \mathit{num} \mid (E)$, where only $\mathit{num}$ has a value
@@ -93,7 +92,7 @@ Figure~\ref{fig:denot-tree} shows the meaning of each node of $2 * (3 + 4)$.
 \label{fig:denot-tree}
 \end{figure}
 
-\coderange{Scheme}{scheme/denotational.scm}{infix}
+\codelines{Scheme}{scheme/denotational.scm}{33}{37}
 
 \subsection{Other domains}
 
@@ -106,7 +105,7 @@ $\mathit{tree}(\mathit{op}, t_1, t_2)$: $m\llbracket E + T \rrbracket = \mathit{
 $m\llbracket \mathit{NUM} \rrbracket = \mathit{leafInt}(\mathit{NUM.val})$ and
 $m\llbracket \mathit{VAR} \rrbracket = \mathit{leafVar}(\mathit{VAR.val})$. This is the AST construction of
 the previous block, written as a semantic function.
-\coderange{Scheme}{scheme/denotational.scm}{trees}
+\codelines{Scheme}{scheme/denotational.scm}{41}{56}
 
 \paragraph{Derivatives with pairs.} The meaning of an expression can be a pair
 $\langle a, b \rangle$ where $a$ is its tree and $b$ the tree of its derivative with respect
@@ -122,7 +121,7 @@ where $E$, $T$, $F$ and $P$ in the right side stand for their meanings. The slid
 writes the product rule with $\mathit{snd}(E)$ and $\mathit{fst}(E)$ in the second
 component; the operands are $T$ and $F$. It also writes $n * P^{n-1}$, where the
 base is the tree $\mathit{fst}(P)$.
-\coderange{Scheme}{scheme/denotational.scm}{derivative}
+\codelines{Scheme}{scheme/denotational.scm}{60}{75}
 The tests evaluate both trees of $x * x + 3 * x$ at $x = 2$ and get $f(2) = 10$
 and $f'(2) = 7$.
 
@@ -134,7 +133,7 @@ $E\llbracket E_1 + E_2 \rrbracket = (1, \mathit{real}(m\llbracket E_1 \rrbracket
 and multiplication adds angles and multiplies magnitudes in polar form. The
 functions $\mathit{real}$, $\mathit{img}$, $\mathit{ang}$ and $\mathit{mag}$ convert when the
 argument is in the other form.
-\coderange{Scheme}{scheme/denotational.scm}{complex}
+\codelines{Scheme}{scheme/denotational.scm}{82}{97}
 
 \paragraph{S-expressions.} The S-expressions of Lisp, restricted to
 $S ::= (+\ L) \mid (*\ L) \mid \mathit{num}$, $L ::= S \mid L\, S$, have two domains:
@@ -149,7 +148,7 @@ m\llbracket L \to L\, S \rrbracket = \mathit{insertEnd}(m\llbracket L \rrbracket
 \end{array}
 \]
 The slide repeats $S \to (+\ L)$ in the rule for $*$.
-\coderange{Scheme}{scheme/denotational.scm}{sexp}
+\codelines{Scheme}{scheme/denotational.scm}{102}{108}
 
 \paragraph{Sets of digits.} For $S ::= \{\} \mid \{\mathit{Nums}\}$,
 $\mathit{Nums} ::= \mathit{num} \mid \mathit{Nums}, \mathit{num}$, the meaning of a set is a 10-tuple of
@@ -159,7 +158,7 @@ intersection and complement work position by position:
 $m\llbracket S_1 \cup S_2 \rrbracket_i = m\llbracket S_1 \rrbracket_i \mathbin{||} m\llbracket S_2 \rrbracket_i$,
 $m\llbracket S_1 \cap S_2 \rrbracket_i = m\llbracket S_1 \rrbracket_i \mathbin{\&\&} m\llbracket S_2 \rrbracket_i$,
 $m\llbracket S^c \rrbracket_i = \neg m\llbracket S \rrbracket_i$.
-\coderange{Scheme}{scheme/denotational.scm}{sets}
+\codelines{Scheme}{scheme/denotational.scm}{112}{119}
 
 \subsection{Programs}
 
@@ -182,7 +181,7 @@ m\llbracket \mathit{var} := E \rrbracket\, \mathit{Mem} = \mathit{Mem}[m\llbrack
 \]
 Each assignment is a function from memories to memories, and a sequence is
 their composition.
-\coderange{Scheme}{scheme/denotational.scm}{assign}
+\codelines{Scheme}{scheme/denotational.scm}{126}{140}
 
 \paragraph{Translation as meaning.} With the same grammar, the meaning of a
 program can be its translation to code for a stack machine, with the
@@ -220,7 +219,7 @@ shows the code for \texttt{y := x + 4} and the stack while it runs.
 \label{fig:stack-code}
 \end{figure}
 
-\coderange{Scheme}{scheme/denotational.scm}{compile}
+\codelines{Scheme}{scheme/denotational.scm}{146}{176}
 The test runs the code of a program on the machine and checks that it gives
 the same memory as the direct semantics.
 

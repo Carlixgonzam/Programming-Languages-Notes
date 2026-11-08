@@ -1,8 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
 
-// <<case>>
-/* case e of 1: A | 2,7: B | 3..5: C | 10: D else E end */
 char with_case(int e) {
     switch (e) {
     case 1: return 'A';
@@ -12,10 +10,7 @@ char with_case(int e) {
     default: return 'E';
     }
 }
-// <<case.end>>
 
-// <<table>>
-/* Jump table T: entry i-1 is the clause for the value i. */
 static const char T[10] = {'A', 'B', 'C', 'C', 'C', 'E', 'B', 'E', 'E', 'D'};
 
 char with_table(int e) {
@@ -23,7 +18,6 @@ char with_table(int e) {
     if (e > 10) return 'E';
     return T[e - 1];
 }
-// <<table.end>>
 
 int main(void) {
     for (int e = -3; e <= 14; e++)

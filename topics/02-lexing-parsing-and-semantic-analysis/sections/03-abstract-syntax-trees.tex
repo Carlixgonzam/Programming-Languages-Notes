@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Abstract syntax trees and attribute grammars}
 \label{sec:ast}
 
@@ -130,7 +129,7 @@ $7 + 12 = 19$.
 
 In Rascal, each semantic function is one equation over a concrete syntax
 pattern, and the attribute is the function:
-\coderange{Rascal}{rascal/src/Attributes.rsc}{val}
+\codelines{Rascal}{rascal/src/Attributes.rsc}{22}{30}
 
 \paragraph{Inherited attributes.} An attribute computed from the parent or the
 siblings of a node is \textbf{inherited}. Inherited attributes carry values
@@ -178,7 +177,7 @@ ignoring associativity.
 \end{figure}
 
 In Rascal the inherited attribute is an extra parameter:
-\coderange{Rascal}{rascal/src/Attributes.rsc}{inherited}
+\codelines{Rascal}{rascal/src/Attributes.rsc}{35}{38}
 
 \subsection{Building ASTs}
 
@@ -237,8 +236,8 @@ only pass pointers up.
 \label{fig:ast-bu}
 \end{figure}
 
-\coderange{Rascal}{rascal/src/Attributes.rsc}{ast}
-\coderange{Rascal}{rascal/src/Attributes.rsc}{bottomup}
+\codelines{Rascal}{rascal/src/Attributes.rsc}{42}{46}
+\codelines{Rascal}{rascal/src/Attributes.rsc}{48}{56}
 
 \paragraph{Top-down.} With the grammar without left recursion the operator and
 its left operand are in different subtrees, so the tree built so far has to
@@ -271,7 +270,7 @@ for $*$ and $/$ compute $\mathit{FactTerm}_1.\mathit{st}$ from $\mathit{Fact}.\m
 $\mathit{FactTerm}_2.\mathit{ptr}$, the reverse of the rules for $+$ and $-$; the node
 must be built from the inherited tree and the new factor and passed down to
 $\mathit{FactTerm}_2$. And the parenthesis rule is written $\mathit{Fact} ::= \mathit{Exp}$.
-\coderange{Rascal}{rascal/src/Attributes.rsc}{topdown}
+\codelines{Rascal}{rascal/src/Attributes.rsc}{58}{71}
 The tests check that both constructions build the same AST for $(1+2)*4$ and
 for $1-2*3+4/2$, and that $9-4-3$ becomes $(9-4)-3$.
 

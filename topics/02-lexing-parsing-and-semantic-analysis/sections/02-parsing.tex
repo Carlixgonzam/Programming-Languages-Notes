@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Parsing}
 \label{sec:parsing}
 
@@ -137,7 +136,7 @@ forever: \texttt{Exp()} would call \texttt{Exp()} before reading anything. For
 the grammar above the choice can be made by looking at the next symbol, and
 the parser needs no backtracking. In Rascal, with the value of the expression
 computed along the way:
-\coderange{Rascal}{rascal/src/RecursiveDescent.rsc}{rd}
+\codelines{Rascal}{rascal/src/RecursiveDescent.rsc}{6}{48}
 Pattern matching on the list of tokens makes each rule one \texttt{if}: the
 pattern \texttt{["+", *rest]} says that the next token is \texttt{+}.
 
@@ -207,8 +206,8 @@ together with the $+$ that begins $\mathit{Exp'}$.
 
 In Rascal a grammar is a list of rules, and both functions are fixed points
 written with \texttt{solve}:
-\coderange{Rascal}{rascal/src/LL1.rsc}{first}
-\coderange{Rascal}{rascal/src/LL1.rsc}{follow}
+\codelines{Rascal}{rascal/src/LL1.rsc}{24}{40}
+\codelines{Rascal}{rascal/src/LL1.rsc}{42}{54}
 The tests in \texttt{LL1.rsc} check the sets of Table~\ref{tab:first-follow}.
 
 \subsection{LL(1) grammars and the parsing table}
@@ -252,7 +251,7 @@ are errors.
 \label{tab:ll1}
 \end{table}
 
-\coderange{Rascal}{rascal/src/LL1.rsc}{table}
+\codelines{Rascal}{rascal/src/LL1.rsc}{56}{73}
 
 \paragraph{Nonrecursive predictive parsing.} The recursion of recursive descent
 can be replaced by an explicit stack, as in the pushdown automaton built from
@@ -331,7 +330,7 @@ It reports two errors and reaches the end of the input.
 
 The parser in Rascal produces this trace step by step (the test
 \texttt{panic} checks the two errors):
-\coderange{Rascal}{rascal/src/LL1.rsc}{parse}
+\codelines{Rascal}{rascal/src/LL1.rsc}{75}{113}
 
 \paragraph{Phrase-level recovery in a predictive parser.} The empty cells can
 also hold calls to error routines that change the input or the stack:
@@ -535,9 +534,9 @@ only on $+$, $)$ or \$. That is how the automaton resolves the choice of the
 shift-reduce trace.
 
 In Rascal, items, closure and \texttt{goTo} are a few lines each:
-\coderange{Rascal}{rascal/src/LR.rsc}{items}
+\codelines{Rascal}{rascal/src/LR.rsc}{18}{45}
 and the SLR table and the parser:
-\coderange{Rascal}{rascal/src/LR.rsc}{slr}
+\codelines{Rascal}{rascal/src/LR.rsc}{49}{95}
 The tests check that the collection has twelve states, that the table has no
 conflicts, that the trace of $3*2$ is the one of Table~\ref{tab:shift-reduce}
 and that the grammar of the \texttt{if} statement has a conflict on
@@ -551,7 +550,7 @@ Precedence climbing, or Pratt parsing, uses a table of binding powers
 instead. It parses an atom, then keeps reading operators while their
 precedence is at least the current minimum, parsing each right operand with
 a higher minimum so that operators of the same level associate to the left:
-\coderange{Python}{python/pratt.py}{pratt}
+\codelines{Python}{python/pratt.py}{18}{37}
 For $1+2*3$ the call for the right operand of $+$ has minimum 2, so it takes
 $2*3$ whole before returning, and the result is $1 + (2*3)$. Adding a level is
 one entry in the table. Nystrom's book builds its expression parser this way.

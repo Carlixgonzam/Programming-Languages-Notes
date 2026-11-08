@@ -3,13 +3,6 @@ module RecursiveDescent
 import List;
 import String;
 
-// <<rd>>
-// One function per nonterminal of the grammar without left recursion:
-//   Exp ::= Term Exp'    Exp' ::= + Term Exp' | λ
-//   Term ::= Factor Term'   Term' ::= * Factor Term' | λ
-//   Factor ::= ( Exp ) | Num
-// Each function receives the remaining input and returns it after reading
-// its part. The value computed along the way is returned with it.
 alias Result = tuple[int val, list[str] rest];
 
 Result exp(list[str] input) {
@@ -18,11 +11,11 @@ Result exp(list[str] input) {
 }
 
 Result expPrime(int left, list[str] input) {
-  if (["+", *rest] := input) {             // Exp' ::= + Term Exp'
+  if (["+", *rest] := input) {
     <v, rest2> = term(rest);
     return expPrime(left + v, rest2);
   }
-  return <left, input>;                    // Exp' ::= λ
+  return <left, input>;
 }
 
 Result term(list[str] input) {
@@ -31,20 +24,20 @@ Result term(list[str] input) {
 }
 
 Result termPrime(int left, list[str] input) {
-  if (["*", *rest] := input) {             // Term' ::= * Factor Term'
+  if (["*", *rest] := input) {
     <v, rest2> = factor(rest);
     return termPrime(left * v, rest2);
   }
-  return <left, input>;                    // Term' ::= λ
+  return <left, input>;
 }
 
 Result factor(list[str] input) {
-  if (["(", *rest] := input) {             // Factor ::= ( Exp )
+  if (["(", *rest] := input) {
     <v, rest2> = exp(rest);
     if ([")", *rest3] := rest2) return <v, rest3>;
     throw "expected )";
   }
-  if ([n, *rest] := input, /^[0-9]+$/ := n) return <toInt(n), rest>;   // Factor ::= Num
+  if ([n, *rest] := input, /^[0-9]+$/ := n) return <toInt(n), rest>;
   throw "unexpected <input == [] ? "end of input" : head(input)>";
 }
 
@@ -53,7 +46,6 @@ int evaluate(list[str] tokens) {
   if (rest != []) throw "unexpected <head(rest)>";
   return v;
 }
-// <<rd.end>>
 
 list[str] w(str x) = [ x[i] | i <- [0 .. size(x)] ];
 

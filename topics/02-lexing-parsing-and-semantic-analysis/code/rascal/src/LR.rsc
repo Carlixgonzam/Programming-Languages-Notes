@@ -5,9 +5,8 @@ import Set;
 import String;
 import LL1;
 
-// <<grammar>>
 public Grammar exprLR = [
-  <"Exp\'",  ["Exp"]>,                       // augmented start rule
+  <"Exp\'",  ["Exp"]>,
   <"Exp",    ["Exp", "+", "Term"]>,
   <"Exp",    ["Term"]>,
   <"Term",   ["Term", "*", "Factor"]>,
@@ -15,11 +14,7 @@ public Grammar exprLR = [
   <"Factor", ["(", "Exp", ")"]>,
   <"Factor", ["num"]>
 ];
-// <<grammar.end>>
 
-// <<items>>
-// An item is a rule with a dot: <rule, n> means that the first n symbols of
-// the right side have been seen.
 alias Item = tuple[Rule rule, int dot];
 alias State = set[Item];
 
@@ -37,7 +32,6 @@ State closure(Grammar g, State items) {
 State goTo(Grammar g, State items, str x)
   = closure(g, { <i.rule, i.dot + 1> | i <- items, afterDot(i) == x });
 
-// The canonical collection of item sets, starting from the augmented rule.
 list[State] collection(Grammar g) {
   list[State] states = [closure(g, {<g[0], 0>})];
   set[str] symbols = { x | r <- g, x <- r.rhs };
@@ -49,13 +43,9 @@ list[State] collection(Grammar g) {
   }
   return states;
 }
-// <<items.end>>
 
 str showItem(Item i) = "<i.rule.lhs> ::= <intercalate(" ", i.rule.rhs[..i.dot] + ["."] + i.rule.rhs[i.dot..])>";
 
-// <<slr>>
-// SLR table: shift on terminals after the dot, reduce A ::= α on follow(A),
-// accept when the augmented rule is complete.
 rel[int, str, str] actions(Grammar g) {
   list[State] states = collection(g);
   map[str, set[str]] fo = follow(g, g[0].lhs);
@@ -75,7 +65,6 @@ rel[int, str, str] actions(Grammar g) {
 
 bool hasConflict(Grammar g) = any(<k, a> <- actions(g)<0, 1>, size(actions(g)[k, a]) > 1);
 
-// Shift-reduce parsing. The stack holds states; the trace shows the symbols.
 list[str] shiftReduce(Grammar g, list[str] input) {
   list[State] states = collection(g);
   rel[int, str, str] act = actions(g);
@@ -104,7 +93,6 @@ list[str] shiftReduce(Grammar g, list[str] input) {
     }
   }
 }
-// <<slr.end>>
 
 test bool twelveStates() = size(collection(exprLR)) == 12;
 test bool noConflicts() = !hasConflict(exprLR);
@@ -114,7 +102,6 @@ test bool firstState() = { showItem(i) | i <- collection(exprLR)[0] } == {
   "Term ::= . Term * Factor", "Term ::= . Factor",
   "Factor ::= . ( Exp )", "Factor ::= . num" };
 
-// The trace of the lecture for 3*2.
 test bool trace32() = shiftReduce(exprLR, ["num", "*", "num"]) == [
   "shift num", "reduce Factor ::= num", "reduce Term ::= Factor",
   "shift *", "shift num", "reduce Factor ::= num", "reduce Term ::= Term * Factor",
@@ -122,7 +109,6 @@ test bool trace32() = shiftReduce(exprLR, ["num", "*", "num"]) == [
 
 test bool rejects() = last(shiftReduce(exprLR, ["num", "+", "*"])) == "error";
 
-// <<ifelse>>
 public Grammar ifElse = [
   <"S\'",   ["Stmt"]>,
   <"Stmt",  ["if", "Cond", "then", "Stmt"]>,
@@ -132,8 +118,5 @@ public Grammar ifElse = [
   <"Var",   ["x"]>, <"Var", ["y"]>,
   <"Op",    ["\>"]>, <"Op", ["="]>
 ];
-// <<ifelse.end>>
 
-// After "if Cond then Stmt" with "else" next, the table has a shift and a reduce.
 test bool ifElseConflict() = hasConflict(ifElse);
-

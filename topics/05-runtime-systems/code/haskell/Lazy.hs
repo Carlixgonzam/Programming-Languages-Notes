@@ -1,14 +1,11 @@
 import Data.List (foldl')
 
--- <<three>>
 three :: Integer -> Integer
 three x = 3
 
 infinity :: Integer
 infinity = infinity + 1
--- <<three.end>>
 
--- <<from>>
 from :: Int -> [Int]
 from n = n : from (n + 1)
 
@@ -18,15 +15,12 @@ isPrime n = n > 1 && all (\d -> n `mod` d /= 0) (takeWhile (\d -> d * d <= n) [2
 firstPrime :: [Int] -> Int
 firstPrime [] = 0
 firstPrime (x:xs) = if isPrime x then x else firstPrime xs
--- <<from.end>>
 
--- <<fibs>>
 ones :: [Int]
 ones = 1 : ones
 
 fibs :: [Integer]
 fibs = 0 : 1 : zipWith (+) fibs (tail fibs)
--- <<fibs.end>>
 
 main :: IO ()
 main

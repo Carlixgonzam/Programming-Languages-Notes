@@ -4,9 +4,6 @@
   (if (not (equal? expected got)) (display "  FAIL"))
   (newline))
 
-;; <<meval>>
-;; Expressions: numbers, symbols, (if c t e), (lambda (x ...) body), (f a ...)
-;; Environments: lists of (name . value) pairs.
 (define (m-eval expr env)
   (cond ((number? expr) expr)
         ((symbol? expr) (cdr (assq expr env)))
@@ -22,15 +19,12 @@
 
 (define (m-apply f args)
   (if (procedure? f)
-      (apply f args)                          ; primitive
+      (apply f args)
       (let ((params (cadr f)) (body (caddr f)) (env (cadddr f)))
         (m-eval body (append (map cons params args) env)))))
-;; <<meval.end>>
 
-;; <<globals>>
 (define global-env
   (list (cons '+ +) (cons '* *) (cons '- -) (cons '< <)))
-;; <<globals.end>>
 
 (check "number" 3 (m-eval 3 global-env))
 (check "sum" 7 (m-eval '(+ 3 4) global-env))

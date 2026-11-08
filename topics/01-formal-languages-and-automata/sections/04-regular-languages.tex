@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Regular languages}
 \label{sec:regular}
 
@@ -89,8 +88,8 @@ and $aaabbbb$ in $\mathcal{G}_{3l}$ (right).}
 
 Both grammars can be written in Rascal directly. They are \texttt{lexical}
 because no spaces may appear between the symbols:
-\coderange{Rascal}{rascal/src/Regular.rsc}{right}
-\coderange{Rascal}{rascal/src/Regular.rsc}{left}
+\codelines{Rascal}{rascal/src/Regular.rsc}{8}{9}
+\codelines{Rascal}{rascal/src/Regular.rsc}{11}{12}
 The tests compare each grammar with its regular expression on every word over
 $\{a,b\}$ of length up to 8.
 
@@ -263,10 +262,10 @@ and the other two formats are the same pieces in a different order.
 
 \paragraph{The date DSL in Rascal.} In Rascal each part of the date is
 \texttt{lexical}, so no spaces are allowed inside a date:
-\coderange{Rascal}{rascal/src/DateDSL.rsc}{grammar}
+\codelines{Rascal}{rascal/src/DateDSL.rsc}{5}{19}
 The slide's Rascal version uses \texttt{syntax} rules with a top-level
 \texttt{|}, as in
-\coderange{Rascal}{rascal/src/DateDSL.rsc}{slide}
+\codelines{Rascal}{rascal/src/DateDSL.rsc}{21}{25}
 In Rascal, as in BNF, \texttt{|} separates the alternatives of the whole rule,
 so this rule says that a \texttt{SlashSlide} is either \texttt{"0" Digit}, or
 \texttt{"1" UptoTwo "/" UptoTwo Digit}, or the third alternative. The test
@@ -404,7 +403,7 @@ automaton is a separate step.
 abbreviations: character classes such as \texttt{[a-z]} are unions,
 \texttt{\{2,\}} is a bounded repetition and \texttt{\textbackslash{}d} is
 \texttt{[0-9]}.
-\coderange{Python}{python/practical_regex.py}{practical}
+\codelines{Python}{python/practical_regex.py}{3}{5}
 Some features of these libraries are not regular. A backreference such as
 \texttt{(\textbackslash{}w+) \textbackslash{}1} matches a word repeated twice,
 and to do that for words of any length an automaton would need to remember
@@ -459,7 +458,7 @@ domain \texttt{uniandes.edu.co}. Then write one for any e-mail address.
 
 \paragraph{Solution.} The slides write character sets with braces; in the
 usual syntax of regular expression libraries:
-\coderange{Rascal}{rascal/src/Regular.rsc}{email}
+\codelines{Rascal}{rascal/src/Regular.rsc}{44}{45}
 The braces on the slides mean repetition, as in EBNF, so the slide's
 version also accepts an address with nothing before the \texttt{@}; the
 \texttt{+} above requires at least one character. The dots of the domain are

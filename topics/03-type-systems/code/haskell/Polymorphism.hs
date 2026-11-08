@@ -1,12 +1,9 @@
 {-# LANGUAGE RankNTypes #-}
 
--- <<letpoly>>
 pair :: (Int, Bool)
 pair = let ident = \x -> x
-       in (ident 3, ident True)       -- ident is used at Int and at Bool
--- <<letpoly.end>>
+       in (ident 3, ident True)
 
--- <<classes>>
 class MyEq a where
   eq :: a -> a -> Bool
 
@@ -20,12 +17,9 @@ instance MyEq Bool where
 
 allEqual :: MyEq a => [a] -> Bool
 allEqual xs = and (zipWith eq xs (drop 1 xs))
--- <<classes.end>>
 
--- <<rank2>>
 apply2 :: (forall a. a -> a) -> (Int, Bool)
 apply2 f = (f 3, f True)
--- <<rank2.end>>
 
 main :: IO ()
 main

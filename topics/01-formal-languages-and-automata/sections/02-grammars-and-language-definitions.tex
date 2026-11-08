@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Grammars and language definitions}
 \label{sec:grammars}
 
@@ -132,7 +131,7 @@ grammar has no brackets around elements, no commas, no signs and no strings.
 The same grammar in Rascal, where \texttt{lexical} defines the shape of
 numbers, \texttt{layout} says that spaces may appear between symbols, and each
 alternative gets a label:
-\coderange{Rascal}{rascal/src/Lists.rsc}{concrete}
+\codelines{Rascal}{rascal/src/Lists.rsc}{6}{12}
 The module \texttt{Lists.rsc} has one test per row of Table~\ref{tab:lists}.
 
 \subsection{Abstract syntax}
@@ -176,7 +175,7 @@ abstract syntax tree (AST) only keeps what matters: a list built from 3, then
 \textbf{Algebraic data types} are the usual way to define an abstract syntax.
 A type is defined by its constructors, and each constructor says which parts
 a node has. In Rascal:
-\coderange{Rascal}{rascal/src/Lists.rsc}{abstract}
+\codelines{Rascal}{rascal/src/Lists.rsc}{14}{19}
 \texttt{implode} turns a parse tree into a value of the data type, matching
 each labeled alternative of the grammar with the constructor of the same name.
 For \texttt{3 | 14 | []} it returns \texttt{cons(3, cons(14, empty()))}.
@@ -190,7 +189,7 @@ binary  ::= expr "*" expr | expr "/" expr | expr "+" expr | expr "-" expr
 literal ::= "0" .. "9" | "true" | "false"
 \end{lstlisting}
 and this data type:
-\coderange{Rascal}{rascal/src/Expr.rsc}{adt}
+\codelines{Rascal}{rascal/src/Expr.rsc}{3}{12}
 (The slide declares the right operand as \texttt{Express rhs}; the type is
 \texttt{Expr}. It also lists a constructor \texttt{var(Id id)}, which has no
 rule in the grammar above.)
@@ -200,7 +199,7 @@ Of the three inputs \texttt{3 * 4}, \texttt{¬ false + true} and
 well-formed program: it adds a boolean (\texttt{¬ false}) to another boolean.
 The grammar cannot see this, because \texttt{expr} does not distinguish
 numbers from booleans. A function over the abstract syntax can:
-\coderange{Rascal}{rascal/src/Expr.rsc}{kind}
+\codelines{Rascal}{rascal/src/Expr.rsc}{14}{20}
 This function is a first, very small type checker. Type systems are the
 subject of a later block.
 
@@ -290,7 +289,7 @@ tree.
 The grammar in Rascal follows the BNF almost line by line. Letters, digits,
 values and references are \texttt{lexical} because no spaces are allowed
 inside them:
-\coderange{Rascal}{rascal/src/Spreadsheet.rsc}{grammar}
+\codelines{Rascal}{rascal/src/Spreadsheet.rsc}{5}{31}
 The tests in \texttt{Spreadsheet.rsc} check every input of the lecture,
 including the ones in the exercises below.
 

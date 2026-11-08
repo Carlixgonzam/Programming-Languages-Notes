@@ -1,4 +1,3 @@
-% !TeX root = ../main.tex
 \section{Control flow}
 \label{sec:control}
 
@@ -84,7 +83,7 @@ the reference model \texttt{b} and \texttt{c} refer to the same object 2. Equali
 has two meanings in the reference model: do two variables refer to the same
 object (\texttt{===} in JavaScript, \texttt{==} on objects in Java), or to
 equal values (\texttt{==} in JavaScript, \texttt{equals} in Java)?
-\coderange{Java}{java/Control.java}{equality}
+\codelines{Java}{java/Control.java}{15}{17}
 \texttt{a == b} is false because \texttt{a} and \texttt{b} are two objects
 with the value 1000.
 
@@ -130,7 +129,7 @@ treat the \texttt{if} as always taken, and the program compiles.
 into an object that wraps it (boxing) and back (unboxing) is needed to store
 values where references are expected, as in a hash table. Java does it
 explicitly or automatically:
-\coderange{Java}{java/Control.java}{boxing}
+\codelines{Java}{java/Control.java}{7}{12}
 
 \subsection{Evaluation order}
 
@@ -149,7 +148,7 @@ is the same problem.
 \paragraph{Short-circuit evaluation.} In \texttt{(a < b) and (b < c)}, if
 \texttt{a < b} is false there is no point in evaluating the rest. Short-circuit
 evaluation stops as soon as the value is known, and programs rely on it:
-\coderange{C}{c/control.c}{shortcircuit}
+\codelines{C}{c/control.c}{15}{21}
 \texttt{p->key} is not evaluated when \texttt{p} is \texttt{NULL}. In small step,
 short-circuit \texttt{||} is two rules that look only at the left operand:
 \begin{mathpar}
@@ -173,7 +172,7 @@ impossible to reason locally about a program.
 iteration, are restricted jumps. Pascal uses \texttt{goto 100} to a label after
 the loop; Ada has \texttt{exit when} and named loops (\texttt{exit Main\_Cycle
 when Found}); Java has labeled \texttt{continue}:
-\coderange{Java}{java/Control.java}{labeled}
+\codelines{Java}{java/Control.java}{20}{29}
 When $i = 2$ and $j = 2$ the inner loop stops and the outer one continues with
 $i = 3$, so the pair $(2, 3)$ is never printed.
 
@@ -186,14 +185,14 @@ requires unwinding the run-time stack. The lecture's Pascal example jumps
 from \texttt{search\_file} to a label in the enclosing \texttt{search}. Ruby
 uses \texttt{catch :found} around the calls and \texttt{throw :found, line}
 inside them. In Scheme the same behavior is a continuation:
-\coderange{Scheme}{scheme/control.scm}{search}
+\codelines{Scheme}{scheme/control.scm}{17}{25}
 \texttt{found} is the continuation of the whole search: calling it returns
 from \texttt{search} immediately, from inside both loops.
 
 \paragraph{Continuations.} A continuation captures the context (the rest of the
 computation) in which execution may continue. \texttt{call/cc} passes the
 current continuation to a function:
-\coderange{Scheme}{scheme/control.scm}{callcc}
+\codelines{Scheme}{scheme/control.scm}{7}{12}
 With \texttt{call/cc}, \texttt{return} is the continuation, so \texttt{(return 2)}
 abandons the rest of \texttt{f} and the result is 2. With the identity function
 as \texttt{return}, the call returns normally and \texttt{f} gives 3.
@@ -202,7 +201,7 @@ goes back and forward between pages (Smalltalk's Seaside).
 
 \paragraph{Exceptions.} This paragraph goes beyond the slides. An exception
 transfers control to the nearest handler:
-\coderange{Python}{python/control.py}{exceptions}
+\codelines{Python}{python/control.py}{1}{10}
 In big step, a command can now end in a store or raise a value; a sequence
 stops at the first raise, and \texttt{try} catches it. Exceptions, \texttt{break}
 and \texttt{return} are tamed jumps: their possible targets are known
@@ -218,7 +217,7 @@ where its variables exist, as the symbol tables of the previous block. A
 \texttt{static} local variable in C is the opposite case: it is created once
 and keeps its value between calls, so the same sequence of calls produces a
 different value each time:
-\coderange{C}{c/control.c}{static}
+\codelines{C}{c/control.c}{8}{13}
 Three calls with \texttt{'p'}, \texttt{'p'}, \texttt{'l'} produce \texttt{p1},
 \texttt{p2} and \texttt{l1}.
 
@@ -229,14 +228,14 @@ of the program: \texttt{if \dots{} then \dots{} else \dots}, with \texttt{else i
 (or \texttt{elif}) for more cases. Lisp's \texttt{cond} expresses multiple
 selection without nesting, like a \texttt{switch} on conditions. The lecture's
 example, in Common Lisp:
-\coderange{CommonLisp}{lisp/cond.lisp}{cond}
+\codelines{CommonLisp}{lisp/cond.lisp}{1}{5}
 The conditions are tested in order and the first true one wins: 354 gives
 \texttt{"cond4"}.
 
 \paragraph{Pattern matching.} Conditions can be evaluated indirectly by matching
 values against patterns. The lecture's Elixir \texttt{merge} has one case per
 shape of the two lists; in Rascal:
-\coderange{Rascal}{rascal/src/Merge.rsc}{merge}
+\codelines{Rascal}{rascal/src/Merge.rsc}{3}{6}
 
 \paragraph{Jump code.} When a condition only decides a branch, its value does
 not have to be computed: the code can jump as soon as the result is known, as
@@ -321,21 +320,21 @@ body at least once) or in the middle (\texttt{loop \dots{} exit when \dots{} end
 
 \paragraph{Generators.} This paragraph goes beyond the slides. A generator
 produces the values of a loop one at a time and suspends between them:
-\coderange{Python}{python/control.py}{generator}
+\codelines{Python}{python/control.py}{13}{16}
 
 \subsection{Recursion}
 
 Recursive and iterative programs are equivalent, up to the use of the stack.
 A call in tail position (the last thing the function does) needs no stack
 frame of its own, and the compiler can turn it into a jump:
-\coderange{C}{c/control.c}{gcd}
+\codelines{C}{c/control.c}{23}{34}
 Scheme requires implementations to do this, so a tail-recursive function runs
 in constant stack space:
-\coderange{Scheme}{scheme/control.scm}{gcd}
+\codelines{Scheme}{scheme/control.scm}{41}{44}
 A function that is not tail-recursive can be transformed into
 continuation-passing style: each call receives, as an extra argument, a
 function with the rest of the computation.
-\coderange{Scheme}{scheme/control.scm}{cps}
+\codelines{Scheme}{scheme/control.scm}{30}{36}
 In \texttt{fact-cps}, the multiplication that \texttt{fact} does after the
 recursive call moves into the continuation, and every call is a tail call.
 
@@ -369,7 +368,7 @@ A[index_fn(i)] = A[index_fn(i)] + 1;
 If the function has a side effect, the two calls can return different indices,
 and the program increments one cell with the value of another; the order of
 the two calls is also unspecified.
-\coderange{C}{c/control.c}{index}
+\codelines{C}{c/control.c}{37}{42}
 The test uses an \texttt{index\_fn} that counts its calls.
 
 \begin{exercise}
@@ -391,7 +390,7 @@ grades A to F according to the score (at least 90, 80, 70, 60).
 \paragraph{Solution.} A chain of tests: $\ge 90$ goes to A, otherwise $\ge 80$ goes
 to B, and so on; the last \texttt{else} goes to F. All branches join before the
 final statement. In JavaScript:
-\coderange{JavaScript}{js/grades.js}{grades}
+\codelines{JavaScript}{js/grades.js}{3}{17}
 With the score 78 the first two tests fail and the third assigns C.
 
 \begin{exercise}

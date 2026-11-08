@@ -3,7 +3,6 @@ module Training
 import ParseTree;
 import String;
 
-// <<grammar>>
 layout Layout = [\ \t\n\r]* !>> [\ \t\n\r];
 
 lexical Number   = [0-9]+ !>> [0-9];
@@ -18,11 +17,9 @@ syntax Day       = DayName name ":" Activity+ activities;
 syntax Activity  = Exercise exercise ":" Quantity quantity Intensity? intensity;
 syntax Quantity  = Number amount Unit unit;
 syntax Intensity = "@" Label label;
-// <<grammar.end>>
 
 Plan parsePlan(str s) = parse(#Plan, s);
 
-// <<check>>
 set[str] distanceExercises = {"run", "swim", "cycle"};
 set[str] distanceUnits = {"km", "m"};
 set[str] durationUnits = {"min", "h"};
@@ -42,9 +39,7 @@ list[str] check(Plan p) {
   }
   return errors;
 }
-// <<check.end>>
 
-// <<eval>>
 int meters(Quantity q) = "<q.unit>" == "km" ? toInt("<q.amount>") * 1000 : toInt("<q.amount>");
 
 int totalMeters(Plan p) {
@@ -54,7 +49,6 @@ int totalMeters(Plan p) {
   }
   return total;
 }
-// <<eval.end>>
 
 str example = "Monday:
               '  run: 10km @threshold
