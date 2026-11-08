@@ -1,275 +1,533 @@
 % !TeX root = ../main.tex
 \section{Runtime data representation}
+\label{sec:representation}
 
-We've talked a lot about what values \emph{mean}. Now let's talk about what they
-literally \emph{are}, once a program is actually running: bits, in memory, at some
-address, with some layout. This is the layer where a type system's promises meet
-physical hardware, and where a lot of language-design decisions (dynamic vs.\ static
-typing, whether integers can be arbitrarily large, how expensive a function call is)
-get paid for or profited from.
+Once a program has been processed, its information has to be stored somewhere.
+Variables are created in symbol tables, but their values, the code itself and
+the bookkeeping of the execution also need a place in memory. This section
+follows Pratt and Zelkowitz~\cite[Ch.~10]{pratt2001design}, Aho et
+al.~\cite[Ch.~7]{aho2007compilers} and Kaplan~\cite[Ch.~6, 9]{kaplan1994little}.
 
-\subsection{tagged values: boxing vs.\ unboxing}
+\subsection{Representation of code}
 
-A statically-typed compiled language usually knows, at compile time, exactly what type
-every value has, so it doesn't need to store that information at runtime; a machine
-word holding an \texttt{int} is just the bits of the integer, full stop. A
-dynamically-typed language doesn't have that luxury: a variable can hold an integer
-today and a string tomorrow, so \emph{something} at runtime has to be able to answer
-``what kind of value is this bit pattern?''. The answer is a \textbf{tag}: a small
-piece of metadata, stored alongside (or packed into) the value, that identifies its
-type.
-
-\begin{definition}[Boxed representation]
-A value is \textbf{boxed} when it's represented as a pointer to a heap-allocated
-object that itself contains the tag and the actual data. Reading a boxed value costs
-a pointer dereference (and the object had to be allocated somewhere, at some point).
-\end{definition}
-
-\begin{definition}[Unboxed / immediate representation]
-A value is \textbf{unboxed} (or \textbf{immediate}) when the value itself, tag
-included, fits directly in a machine word, no heap allocation and no extra
-indirection required to read it.
-\end{definition}
-
-The classic trick for making small integers unboxed even in a language where
-everything else is boxed (Python's arbitrary-precision ints, Ruby, many Lisp/Scheme
-implementations) is the \textbf{tagged pointer}. A pointer to a heap object is always
-word-aligned, so its low bits (2 or 3 of them, depending on word size and alignment)
-are always zero for a real pointer. That means those bits are free real estate: steal
-the lowest bit to mean ``this is not a pointer, it's a small integer, and the rest of
-the word is the integer's value, shifted left by one.''
-
-\begin{center}
-\begin{tikzpicture}[node distance=0cm]
-  \node (label1) [font=\small] at (0,1) {Tagged small int (tag bit = 1):};
-  \draw (0,0) rectangle (6,0.6);
-  \draw (5,0) -- (5,0.6);
-  \node at (2.5,0.3) [font=\ttfamily\small] {value $\ll$ 1};
-  \node at (5.5,0.3) [font=\ttfamily\small] {1};
-
-  \node (label2) [font=\small] at (0,-1) {Real pointer (tag bit = 0):};
-  \draw (0,-2) rectangle (6,-1.4);
-  \draw (5,-2) -- (5,-1.4);
-  \node at (2.5,-1.7) [font=\ttfamily\small] {heap address};
-  \node at (5.5,-1.7) [font=\ttfamily\small] {0};
-\end{tikzpicture}
-\end{center}
-
-Checking whether a word holds a small int or a pointer is one bitwise \texttt{AND} and
-a comparison; no allocation, no dereference. This is why arithmetic on small integers
-in dynamically-typed runtimes doesn't cost a heap allocation per operation, it's the
-main reason the trick exists. The cost shows up only when a value needs to escape that
-immediate range (a Python integer bigger than a machine word, an arbitrary object): then
-you fall back to a real, boxed, heap-allocated representation, with the pointer
-indirection and allocation cost that boxing implies.
-
-\begin{remark}
-Boxing everything is simpler to implement uniformly (every value is ``a pointer to a
-tagged object'', full stop, no special cases), but every arithmetic operation now costs
-an allocation and a dereference. Unboxing small, common cases (integers, booleans,
-sometimes floats) is more implementation work, but it's the difference between
-\texttt{i++} being a machine instruction and \texttt{i++} being a heap allocation.
-\end{remark}
-
-\subsection{composite values}
-
-\subsubsection{records and objects}
-
-For a statically-typed language, a record's field layout is known entirely at compile
-time: the compiler assigns each field a fixed byte offset from the start of the
-record, and reading \texttt{p.y} compiles down to ``load 8 bytes starting at
-\texttt{address\_of(p) + offset\_of(y)}'', no runtime lookup involved.
-
-\begin{lstlisting}[language=C]
-struct Point { double x; double y; };  /* offset(x) = 0, offset(y) = 8 */
+Code is kept in memory as text translated from the input program. A
+\texttt{case} statement
+\begin{lstlisting}
+case expression of
+   1:     clause_A
+ | 2,7:   clause_B
+ | 3..5:  clause_C
+ | 10:    clause_D
+ else     clause_E
+end
 \end{lstlisting}
+is stored as a sequence of labelled blocks. To evaluate it, the translator
+generates a \textbf{jump table}, an array with the addresses of the points
+where the code continues, one entry per value between the smallest and the
+largest label:
+\begin{lstlisting}
+      goto L6
+L1:   clause_A
+      goto L7
+L2:   clause_B
+      goto L7
+L3:   clause_C
+      goto L7
+L4:   clause_D
+      goto L7
+L5:   clause_E
+      goto L7
+L6:   r1 := expression
+      if r1 < 1 goto L5
+      if r1 > 10 goto L5
+      r1 := r1 - 1
+      r2 := T[r1]
+      goto *r2
+L7:   ...
+\end{lstlisting}
+The table $T$ has ten entries, for the values 1 to 10
+(Figure~\ref{fig:jump-table}). Values outside the range go to the
+\texttt{else} clause, and so do the values inside the range without a label
+(6, 8 and 9). The two tests at \texttt{L6} check the range; then the value,
+shifted to start at 0, indexes the table, and the jump goes to the address it
+finds. The slide writes the second test as \texttt{r1 > 1}, which would send
+every value except 1 to \texttt{clause\_E}.
 
-A dynamically-typed language with objects whose shape can change at runtime (adding or
-removing fields on the fly, as in JavaScript or Python) can't fix offsets once and for
-all at compile time, because two objects that look like they have ``the same type''
-from the program's point of view might not, structurally, at any given moment. The
-common trick (V8's \emph{hidden classes}, Python's per-object \texttt{\_\_dict\_\_}) is
-either: (a) a dictionary mapping field names to values, looked up by hashing the name
-at every access, or (b) an inferred ``shape''/hidden class that's computed and cached
-the first time a particular field layout is seen, so that objects with the same
-observed shape can share fast, offset-based access after the first lookup. Either way,
-you're paying \emph{something} (a hash lookup, or a shape check) that a statically-typed
-language with fixed offsets doesn't have to pay.
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[cell/.style={draw, minimum width=1.1cm, minimum height=5mm, font=\small\ttfamily}]
+  \foreach \l [count=\i] in {L1,L2,L3,L3,L3,L5,L2,L5,L5,L4} {
+    \node[cell] (t\i) at (0,-0.5*\i) {\&\l};
+    \pgfmathtruncatemacro{\k}{\i-1}
+    \node[font=\scriptsize, left=1mm of t\i] {\k};
+  }
+  \node[font=\small, above=1mm of t1] {$T$};
+  \node[font=\small, anchor=west] at (2,-0.5) {value 1: \texttt{clause\_A}};
+  \node[font=\small, anchor=west] at (2,-1.0) {values 2, 7: \texttt{clause\_B}};
+  \node[font=\small, anchor=west] at (2,-1.5) {values 3, 4, 5: \texttt{clause\_C}};
+  \node[font=\small, anchor=west] at (2,-2.0) {value 10: \texttt{clause\_D}};
+  \node[font=\small, anchor=west] at (2,-2.5) {values 6, 8, 9 and out of range: \texttt{clause\_E}};
+\end{tikzpicture}
+\caption{The jump table of the \texttt{case} statement, indexed by \texttt{r1 - 1}.}
+\label{fig:jump-table}
+\end{figure}
 
-\subsubsection{arrays}
+The same idea in C: the \texttt{switch}
+\coderange{C}{c/jump_table.c}{case}
+and its version with an explicit table
+\coderange{C}{c/jump_table.c}{table}
+give the same clause for every value from $-3$ to 14 in the tests.
 
-An array is the simplest case: elements of the same size, laid out contiguously, so
-that indexing is arithmetic, not search.
+\subsection{Run-time storage}
+
+Everything a program needs at run time has to be stored:
+\begin{enumerate}
+  \item the code segments, in translated form or in an intermediate
+    representation (\texttt{x+y+z} becomes \texttt{r1 <- rx+ry},
+    \texttt{r2 <- r1+rz});
+  \item system run-time programs: library functions (\texttt{sin},
+    \texttt{cos}), printing facilities, interpreters, translators and run-time
+    storage functions;
+  \item user-defined data structures and constants
+    (\texttt{final x = 3}, \texttt{global y = 0.1});
+  \item sequence-control information: subprogram return points, coroutine
+    resume points, event notices for scheduled subprograms;
+  \item temporary storage for the evaluation of expressions that cannot be
+    kept in registers (\texttt{r1 = x+y}), and for the results of function
+    calls when passing parameters (\texttt{return u+v});
+  \item input-output buffers, used to store data to or from external storage;
+  \item system data: tables, status information for input-output, and state
+    such as reference counts or garbage collection bits.
+\end{enumerate}
+For a single user program these are laid out in four areas
+(Figure~\ref{fig:memory-map}): the code area, the static area for data whose
+size and lifetime are known before execution, the stack for activation
+records, and the heap for data allocated and freed during execution. The
+stack and the heap grow toward each other into the free space between them.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[area/.style={draw, minimum width=4cm, font=\small}]
+  \node[area, minimum height=9mm] (code) at (0,0) {code area};
+  \node[area, minimum height=9mm, below=0pt of code] (static) {static};
+  \node[area, minimum height=12mm, below=0pt of static] (stack) {stack};
+  \node[area, minimum height=12mm, below=0pt of stack, dashed] (free) {free};
+  \node[area, minimum height=12mm, below=0pt of free] (heap) {heap};
+  \draw[flecha] (stack.south) ++(1.2,0) -- ++(0,-0.6);
+  \draw[flecha] (heap.north) ++(1.2,0) -- ++(0,0.6);
+  \node[font=\footnotesize, anchor=west] at (2.2,0) {\texttt{r1 <- rx+ry}, \texttt{r2 <- r1+rz}};
+  \node[font=\footnotesize, anchor=west] at (2.2,-0.9) {\texttt{final x = 3}, \texttt{global y = 0.1}};
+  \node[font=\footnotesize, anchor=west] at (2.2,-1.95) {activation records, return points};
+  \node[font=\footnotesize, anchor=west] at (2.2,-4.35) {lists, objects, closures};
+\end{tikzpicture}
+\caption{Memory of a single user program.}
+\label{fig:memory-map}
+\end{figure}
+
+\paragraph{Storage management.} At each execution step, memory is either
+allocated or free. Memory to allocate will be used by the program, and free
+memory is tracked at run time, normally with a \textbf{free-space list}. Used
+memory has to be recovered so that it becomes available again, either by
+moving the stack pointer back or by garbage collection
+(Section~\ref{sec:gc}). As part of recovery, memory may need
+\textbf{compaction}: moving the blocks in use together so that the free memory
+forms larger blocks (Figure~\ref{fig:compaction}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[b/.style={draw, minimum height=6mm, font=\scriptsize}]
+  \node[font=\small, anchor=east] at (-0.2,0) {before};
+  \node[b, minimum width=1.0cm, anchor=west] (a) at (0,0) {used};
+  \node[b, minimum width=0.8cm, right=0pt of a, dashed] (f1) {free};
+  \node[b, minimum width=1.2cm, right=0pt of f1] (b) {used};
+  \node[b, minimum width=0.8cm, right=0pt of b, dashed] (f2) {free};
+  \node[b, minimum width=0.6cm, right=0pt of f2] (c) {used};
+  \node[b, minimum width=0.8cm, right=0pt of c, dashed] (f3) {free};
+  \node[font=\small, anchor=east] at (-0.2,-1.2) {after};
+  \node[b, minimum width=1.0cm, anchor=west] (a2) at (0,-1.2) {used};
+  \node[b, minimum width=1.2cm, right=0pt of a2] (b2) {used};
+  \node[b, minimum width=0.6cm, right=0pt of b2] (c2) {used};
+  \node[b, minimum width=2.4cm, right=0pt of c2, dashed] {free};
+\end{tikzpicture}
+\caption{Compaction joins three small free blocks into one large block.}
+\label{fig:compaction}
+\end{figure}
+
+\subsection{Representation of statements and data structures}
+
+Once translated, statements are represented in a linear data structure that
+records the position in memory of each statement, and a data structure,
+normally a list, that holds the statement: its type, its definition and a
+pointer to the next one.
+
+Each data structure has its own representation, but most can be represented
+with records and lists. A \textbf{list} is a pointer to its first node, and
+each node holds a value and a pointer to the next node. A \textbf{record}
+$\mathit{label}(k_1 : v_1, \dots, k_n : v_n)$ is represented in the same way: a
+pointer to a list of components, where each component is a pair whose key
+points to the corresponding value (Figure~\ref{fig:record}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[c/.style={draw, minimum width=6mm, minimum height=6mm, font=\small}]
+  \node[font=\small\ttfamily] (p) at (0,0) {<ptr>};
+  \foreach \i in {1,...,4} {
+    \node[c] (k\i) at (1.8*\i,0) {$k_\i$};
+    \node[c, right=0pt of k\i] (n\i) {};
+    \node[c, below=6mm of k\i] (v\i) {$v_\i$};
+    \draw[flecha] (k\i.south) -- (v\i.north);
+  }
+  \draw[flecha] (p) -- (k1);
+  \foreach \i/\j in {1/2,2/3,3/4} \draw[flecha] (n\i.center) -- (k\j);
+  \draw (n4.south west) -- (n4.north east);
+\end{tikzpicture}
+\caption{The record $\mathit{label}(k_1 : v_1, k_2 : v_2, k_3 : v_3, k_4 : v_4)$.}
+\label{fig:record}
+\end{figure}
+
+In Scheme a record of this kind is an association list:
+\coderange{Scheme}{scheme/representation.scm}{record}
+
+\subsection{Objects and functions}
+
+Following the same representation, other program elements such as objects
+and functions can be represented. The lecture's example is a class of linked
+lists with a global counter of instances:
+\coderange{C++}{cpp/objects.cpp}{list}
+An object of this class is a block with one cell for each field,
+\texttt{next} and \texttt{info}, and cells that point to the code of its
+methods, \texttt{last} and the constructor \texttt{list}. The counter
+\texttt{count} is not part of any object: it lives in the static area. The
+constructor code is also there, because it is the same for every object.
+
+The second class question asks what happens with two instances. Each instance
+has its own \texttt{next} and \texttt{info}, but the pointer to the
+constructor has the same value in both, and should not be an independent copy:
+both objects point to the same code (Figure~\ref{fig:objects}). The same holds
+for \texttt{last}. This is why compilers keep one table of methods per class
+and give each object a single pointer to it.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[c/.style={draw, minimum width=6mm, minimum height=5mm, inner sep=0pt}, l/.style={font=\scriptsize\ttfamily, anchor=west}]
+  \foreach \o/\y in {1/0, 2/-3.2} {
+    \node[font=\small\ttfamily] (p\o) at (0.6,\y+0.6) {<lst\o>};
+    \foreach \r/\name in {0/next, 1/info, 2/last, 3/list} {
+      \node[c] (a\o\r) at (2,\y-0.5*\r) {};
+      \node[c] (b\o\r) at (2.6,\y-0.5*\r) {};
+      \node[l, anchor=east] at (1.65,\y-0.5*\r) {\name};
+    }
+    \draw[flecha] (p\o.east) -| (a\o0.north);
+    \fill (b\o2.center) circle (1.2pt);
+    \fill (b\o3.center) circle (1.2pt);
+  }
+  \node[draw, font=\small] (last) at (6.5,-1.0) {code of \texttt{last}};
+  \node[draw, font=\small] (ctor) at (6.5,-2.9) {code of \texttt{list}};
+  \node[draw, font=\small] (count) at (6.5,-4.3) {\texttt{count}};
+  \draw[flecha] (b12.center) -- ++(1.6,0) |- (last.west);
+  \draw[flecha] (b22.center) -- ++(1.6,0) |- (last.west);
+  \draw[flecha] (b13.center) -- ++(1.0,0) |- (ctor.west);
+  \draw[flecha] (b23.center) -- ++(1.0,0) |- (ctor.west);
+  \draw[dashed] (5.0,-2.1) -- (8.4,-2.1);
+  \node[font=\scriptsize, anchor=west] at (7.7,-2.3) {static};
+\end{tikzpicture}
+\caption{Two instances of \texttt{list}. Each has its own \texttt{next} and \texttt{info}; the method pointers have the same value in both.}
+\label{fig:objects}
+\end{figure}
+
+In Scheme an object can be written as a closure: the fields are local
+variables of the closure, the methods are the cases of a function that
+receives a message, and the static counter is a global variable. The tests
+build \texttt{lst1} and \texttt{lst2}, link them and check that
+\texttt{count} is 2 and that \texttt{last} of \texttt{lst1} is 2.
+\coderange{Scheme}{scheme/representation.scm}{object}
+
+\paragraph{Functions.} Creating a function $f = \mathbf{fun}\ x_0 \dots
+x_{k-1} \to e$ creates a function object $F$ that holds the values of its free
+variables and the address of its code. In
+\coderange{Scheme}{scheme/representation.scm}{closure}
+\texttt{add5} and \texttt{add100} share the code \texttt{(+ x n)} and differ in
+the value of the free variable \texttt{n}.
+
+\paragraph{Functions and parameters.} A function allocates memory for its
+parameters by copying the values into memory, as dynamically allocated
+values, which can be used by all the scopes where they are visible. With
+\texttt{foo(x, y, z)} and \texttt{bar(v, w)}, the calls
+\texttt{foo(a, (b,c), (d,e))} and \texttt{bar((b,c), (d,e))} build the lists
+\texttt{(b,c)} and \texttt{(d,e)} in the heap. The parameters \texttt{y} and
+\texttt{v} point to the same list \texttt{(b,c)}, and \texttt{z} and
+\texttt{w} to the same list \texttt{(d,e)} (Figure~\ref{fig:params}).
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[c/.style={draw, minimum width=5mm, minimum height=5mm, font=\scriptsize}, p/.style={font=\small\ttfamily, anchor=east}]
+  \node[p] (x) at (0,0) {<x>};
+  \node[p] (y) at (0,-0.5) {<y>};
+  \node[p] (z) at (0,-1.0) {<z>};
+  \node[p] (v) at (0,-1.5) {<v>};
+  \node[p] (w) at (0,-2.0) {<w>};
+  \node[c] (a) at (4,0.6) {a}; \node[c, right=0pt of a] (a2) {/};
+  \node[c] (l1) at (5,-0.3) {}; \node[c, right=0pt of l1] (l1b) {};
+  \node[c] (l2) at (6.5,-0.3) {}; \node[c, right=0pt of l2] {/};
+  \node[c] (b) at (5,-1.2) {b}; \node[c, right=0pt of b] {/};
+  \node[c] (cc) at (6.5,-1.2) {c}; \node[c, right=0pt of cc] {/};
+  \node[c] (m1) at (5,-2.2) {}; \node[c, right=0pt of m1] (m1b) {};
+  \node[c] (m2) at (6.5,-2.2) {}; \node[c, right=0pt of m2] {/};
+  \node[c] (d) at (5,-3.1) {d}; \node[c, right=0pt of d] {/};
+  \node[c] (e) at (6.5,-3.1) {e}; \node[c, right=0pt of e] {/};
+  \draw[flecha] (x.east) to[bend left=10] (a.west);
+  \draw[flecha] (y.east) -- (l1.west);
+  \draw[flecha] (v.east) -- (l1.south west);
+  \draw[flecha] (z.east) -- (m1.north west);
+  \draw[flecha] (w.east) -- (m1.west);
+  \draw[flecha] (l1b.center) -- (l2.west);
+  \draw[flecha] (m1b.center) -- (m2.west);
+  \draw[flecha] (l1.center) -- (b.north);
+  \draw[flecha] (l2.center) -- (cc.north);
+  \draw[flecha] (m1.center) -- (d.north);
+  \draw[flecha] (m2.center) -- (e.north);
+  \node[font=\small, align=left, anchor=east] at (-1,-1) {\texttt{foo(a, (b,c), (d,e))}\\ \texttt{bar((b,c), (d,e))}};
+\end{tikzpicture}
+\caption{The parameters of \texttt{foo} and \texttt{bar} point to shared lists.}
+\label{fig:params}
+\end{figure}
+
+\subsection{Homoiconicity}
+
+\begin{definition}
+A language is \textbf{homoiconic} when program code is represented with the
+language's fundamental data type.
+\end{definition}
+
+In a homoiconic language code and data are intertwined: the program can build
+new code and manipulate it as data at run time. In Lisp the fundamental type
+is the list. The same text can be read as data or as code; quoting it tells
+Lisp not to evaluate it:
+\coderange{CommonLisp}{lisp/homoiconic.lisp}{datacode}
+Figure~\ref{fig:data-code} shows the two readings as trees. The lecture's
+example builds the expression $\sin(1.1) \cdot \cos(2.03)$ as a list, takes it
+apart, changes \texttt{cos} into \texttt{sin}, and evaluates the result:
+\coderange{CommonLisp}{lisp/homoiconic.lisp}{expression}
+The result is $\sin(1.1) \cdot \sin(2.03) \approx 0.79888$. The slide prints the
+expression with \texttt{print-to-string}; the standard Common Lisp function is
+\texttt{prin1-to-string}.
+
+\begin{figure}[h]
+\centering
+\begin{forest}
+  arbol,
+  [list [1] [2] [list [3] [4]]]
+\end{forest}
+\hspace{2cm}
+\begin{forest}
+  arbol,
+  [$*$ [2] [$+$ [3] [4]]]
+\end{forest}
+\caption{\texttt{(list 1 2 (list 3 4))} read as data and \texttt{(* 2 (+ 3 4))} read as code. Both are lists.}
+\label{fig:data-code}
+\end{figure}
+
+Scheme works the same way: a list that looks like a \texttt{lambda} becomes a
+function when it is evaluated.
+\coderange{Scheme}{scheme/representation.scm}{homoiconic}
+The lecture also shows the idea in Prolog, where \texttt{clause(ten(X), Y)}
+returns the body \texttt{X is 2*5} of a clause as a term that can be
+inspected or called; in Julia, where \texttt{:(x + 1)} is a value of type
+\texttt{Expr} whose head and arguments can be changed before calling
+\texttt{eval}; and in Elixir, with \texttt{quote} and
+\texttt{Code.eval\_quoted}.
+
+\paragraph{Uniform representation.} Haskell represents all its entities the
+same way: a header with an info pointer, followed by a payload. For a data
+value the payload is the data components, for a function value it is the free
+variables, and for a thunk it is the suspended arguments
+(Section~\ref{sec:lazy}).
+
+Table~\ref{tab:homoiconic} compares homoiconic and non-homoiconic languages.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}p{3cm}p{5cm}p{5.5cm}@{}}
+\toprule
+Feature & Homoiconic & Non-homoiconic \\
+\midrule
+Code and data & code is data, with the same structure & code and data are separate \\
+Code representation & code is already an AST & code is parsed into an AST before it runs \\
+Metaprogramming & natural & requires tooling such as reflection or code generation \\
+Flexibility & DSLs, macros and self-modifying code are easy to write & static, the syntax is fixed \\
+\bottomrule
+\end{tabular}
+\caption{Homoiconic and non-homoiconic languages.}
+\label{tab:homoiconic}
+\end{table}
+
+\subsection{Boxed and unboxed values}
+
+This subsection and the following ones go beyond the slides. A statically
+typed compiled language knows the type of every value at compile time, so a
+machine word holding an \texttt{int} contains only the bits of the integer. A
+dynamically typed language has to answer at run time which kind of value a
+bit pattern is. The answer is a \textbf{tag}, a small piece of metadata stored
+with the value or packed into it.
+
+\begin{definition}
+A value is \textbf{boxed} when it is represented as a pointer to a heap object
+that contains the tag and the data. It is \textbf{unboxed} (immediate) when the
+value, tag included, fits in a machine word.
+\end{definition}
+
+Many Lisp and Scheme implementations keep small integers unboxed with tagged
+pointers. A pointer to a heap object is word-aligned, so its lowest bits are
+always zero. The lowest bit can then mark a small integer, with the value in
+the remaining bits (Figure~\ref{fig:tagged}). Telling a small integer from a
+pointer takes one bitwise \texttt{and}; a value outside the range of small
+integers falls back to a boxed representation, with an allocation and a
+pointer dereference.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+  \node[font=\small, anchor=east] at (-0.2,0.3) {small integer};
+  \draw (0,0) rectangle (6,0.6); \draw (5,0) -- (5,0.6);
+  \node[font=\small] at (2.5,0.3) {value shifted left by 1};
+  \node[font=\small\ttfamily] at (5.5,0.3) {1};
+  \node[font=\small, anchor=east] at (-0.2,-0.7) {pointer};
+  \draw (0,-1) rectangle (6,-0.4); \draw (5,-1) -- (5,-0.4);
+  \node[font=\small] at (2.5,-0.7) {heap address};
+  \node[font=\small\ttfamily] at (5.5,-0.7) {0};
+\end{tikzpicture}
+\caption{A tagged word: the lowest bit says whether the rest is an integer or an address.}
+\label{fig:tagged}
+\end{figure}
+
+\subsection{Records, arrays and variants}
+
+In a statically typed language the layout of a record is fixed at compile
+time: each field has a byte offset from the start of the record, and reading
+\texttt{p.y} loads from the address of \texttt{p} plus the offset of
+\texttt{y}.
+\coderange{C}{c/layout.c}{point}
+A language whose objects can gain and lose fields at run time cannot fix the
+offsets. It stores the fields in a dictionary indexed by name, as the records
+of Figure~\ref{fig:record}, or caches the layout the first time it sees it.
+
+An array stores elements of the same size contiguously, so indexing is
+arithmetic:
 \[
-  \mathrm{address}(a[i]) = \mathrm{base}(a) + i \times \mathrm{size}(\mathrm{element})
+  \mathit{address}(a[i]) = \mathit{base}(a) + i \times \mathit{size}(\mathit{element}).
 \]
-That's an O(1) formula, one multiply and one add, which is the entire reason arrays are
-the default ``fast, random-access sequence'' data structure. The place a \emph{bounds
-check} fits in is right before that formula is used: a safe language inserts
-\texttt{if (i < 0 || i >= length) raise IndexError} before computing the address, an
-unsafe one (raw C arrays) doesn't, and just computes the address anyway, undefined
-behaviour and all, if $i$ is out of range.
+A safe language checks $0 \le i < \mathit{length}$ before using the formula;
+C does not.
 
-\subsubsection{sum / variant types}
+A value of a sum type, such as $\mathbf{List}\ \tau = \mu\alpha.\, \mathbf{Unit} +
+(\tau \times \alpha)$ from the recursive types section of the types notes,
+is a tag that says which variant it is (\texttt{Nil} or \texttt{Cons})
+followed by the payload of that variant. Pattern matching reads the tag and
+jumps to the code for that variant.
 
-An algebraic sum type (recall the recursive/algebraic types discussion:
-$\mathbf{List}\ \tau = \mu\alpha.\ \unit + (\tau \times \alpha)$, or an
-\texttt{enum}/\texttt{union} in a language with tagged unions) needs, at runtime,
-exactly the same idea as our dynamic-typing tag from before, but scoped to one type
-instead of ``everything'': a small \textbf{tag word} identifying which variant this
-value is, followed by however much storage the largest variant's payload needs (sized
-to fit whichever variant is actually present).
+\subsection{Closures and activation records}
 
-\begin{center}
-\begin{tikzpicture}[node distance=0cm]
-\node[draw,minimum width=1.4cm,minimum height=0.7cm] (tag) at (0,0) {tag};
-\node[draw,minimum width=3.5cm,minimum height=0.7cm,right=0cm of tag] (payload)
-  {payload (variant-sized)};
-\node[below=0.15cm of tag, font=\scriptsize] {e.g.\ \texttt{0 = Nil}, \texttt{1 = Cons}};
-\node[below=0.15cm of payload, font=\scriptsize] {e.g.\ \texttt{Cons}: head value + tail pointer};
+A closure is a record with a pointer to the code of the function and a
+pointer to the environment with its free variables, the function object $F$
+described above. The Python version of a counter
+\coderange{Python}{python/counter.py}{counter}
+allocates one environment with \texttt{n} on each call to
+\texttt{make\_counter}. The returned function always runs the same code
+against that environment, so \texttt{n} keeps its value between calls.
+
+Each non-tail call needs an \textbf{activation record} (stack frame) for its
+local state, pushed on entry and popped on return. It holds the return
+address, the saved frame pointer of the caller, the parameters and the local
+variables. During \texttt{fact(3)}
+\coderange{C}{c/layout.c}{fact}
+there are four frames on the stack when \texttt{fact(0)} is about to return
+(Figure~\ref{fig:frames}). Each frame has its own \texttt{n}, which is why the
+recursive calls do not overwrite each other's variables.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[f/.style={draw, text width=5.6cm, align=center, minimum height=6mm, font=\small}]
+  \node[f] (f3) at (0,0) {\texttt{fact(3)}: n = 3, waits for \texttt{fact(2)}};
+  \node[f, below=0pt of f3] (f2) {\texttt{fact(2)}: n = 2, waits for \texttt{fact(1)}};
+  \node[f, below=0pt of f2] (f1) {\texttt{fact(1)}: n = 1, waits for \texttt{fact(0)}};
+  \node[f, below=0pt of f1] (f0) {\texttt{fact(0)}: n = 0, returns 1};
+  \node[font=\footnotesize, left=3mm of f3] {oldest};
+  \node[font=\footnotesize, left=3mm of f0] {newest};
 \end{tikzpicture}
-\end{center}
-\texttt{Nil}'s tag word says ``there's no payload to look at''; \texttt{Cons}'s tag
-word says ``the payload is a head value and a pointer to the tail''. Pattern matching
-compiles down to: read the tag, jump to the code for that variant, and only then
-interpret the payload bytes according to that variant's known layout.
+\caption{The stack during \texttt{fact(3)}.}
+\label{fig:frames}
+\end{figure}
 
-\subsection{closures: code plus captured environment}
-
-Recall from the environments and scoping discussion that a closure is a function
-paired with the environment it was defined in, so that it can still see its free
-variables after that defining scope has, in principle, ended. At runtime this has to be
-an actual, concrete data structure: a \textbf{closure record} holding (1) a pointer to
-the function's compiled code, and (2) a pointer to (or an inline array of) the captured
-environment, the bindings for the free variables the function body refers to.
-
-\begin{center}
-\begin{tikzpicture}[node distance=0cm]
-\node[draw,minimum width=2.6cm,minimum height=0.7cm] (code) at (0,0) {code pointer};
-\node[draw,minimum width=2.6cm,minimum height=0.7cm,right=0cm of code] (env)
-  {env pointer};
-\node[below=1.1cm of env, draw, minimum width=3cm, align=left, font=\ttfamily\small]
-  (envbox) {n = 5\\ threshold = 10};
-\draw[->] (env.south) -- (envbox.north);
-\end{tikzpicture}
-\end{center}
-
-\begin{example}[A counter closure]
-\begin{lstlisting}[language=Python]
-def make_counter(start):
-    n = start
-    def bump():
-        nonlocal n
-        n += 1
-        return n
-    return bump
-\end{lstlisting}
-Calling \texttt{make\_counter(5)} allocates one environment record holding
-\texttt{n = 5}, and returns a closure record pointing to \texttt{bump}'s compiled code
-plus that environment. Every call to the returned closure runs the same code pointer
-but against that same captured environment, that's exactly what lets \texttt{n} persist
-and increment across calls instead of resetting to 5 every time.
-\end{example}
-
-\subsection{activation records / stack frames}
-
-Every (non-tail) function call needs somewhere to keep its local state while it runs,
-and that somewhere is an \textbf{activation record} (a.k.a. stack frame), pushed onto
-the call stack on entry and popped on return. A typical layout:
-
-\begin{center}
-\begin{tikzpicture}[node distance=0cm]
-\node[draw,minimum width=3.6cm] (ra) at (0,0) {return address};
-\node[draw,minimum width=3.6cm,below=0cm of ra] (fp) {saved frame pointer};
-\node[draw,minimum width=3.6cm,below=0cm of fp] (params) {parameters};
-\node[draw,minimum width=3.6cm,below=0cm of params] (locals) {locals};
-\node[left=0.3cm of ra, font=\small] {higher addresses};
-\node[left=0.3cm of locals, font=\small] {lower addresses};
-\end{tikzpicture}
-\end{center}
-
-\begin{itemize}
-  \item \textbf{Return address}: where execution resumes in the caller once this call
-    returns.
-  \item \textbf{Saved frame pointer}: the caller's frame pointer, so it can be restored
-    on return (this is what lets you walk the stack, frame by frame, for a debugger or
-    a stack trace).
-  \item \textbf{Parameters}: the arguments this call was invoked with.
-  \item \textbf{Locals}: this call's own local variables, live only for the duration of
-    this activation.
-\end{itemize}
-
-\begin{example}[Three frames during \texttt{fact(3)}]
-\begin{lstlisting}[language=C]
-int fact(int n) {
-    if (n == 0) return 1;
-    return n * fact(n - 1);
-}
-\end{lstlisting}
-Mid-way through evaluating \texttt{fact(3)}, the call stack (growing downward) looks
-like:
-\begin{center}
-\begin{tikzpicture}[node distance=0cm]
-\node[draw,minimum width=4.2cm,fill=gray!10] (f0) at (0,0)
-  {\texttt{fact(3)}: n=3, waiting on fact(2)};
-\node[draw,minimum width=4.2cm,fill=gray!10,below=0cm of f0] (f1)
-  {\texttt{fact(2)}: n=2, waiting on fact(1)};
-\node[draw,minimum width=4.2cm,fill=gray!10,below=0cm of f1] (f2)
-  {\texttt{fact(1)}: n=1, waiting on fact(0)};
-\node[draw,minimum width=4.2cm,below=0cm of f2] (f3)
-  {\texttt{fact(0)}: n=0, about to return 1};
-\node[left=0.3cm of f0, font=\small] {bottom of stack (oldest)};
-\node[left=0.3cm of f3, font=\small] {top of stack (newest)};
-\end{tikzpicture}
-\end{center}
-Each frame is independently holding its own \texttt{n}; that's precisely why recursion
-works without the calls stomping on each other's variables. \texttt{fact(0)} returns 1,
-its frame pops, \texttt{fact(1)} resumes with that 1, computes \texttt{1*1=1}, returns,
-pops, and so on back up to \texttt{fact(3)} finally computing \texttt{3*2*1=6}.
-\end{example}
-
-\subsection{reaching non-local scopes: static links vs.\ displays}
-
-If a function is nested inside another (as in Pascal, or any language with true nested
-function definitions) and refers to a variable from an \emph{enclosing}, non-local
-scope, the runtime needs a way to find that enclosing frame from the inner one. Two
-classic techniques:
-
-\begin{itemize}
-  \item \textbf{Static link}: every frame carries one extra pointer, to the frame of
-    the lexically enclosing function's most recent activation. Looking up a variable
-    $k$ scopes out means following $k$ static links. Simple to set up, but a lookup
-    $k$ levels up costs $O(k)$ pointer chases.
-  \item \textbf{Display}: instead of one static link per frame, maintain a single
-    global array indexed by lexical nesting depth, where slot $d$ always holds a
-    pointer to the current, innermost active frame at nesting depth $d$. Looking up a
-    variable at depth $d$ is one array access, $O(1)$, at the cost of updating the
-    display array on every call and return.
-\end{itemize}
-Static links are the more common choice in practice (simpler bookkeeping, and deep
-nesting is rare enough that $O(k)$ chases rarely matter); displays trade a bit of
-call/return overhead for guaranteed constant-time non-local access, which matters more
-in languages or compilers that expect deep nesting to be common.
+A function nested inside another, as in Pascal, can use variables of the
+enclosing function, so it has to find the frame of that function. A
+\textbf{static link} is a pointer in each frame to the frame of the lexically
+enclosing function; reaching a variable $k$ levels out follows $k$ links. A
+\textbf{display} is an array indexed by nesting depth whose entry $d$ points to
+the current frame at depth $d$; the access costs one array lookup, and every
+call and return has to update the array.
 
 \subsection{Exercises}
-\begin{itemize}
-  \item Given a 64-bit word with 1 tag bit (0 = pointer, 1 = small int), what is the
-    largest small integer representable in the immediate encoding, and what has to
-    happen when an arithmetic operation's result would overflow that range?
-  \item Trace by hand: for the \texttt{struct Point \{ double x; double y; \}} above,
-    with \texttt{sizeof(double) == 8}, what byte offset does \texttt{p.y} compile to?
-    What if a third field \texttt{double z;} were added before \texttt{y}?
-  \item Draw the closure record and captured environment (as in the \texttt{make\_counter}
-    example) after \texttt{c1 = make\_counter(5)} and \texttt{c2 = make\_counter(100)}
-    have both been called once. Are \texttt{c1} and \texttt{c2}'s environments shared or
-    separate? Why does that matter?
-  \item Trace the call stack, frame by frame (as in the \texttt{fact(3)} example), for
-    \texttt{fib(4)} where \texttt{fib(n) = fib(n-1) + fib(n-2)} for $n>1$, \texttt{fib(0)=0},
-    \texttt{fib(1)=1}. How many frames exist at the deepest point?
-  \item Think about it: why do bounds checks on array access, cheap as they individually
-    are, sometimes get compiled away entirely by an optimizing compiler? What would the
-    compiler need to prove about the index to justify removing the check?
-  \item Compare static links and displays for a program with 5 levels of nested
-    functions where the innermost function accesses a variable from the outermost
-    scope on every iteration of a hot loop. Which technique would you pick, and why?
-\end{itemize}
+
+\begin{exercise}
+What happens if we add the element $e_0$ to the list $[e_1, e_2, e_3, e_4]$?
+\end{exercise}
+
+\paragraph{Solution.} A new node is allocated with $e_0$ and a pointer to the node of
+$e_1$, and a new list pointer \texttt{<list\_ptr'>} points to it
+(Figure~\ref{fig:cons}). The old list is not copied: \texttt{<list\_ptr>} still
+points to $[e_1, e_2, e_3, e_4]$, and both lists share its nodes. The slide's
+figure draws a fifth node $e_5$ after $e_4$, which is not part of the list.
+\coderange{Scheme}{scheme/representation.scm}{cons}
+The tests check that the tail of the new list is \texttt{eq?} to the old list.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[c/.style={draw, minimum width=6mm, minimum height=6mm, font=\small}]
+  \node[font=\small\ttfamily] (p) at (0,0) {<list\_ptr>};
+  \foreach \i in {1,...,4} {
+    \node[c] (e\i) at (1.8*\i,0) {$e_\i$};
+    \node[c, right=0pt of e\i] (n\i) {};
+  }
+  \draw[flecha] (p) -- (e1);
+  \foreach \i/\j in {1/2,2/3,3/4} \draw[flecha] (n\i.center) -- (e\j);
+  \draw (n4.south west) -- (n4.north east);
+  \node[font=\small\ttfamily] (q) at (0,-1.4) {<list\_ptr'>};
+  \node[c] (e0) at (1.8,-1.4) {$e_0$};
+  \node[c, right=0pt of e0] (n0) {};
+  \draw[flecha] (q) -- (e0);
+  \draw[flecha] (n0.center) to[out=60, in=-90] (e1.south);
+\end{tikzpicture}
+\caption{Adding $e_0$ allocates one node; the two lists share $e_1, \dots, e_4$.}
+\label{fig:cons}
+\end{figure}
+
+\begin{exercise}
+Create two instances of the \texttt{list} object.
+\end{exercise}
+
+\paragraph{Solution.} Each instance gets its own block with \texttt{next} and
+\texttt{info}. The cells for \texttt{list} and \texttt{last} hold the same
+values in both: the address of the same code. They should not be independent
+copies of the code (Figure~\ref{fig:objects}). The global \texttt{count} is
+incremented by each constructor call, and ends at 2. Both the C++ and the
+Scheme versions check this.
+
+\begin{exercise}
+In Common Lisp, build the expression \texttt{(+ 1 (* 2 3))} as a list, replace
+\texttt{*} by \texttt{+}, and evaluate it.
+\end{exercise}
+
+\paragraph{Solution.} The list is built with
+\texttt{(defvar e (list '+ 1 (list '* 2 3)))}. Evaluated now, it gives 7. The
+form \texttt{(setf (first (third e)) '+)} changes the inner list into
+\texttt{(+ 2 3)}, and \texttt{(eval e)} then gives 6. The end of
+\texttt{homoiconic.lisp} runs these steps.
+
+\begin{exercise}
+For the \texttt{case} statement of this section, which clause runs when
+\texttt{expression} is 8? Which table entry is read?
+\end{exercise}
+
+\paragraph{Solution.} 8 is in the range 1 to 10, so the two tests fail and
+\texttt{r1} becomes 7; entry $T[7]$ is \texttt{\&L5}, and \texttt{clause\_E} runs,
+because 8 has no label.

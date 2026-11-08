@@ -49,6 +49,11 @@ La numeración de diapositivas es la que aparece impresa en cada diapositiva, qu
 | 12-denotational_semantics, diap. 13 | `m[S→(+ L)]→ apply(* m[L])` | La regla del producto es `m[S→(* L)] → apply(*, m[L])`. |
 | 12-denotational_semantics, diap. 20 | `m[T * F]CODE = CODE1 = m[E]CODE in CODE2 = m[T]CODE2 in CODE2.add(TIMES)` (y `CODE2 = m[T]CODE2` en la regla de `E + T`) | `CODE1 = m[T]CODE in CODE2 = m[F]CODE1 in CODE2.add(TIMES)`; para la suma, `CODE2 = m[T]CODE1`. |
 | 13-control, diap. 10 | `final static int j = 3; int i; if (j > 0) { i = 2; } System.out.println(i);` marcado como "error! i may not have been initialized" | Con `j` constante, `j > 0` es una expresión constante verdadera y Java compila el programa. El error aparece si `j` no es `final` (comprobado con `javac`). |
+| 15-lazy_execution, diap. 7 | `fun arithmetic_mean(a, b) { return (a + b)/a }` llamada como `add(3*2, 4/2)` | El nombre de la definición y el de la llamada deben coincidir, y el cuerpo no es la media aritmética, que sería `(a + b)/2`. |
+| 16-runtime_representation, diap. 5 | Tabla de saltos: `if r1 > 1 goto L5` | `if r1 > 10 goto L5`; con `> 1` todo valor distinto de 1 iría a `clause_E` (comprobado en `jump_table.c`). |
+| 16-runtime_representation, diap. 19 a 22 | La lista `[e1, e2, e3, e4]` se dibuja con un quinto nodo `e5` después de `e4` | `e4` es el último nodo y su siguiente es nulo. |
+| 16-runtime_representation, diap. 36 | `(print-to-string expression)` | En Common Lisp estándar es `prin1-to-string` (comprobado con SBCL). |
+| 16-runtime_representation, diap. 31 | Título "Homiconicity" | "Homoiconicity". |
 
 ## Repo
 
