@@ -42,12 +42,20 @@ La numeración de diapositivas es la que aparece impresa en cada diapositiva, qu
 | 9-semantic_analysis, diap. 17 | `Fact ::= Exp` | `Fact ::= (Exp)`. |
 | 10-type_systems, diap. 54 (pág. 73) | Tipo de `proc (f) proc(x) -((f 3),(f x))`: `t0 = Int → Int → Int → Int` | `t0 = (Int → Int) → Int → Int`. Como la flecha asocia a la derecha, la versión sin paréntesis es una función de tres enteros. |
 | 10-type_systems, diap. 61 (pág. 93) | `substitution`: `case tvar-type(sn): if (t1 = tvar) then t1 else t0` | Se compara la variable encontrada con la que se reemplaza: `if (t0 == tvar) then t1 else t0`. |
+| 11-operational_semantics, diap. 13 | `⟨op ⋅ c, n1 ⋅ n2 ⋅ r, m⟩ → ⟨c, n ⋅ r, m⟩ if n1 op n2 = n` (y lo mismo para `Bop`) | El tope es el valor del segundo operando: `n = n2 op n1`. Con la regla de la diapositiva, `!l − 1` daría `1 − 4`; su propia traza calcula `4 − 1 = 3`. |
+| 11-operational_semantics, diap. 22 | `⟨¬ ⋅ c, b ⋅ r, m⟩ → ⟨c, b ⋅ r, m⟩ if b = (not b)` | La condición nunca se cumple. Debe ser `⟨c, b′ ⋅ r, m⟩ if b′ = not b`. |
+| 11-operational_semantics, diap. 29 | `⟨:= ⋅ c, l ⋅ v ⋅ r, m⟩ → ⟨c, r, m[l ↦ v]⟩` | El valor queda encima de la ubicación: `v ⋅ l ⋅ r`, como en su propia traza (`3 ⋅ l ⋅ nil`). |
+| 12-denotational_semantics, diap. 10 | Regla del producto: `⟨fst(T)*fst(F), snd(E)*fst(T) + fst(E)*snd(T)⟩` | `⟨fst(T)*fst(F), snd(T)*fst(F) + fst(T)*snd(F)⟩`. Y en la regla de la potencia la base es `fst(P)`. |
+| 12-denotational_semantics, diap. 13 | `m[S→(+ L)]→ apply(* m[L])` | La regla del producto es `m[S→(* L)] → apply(*, m[L])`. |
+| 12-denotational_semantics, diap. 20 | `m[T * F]CODE = CODE1 = m[E]CODE in CODE2 = m[T]CODE2 in CODE2.add(TIMES)` (y `CODE2 = m[T]CODE2` en la regla de `E + T`) | `CODE1 = m[T]CODE in CODE2 = m[F]CODE1 in CODE2.add(TIMES)`; para la suma, `CODE2 = m[T]CODE1`. |
+| 13-control, diap. 10 | `final static int j = 3; int i; if (j > 0) { i = 2; } System.out.println(i);` marcado como "error! i may not have been initialized" | Con `j` constante, `j > 0` es una expresión constante verdadera y Java compila el programa. El error aparece si `j` no es `final` (comprobado con `javac`). |
 
 ## Repo
 
 | Archivo | Decía | Corrección |
 |---|---|---|
 | `topics/04-semantics/exercises/preexam-solution.tex` | Caso base de `repeat` con $k = 0$ | $n \le 0$. Con un número negativo ninguna regla aplica y la configuración queda bloqueada. |
+| `topics/04-semantics/exercises/preexam-solution.tex` | Flechas como conectores en la prosa y cajas `tcolorbox` | Prosa normal y párrafos. Los Worked Examples salieron del Ejercicio 5 y están en las notas de semántica operacional. |
 | `topics/04-semantics/exercises/README.md` | Ruta `topics/01-operational-semantics/exercises` | `topics/04-semantics/exercises` |
 | `topics/01-.../references.bib`, `topics/05-.../references.bib` | *Foundations of Programming Languages* de John A. N. Lee (1989) | El libro que citan las diapositivas es de Kent D. Lee (Springer). |
 | `topics/03-type-systems/references.bib` | Entrada "Lee, Peter, Programming Languages course notes, syllabus §5.22" | No corresponde a ninguna referencia de las diapositivas; se quitó. |

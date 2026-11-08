@@ -13,7 +13,7 @@
 #   topics/NN-*/code/scheme/   archivos .scm en R7RS small; cada caso imprime
 #                              "nombre: expected X, got Y" y "FAIL" si no coinciden.
 #   topics/NN-*/code/lisp/     archivos .lisp para SBCL, con la misma convención.
-#   topics/NN-*/code/<otro>/   python, haskell, c, java, sql, swift, bash: el programa
+#   topics/NN-*/code/<otro>/   python, haskell, c, java, js, sql, swift, perl, bash: el programa
 #                              termina con código distinto de 0 si algo falla.
 
 set -u
@@ -92,9 +92,19 @@ for topic in "$ROOT"/topics/"$FILTER"*/; do
     if [ $? -eq 0 ] && ! echo "$out" | grep -q FAIL; then echo "  $(basename "$f"): ok"; else fail "$f"; fi
   done
 
+  for f in "$code"/js/*.js; do
+    [ -e "$f" ] || continue
+    node "$f" > /dev/null 2>&1 && echo "  $(basename "$f"): ok" || fail "$f"
+  done
+
   for f in "$code"/swift/*.swift; do
     [ -e "$f" ] || continue
     swift "$f" > /dev/null 2>&1 && echo "  $(basename "$f"): ok" || fail "$f"
+  done
+
+  for f in "$code"/perl/*.pl; do
+    [ -e "$f" ] || continue
+    perl "$f" > /dev/null 2>&1 && echo "  $(basename "$f"): ok" || fail "$f"
   done
 
   for f in "$code"/bash/*.sh; do

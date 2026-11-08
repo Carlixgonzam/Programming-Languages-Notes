@@ -1,341 +1,404 @@
 % !TeX root = ../main.tex
 \section{Control flow}
+\label{sec:control}
 
-The operational semantics section gave you the full machinery for the structured core
-of an imperative language: assignment, sequencing, \texttt{if}, \texttt{while}, and
-\texttt{for} (desugared into \texttt{while}). That's enough to run any SIMP program, but
-it says nothing about \emph{evaluation order} inside a single expression, about operators
-that skip evaluating one of their operands, or about control that jumps somewhere other
-than ``the next instruction.'' This section reuses the same $\steppair{}{}{}{}$ /
-$\bigstep{}{}{}$ toolbox to cover those cases, then tours the big non-standard
-control-transfer mechanisms you'll meet in real languages: exceptions, continuations, and
-coroutines. It closes with the historical argument for why control flow is restricted at
-all, rather than left as raw \texttt{goto}.
+The order in which a program executes its parts is essential for most
+programs. This section follows Scott and Aldrich~\cite[Ch.~6]{scott2025pragmatics},
+Tennent~\cite[Ch.~6]{tennent1981principles} and Pratt and
+Zelkowitz~\cite[Ch.~6]{pratt2001design}. The lecture lists the mechanisms
+that order execution (Table~\ref{tab:control-kinds}).
 
-\subsection{sequencing and evaluation order}
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l p{0.65\textwidth}}
+  \toprule
+  Mechanism & Meaning \\
+  \midrule
+  sequencing & statements execute in a given order, usually the order in which they are written \\
+  selection & a choice between statements (\texttt{if}, \texttt{case}) \\
+  iteration & a fragment of code runs repeatedly (\texttt{while}, \texttt{for}) \\
+  procedural abstraction & a collection of control constructs encapsulated and treated as a single entity \\
+  recursion & an expression defined in terms of simpler versions of itself \\
+  concurrency & fragments that run at the same time, in parallel or interleaved \\
+  nondeterminism & the order of choice among statements is deliberately unspecified; any order is correct \\
+  \bottomrule
+\end{tabular}
+\caption{Mechanisms of control flow.}
+\label{tab:control-kinds}
+\end{table}
 
-Sequencing $\seq{C_1}{C_2}$ composes commands left to right, nothing new there. The
-subtlety lives \emph{inside} an expression: when an expression contains more than one
-sub-expression with a side effect, does the language guarantee an order for those effects?
+\subsection{Expression evaluation}
 
-Many languages do. Java, JavaScript, and Scheme guarantee strict left-to-right evaluation
-of operands and function arguments. C (and, for many constructs, C++) famously does
-\emph{not}: the standard leaves the order in which function arguments are evaluated
-unspecified, and mixing a read and a write to the same variable without an intervening
-\emph{sequence point} is undefined behavior, not just ``order not guaranteed.'' This is a
-real-world gotcha, not a theoretical curiosity:
+Expressions are built from literals, operators and function calls, and the
+notation varies: infix \texttt{a+b}, a call \texttt{my\_func(A,B,C)}, a method
+\texttt{a.operator+(b)}, prefix \texttt{(* (+ 1 3) 2)} in Lisp, keywords in
+Smalltalk (\texttt{myBox displayOn: myScreen at: 100@50}), and an \texttt{if}
+that returns a value (\texttt{a := if b <> 0 then a/b else 0}).
 
-\begin{lstlisting}[language=C]
-int x = 0;
-int f(void) { return x++; }
-int g(void) { return x++; }
-
-int main(void) {
-    printf("%d %d\n", f(), g());
-    return 0;
-}
-\end{lstlisting}
-
-One compiler may evaluate \texttt{g()} before \texttt{f()} (printing \texttt{1 0}), another
-may go left to right (printing \texttt{0 1}) --- both are conforming C. The classic
-textbook example \texttt{i = i++ + ++i;} is worse still: it's not merely
-implementation-defined, it's \emph{undefined behavior}, so the compiler is free to do
-anything at all, including something that looks nonsensical under any evaluation order.
-
-Formally: SIMP's small-step rule for $E_1 + E_2$ (as you'd write it) picks a fixed order to
-reduce $E_1$ and $E_2$, say left operand first. C's semantics for argument evaluation is
-instead a rule schema with no fixed order, a nondeterministic choice among orderings that
-each compiler resolves once and for all. Nondeterminism in a semantics is not automatically
-a bug (the short-circuit rules below are nondeterministic in exactly this controlled,
-observable way) but \emph{unspecified} order combined with mutable shared state is exactly
-what makes a program's meaning depend on which compiler you happen to be using.
-
-\subsection{short-circuit boolean operators}
-
-Extend the boolean grammar with two operators whose operands may themselves contain
-expressions with effects (a function call that mutates the store, say):
+\paragraph{Precedence and associativity.} Precedence rules say which operators
+group more tightly in the absence of parentheses; associativity rules say
+whether operators of equal precedence group to the left or to the right. The
+expression \texttt{a + b * c ** d ** e / f} can be read as
 \[
-  B ::= \ldots \mid B_1 \,\&\&\, B_2 \mid B_1 \,||\, B_2
+((((a + b) * c) {**}\, d) {**}\, e) / f, \qquad
+a + ((b * (c {**} (d {**} e))) / f), \qquad
+a + (((b * c) {**}\, d) {**}\, (e / f)).
 \]
-How much of $B_1 \,\&\&\, B_2$ actually executes is an observable, semantically meaningful
-choice, not just an optimization; it determines whether $B_2$'s side effects happen at
-all. The small-step rules:
+With the usual rules (\texttt{**} binds tightest and associates to the right,
+\texttt{*} and \texttt{/} bind tighter than \texttt{+} and associate to the
+left), the second reading is the right one (Figure~\ref{fig:prec-tree}).
+Haskell declares precedence (0 to 9) and associativity for each operator:
+\texttt{infixr 8 \^{}, **}; \texttt{infixl 7 *, /}; \texttt{infixl 6 +, -};
+\texttt{infix 4 ==, <} (non-associative); \texttt{infixr 3 \&\&};
+\texttt{infixr 2 ||}; \texttt{infixr 0 \$}.
 
-\[
-\infer[\textsc{And-False}]
-  {\steppair{B_1 \,\&\&\, B_2}{\sigma}{\mathbf{false}}{\sigma'}}
-  {\steppair{B_1}{\sigma}{\mathbf{false}}{\sigma'}}
-\qquad
-\infer[\textsc{And-True}]
-  {\steppair{B_1 \,\&\&\, B_2}{\sigma}{B_2}{\sigma'}}
-  {\steppair{B_1}{\sigma}{\mathbf{true}}{\sigma'}}
-\]
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small\ttfamily, s sep=4mm, l sep=4mm},
+  [+ [a] [/ [* [b] [** [c] [** [d] [e]]]] [f]]]
+\end{forest}
+\caption{The tree of \texttt{a + b * c ** d ** e / f}.}
+\label{fig:prec-tree}
+\end{figure}
 
-\[
-\infer[\textsc{Or-True}]
-  {\steppair{B_1 \,||\, B_2}{\sigma}{\mathbf{true}}{\sigma'}}
-  {\steppair{B_1}{\sigma}{\mathbf{true}}{\sigma'}}
-\qquad
-\infer[\textsc{Or-False}]
-  {\steppair{B_1 \,||\, B_2}{\sigma}{B_2}{\sigma'}}
-  {\steppair{B_1}{\sigma}{\mathbf{false}}{\sigma'}}
-\]
+\subsection{Assignment}
 
-\textsc{And-False} and \textsc{Or-True} are the rules that actually short-circuit: they
-discard $B_2$ entirely and never reduce it, even if $B_2$ would otherwise get stuck or
-diverge. Contrast this with a hypothetical eager, ``bitwise'' \texttt{\&}/\texttt{|} that
-always reduces both sides first --- that operator would need only one rule each, but would
-get stuck (or loop) whenever the discarded operand would have.
+Execution is split into expressions, which return a value and may have side
+effects (functions), and statements, which are executed for their side
+effects and return no value (assignment). In \texttt{d = a; a = b + c;} the
+name on the left denotes a location and the expression on the right a value.
 
-\begin{example}
-Take $\deref{x} \neq 0 \,\&\&\, 10 / \deref{x} > 1$ with $\sigma(x) = 0$. The full
-derivation:
-\[
-\infer[\textsc{And-False}]
-  {\steppair{\deref{x} \neq 0 \,\&\&\, 10/\deref{x} > 1}{\sigma}{\mathbf{false}}{\sigma}}
-  {
-    \infer[\textsc{Neq}]
-      {\steppair{\deref{x} \neq 0}{\sigma}{\mathbf{false}}{\sigma}}
-      {\sigma(x) = 0}
+\begin{definition}
+An \textbf{l-value} is an expression that denotes a location (it can appear on
+the left of an assignment); an \textbf{r-value} is an expression that denotes a
+value.
+\end{definition}
+
+\paragraph{Value and reference models.} In a value model a variable is a named
+container for a value; in a reference model a variable is a name that refers
+to a value stored elsewhere (Figure~\ref{fig:var-models}). After \texttt{b = 2;
+c = b; a = b + c;}, in the value model each variable holds its own number. In
+the reference model \texttt{b} and \texttt{c} refer to the same object 2. Equality
+has two meanings in the reference model: do two variables refer to the same
+object (\texttt{===} in JavaScript, \texttt{==} on objects in Java), or to
+equal values (\texttt{==} in JavaScript, \texttt{equals} in Java)?
+\coderange{Java}{java/Control.java}{equality}
+\texttt{a == b} is false because \texttt{a} and \texttt{b} are two objects
+with the value 1000.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[cell/.style={draw, minimum width=9mm, minimum height=6mm, font=\small\ttfamily}]
+  \node[font=\small] at (1,1) {value model};
+  \foreach \v/\x [count=\i] in {a/4, b/2, c/2} {
+    \node[font=\small\ttfamily] at (0,1-\i*0.7) {\v};
+    \node[cell] at (1.2,1-\i*0.7) {\x};
   }
-\]
-The second operand, $10/\deref{x} > 1$, which would get stuck on division by zero, is never
-reduced --- \textsc{And-False} fires the moment the first operand is \textbf{false} and
-discards $B_2$ outright. This is exactly the ``guard \&\& use'' idiom you rely on in C,
-Java, or Python whenever you write \texttt{x != 0 \&\& 10/x > 1}: it's only safe because
-the language's semantics \emph{guarantees} short-circuiting, not because it happens to be
-how your compiler behaves today.
-\end{example}
+  \node[font=\small] at (5.5,1) {reference model};
+  \foreach \v [count=\i] in {a, b, c} {
+    \node[font=\small\ttfamily] (n\v) at (4.5,1-\i*0.7) {\v};
+  }
+  \node[cell] (four) at (7,0.3) {4};
+  \node[cell] (two) at (7,-1) {2};
+  \draw[flecha] (na) -- (four);
+  \draw[flecha] (nb) -- (two);
+  \draw[flecha] (nc) -- (two);
+\end{tikzpicture}
+\caption{The variables after \texttt{b = 2; c = b; a = b + c} in the two models.}
+\label{fig:var-models}
+\end{figure}
 
-\subsection{exceptions: non-local transfer of control}
-
-So far, running a command from state $\sigma$ either yields a final store $\sigma'$
-($\bigstep{C}{\sigma}{\sigma'}$) or never yields anything at all (divergence: no rule ever
-fires again, exactly the $\bot$ from denotational semantics). Exceptions add a
-\emph{third} outcome: $C$ can abort, raising a value, with control jumping straight to the
-nearest handler that catches it.
-
-Write $\bigstep{C}{\sigma}{\mathbf{exc}(v),\,\sigma'}$ for ``$C$ aborts, raising value $v$,
-having reached store $\sigma'$ at the point of the throw.'' Extend the grammar:
-\[
-  C ::= \ldots \mid \mathbf{throw}\ E \mid \mathbf{try}\ C\ \mathbf{catch}(x)\ C
-\]
-
-\[
-\infer[\textsc{Throw}]
-  {\bigstep{\mathbf{throw}\ E}{\sigma}{\mathbf{exc}(v),\,\sigma}}
-  {\bigstep{E}{\sigma}{v}}
-\]
-
-The rule that matters most is how exceptions propagate through sequencing --- an exception
-raised by $C_1$ preempts $C_2$ entirely:
-\[
-\infer[\textsc{Seq-Exc}]
-  {\bigstep{\seq{C_1}{C_2}}{\sigma}{\mathbf{exc}(v),\,\sigma'}}
-  {\bigstep{C_1}{\sigma}{\mathbf{exc}(v),\,\sigma'}}
-\]
-Compare this to the ordinary sequencing rule
-$\bigstep{C_1}{\sigma}{\sigma'} \ \bigstep{C_2}{\sigma'}{\sigma''}$ over
-$\bigstep{\seq{C_1}{C_2}}{\sigma}{\sigma''}$, which only applies when $C_1$ terminates
-normally. \textsc{Seq-Exc} and ordinary sequencing are mutually exclusive: $C_1$ can't both
-terminate normally \emph{and} raise, so exactly one of the two rules ever applies to a
-given $\seq{C_1}{C_2}$.
-
-\texttt{try}/\texttt{catch} has two cases, whether the protected command raises or not:
-\[
-\infer[\textsc{Try-Catch}]
-  {\bigstep{\mathbf{try}\ C\ \mathbf{catch}(x)\ C'}{\sigma}{\sigma''}}
-  {\bigstep{C}{\sigma}{\mathbf{exc}(v),\,\sigma'} \\
-   \bigstep{C'}{\sigma'[x \mapsto v]}{\sigma''}}
-\qquad
-\infer[\textsc{Try-Normal}]
-  {\bigstep{\mathbf{try}\ C\ \mathbf{catch}(x)\ C'}{\sigma}{\sigma'}}
-  {\bigstep{C}{\sigma}{\sigma'}}
-\]
-
-\textsc{Try-Catch} \emph{is} stack unwinding, written as an inference rule: control jumps
-straight from wherever the exception was thrown, past any pending sequencing, if, or while
-bodies in between, to the nearest enclosing handler --- nothing textually between the
-\texttt{throw} and the \texttt{catch} ever runs. If $C$ sits nested inside several sequences
-and loops, \textsc{Seq-Exc} (plus analogous propagation rules you'd add for \texttt{if} and
-\texttt{while} bodies) fires once per level of nesting in the \emph{proof tree}, not once
-per step of ordinary execution --- that's the precise sense in which a non-local transfer
-``skips'' normal control flow.
-
-\begin{example}
-\begin{lstlisting}[language=Python]
-def risky(x):
-    if x == 0:
-        raise ValueError("boom")
-    return 10 // x
-
-try:
-    r = risky(0)
-    print("never printed")
-except ValueError as e:
-    r = -1
-print(r)  # -1
+\paragraph{Initialization.} Assignment (\texttt{=}, \texttt{:=}) and
+initialization (aggregates, constructors) are usually different operations.
+To use a variable in an expression, every control path to the expression
+must assign it. Java checks this statically. In
+\begin{lstlisting}[language=Java]
+int j = 3;
+int i;
+if (j > 0) { i = 2; }
+System.out.println(i);
 \end{lstlisting}
-Tracing it with the rules above: \texttt{risky(0)} raises, so
-$\bigstep{\mathbf{throw}\ \text{ValueError}}{\sigma}{\mathbf{exc}(v),\,\sigma}$ by
-\textsc{Throw}. The assignment \texttt{r = risky(0)} therefore itself produces an
-$\mathbf{exc}$ outcome, and by \textsc{Seq-Exc} the whole sequence
-\texttt{r = risky(0); print("never printed")} raises \emph{without ever touching}
-\texttt{print}. The enclosing \texttt{try}/\texttt{except} then applies
-\textsc{Try-Catch}: \texttt{r = -1} runs in the store where the exception occurred, giving
-a final store with $r = -1$, which the last \texttt{print(r)} observes.
-\end{example}
+\texttt{javac} reports \texttt{variable i might not have been initialized}: if
+the condition were false, \texttt{i} would have no value. The slide writes the
+example with \texttt{final static int j = 3}. With that declaration
+\texttt{j > 0} is a constant expression whose value is true, Java's rules
+treat the \texttt{if} as always taken, and the program compiles.
 
-\paragraph{Connection to axiomatic semantics.} Before exceptions, a Hoare triple
-$\{P\}\, C\, \{Q\}$ implicitly assumed a two-way split: either $C$ terminates in a state
-satisfying $Q$, or $C$ diverges (and the triple says nothing at all). Exceptions add a
-third outcome that any honest correctness statement about $C$ must account for: $C$ may
-(1) terminate normally satisfying $Q$, (2) diverge, or (3) terminate \emph{abnormally} by
-raising some exception. A triple that silently ignores case (3) can be misleading ---
-$\{x > 0\}\; y := 10 / x\; \{y \cdot x = 10\}$ reads fine as long as you forget that
-division can raise. Hoare logics extended for exception-raising languages split the
-postcondition in two: an ordinary postcondition $Q$ for normal termination, and one
-exceptional postcondition $R_e$ per exception type $e$, giving something like
-$\{P\}\, C\, \{Q \mid R_{e_1}, R_{e_2}, \ldots\}$. Composing two commands in sequence then
-needs $C_1$'s \emph{normal} postcondition to imply $C_2$'s precondition (exactly the old
-sequencing rule), while each of $C_1$'s exceptional postconditions propagates straight past
-$C_2$ to whatever encloses the sequence --- a direct mirror of \textsc{Seq-Exc} above, now
-at the level of assertions instead of stores.
+\paragraph{Boxing.} Many languages mix values and references. Converting a value
+into an object that wraps it (boxing) and back (unboxing) is needed to store
+values where references are expected, as in a hash table. Java does it
+explicitly or automatically:
+\coderange{Java}{java/Control.java}{boxing}
 
-\subsection{continuations: the rest of the computation, as a value}
+\subsection{Evaluation order}
 
-Everything above models ``what happens next'' implicitly, in the shape of the derivation
-tree: after evaluating $C_1$ in $\seq{C_1}{C_2}$, ``run $C_2$ next'' is baked into the
-sequencing rule itself. A \textbf{continuation} makes that implicit ``what happens next''
-into an explicit, first-class value --- literally a function representing the rest of the
-computation.
+In \texttt{a - f(b) - c * d}, associativity says that \texttt{f(b)} is
+subtracted from \texttt{a} first, and precedence that \texttt{c * d} is computed
+before the second subtraction. Neither says whether \texttt{a - f(b)} is
+evaluated before \texttt{c * d}, nor in which order the arguments of
+\texttt{f(a, g(b), c)} are evaluated. The order matters for two reasons. Side
+effects: if \texttt{f(b)} modifies \texttt{d}, \texttt{c * d} gives different
+results before and after. Efficiency: in \texttt{a := B[i]; c := a*2 + f(b)*3},
+computing \texttt{a*2} first keeps one register busy during the call, but
+loading \texttt{a} may be slow. Many languages leave the order unspecified so
+that compilers can choose. The \texttt{foo(i++, --i)} of Section~\ref{sec:operational}
+is the same problem.
 
-Take an ordinary recursive factorial, in Scheme:
-\begin{lstlisting}[language=Lisp]
-(define (fact n)
-  (if (= n 0)
-      1
-      (* n (fact (- n 1)))))
-\end{lstlisting}
+\paragraph{Short-circuit evaluation.} In \texttt{(a < b) and (b < c)}, if
+\texttt{a < b} is false there is no point in evaluating the rest. Short-circuit
+evaluation stops as soon as the value is known, and programs rely on it:
+\coderange{C}{c/control.c}{shortcircuit}
+\texttt{p->key} is not evaluated when \texttt{p} is \texttt{NULL}. In small step,
+short-circuit \texttt{||} is two rules that look only at the left operand:
+\begin{mathpar}
+\inferrule*[right=Or-True]{ }{\langle \mathit{true} \mathbin{||} B, s \rangle \to \langle \mathit{true}, s \rangle}
+\and
+\inferrule*[right=Or-False]{ }{\langle \mathit{false} \mathbin{||} B, s \rangle \to \langle B, s \rangle}
+\end{mathpar}
 
-Rewriting it in \textbf{continuation-passing style} (CPS) means every function takes one
-extra argument, its continuation $k$: a function to \emph{call} with the answer, instead of
-returning it.
-\begin{lstlisting}[language=Lisp]
-(define (fact-cps n k)
-  (if (= n 0)
-      (k 1)
-      (fact-cps (- n 1) (lambda (v) (k (* n v))))))
+\subsection{Structured control flow}
 
-(fact-cps 5 (lambda (v) v))   ; => 120
-\end{lstlisting}
-Nothing in \texttt{fact-cps} ever returns a value up the call stack the ordinary way.
-Instead of computing \texttt{(* n (fact (- n 1)))} and handing the result back to its
-caller, it builds a closure \texttt{(lambda (v) (k (* n v)))} that says ``once you know the
-factorial of \texttt{n-1}, multiply it by \texttt{n} and hand \emph{that} to whoever wanted
-my answer,'' and passes that closure down as the new continuation for the recursive call.
-Unwinding \texttt{(fact-cps 3 (lambda (v) v))} by hand:
-\begin{lstlisting}[language=Lisp]
-(fact-cps 3 (lambda (v) v))
-= (fact-cps 2 (lambda (v) ((lambda (v) v) (* 3 v))))     ; k1
-= (fact-cps 1 (lambda (v) (k1 (* 2 v))))                  ; k2
-= (fact-cps 0 (lambda (v) (k2 (* 1 v))))                  ; k3
-= (k3 1) = (k2 1) = (k1 2) = 6
-\end{lstlisting}
-We won't give continuations a denotational semantics here --- that means rewriting the
-entire meaning function $\llbracket \cdot \rrbracket$ to be continuation-passing throughout,
-which is out of scope for this course. The idea to take away is just this: ``the rest of
-the computation'' is a value you can name, save, pass around, and even call more than once.
-That single idea is what underlies Scheme's \texttt{call/cc}, the desugaring of
-\texttt{async}/\texttt{await} in JavaScript, generators, and --- looking back at the
-previous subsection --- exception handling itself: a handler is, informally, ``the
-continuation to jump to.''
+Early languages built control flow from \texttt{goto} and labels. The
+lecture's Fortran program for primes jumps with arithmetic \texttt{IF}s (three
+labels for negative, zero and positive) and \texttt{GO TO}. Any imperative
+algorithm can be written with sequence, selection (\texttt{if}) and iteration
+(\texttt{for} and \texttt{while}), which is the basis of structured
+programming. Dijkstra's letter ``Go To Statement Considered
+Harmful''~\cite{dijkstra1968goto} argued that unrestricted jumps make it
+impossible to reason locally about a program.
 
-\subsection{coroutines and generators}
+\paragraph{break and continue.} Leaving a loop early, or skipping to the next
+iteration, are restricted jumps. Pascal uses \texttt{goto 100} to a label after
+the loop; Ada has \texttt{exit when} and named loops (\texttt{exit Main\_Cycle
+when Found}); Java has labeled \texttt{continue}:
+\coderange{Java}{java/Control.java}{labeled}
+When $i = 2$ and $j = 2$ the inner loop stops and the outer one continues with
+$i = 3$, so the pair $(2, 3)$ is never printed.
 
-Contrast plain call/return: the caller calls $f$, $f$ runs to completion (or raises, or
-loops), and the caller resumes with a single value. A \textbf{coroutine} or
-\textbf{generator} suspends \emph{in the middle} of its body, handing control back to the
-caller together with an intermediate value, and can later be resumed exactly where it left
-off, with its local state --- its whole stack frame --- intact.
+\paragraph{Early termination.} \texttt{return} leaves a function before its end,
+avoiding a \texttt{goto} or a control variable that the rest of the function
+would check.
 
-\begin{lstlisting}[language=Python]
-def countdown(n):
-    while n > 0:
-        yield n
-        n -= 1
+\paragraph{Multilevel returns.} Returning from several nested calls at once
+requires unwinding the run-time stack. The lecture's Pascal example jumps
+from \texttt{search\_file} to a label in the enclosing \texttt{search}. Ruby
+uses \texttt{catch :found} around the calls and \texttt{throw :found, line}
+inside them. In Scheme the same behavior is a continuation:
+\coderange{Scheme}{scheme/control.scm}{search}
+\texttt{found} is the continuation of the whole search: calling it returns
+from \texttt{search} immediately, from inside both loops.
 
-for i in countdown(3):
-    print(i)   # 3, 2, 1
-\end{lstlisting}
+\paragraph{Continuations.} A continuation captures the context (the rest of the
+computation) in which execution may continue. \texttt{call/cc} passes the
+current continuation to a function:
+\coderange{Scheme}{scheme/control.scm}{callcc}
+With \texttt{call/cc}, \texttt{return} is the continuation, so \texttt{(return 2)}
+abandons the rest of \texttt{f} and the result is 2. With the identity function
+as \texttt{return}, the call returns normally and \texttt{f} gives 3.
+Continuations are also used to implement web applications where the user
+goes back and forward between pages (Smalltalk's Seaside).
 
-Every \texttt{yield} suspends \texttt{countdown} mid-loop; the local variable \texttt{n} is
-not lost between suspensions --- it's exactly as if the function's continuation at the
-\texttt{yield} point were captured and handed to the caller as ``the next thing to run.''
-Compare that to a plain function returning a list \texttt{[3, 2, 1]} all at once: with a
-generator, producer and consumer interleave, which matters when the sequence is infinite or
-expensive to produce eagerly. JavaScript's \texttt{async function*} (async generators) and
-\texttt{await} generalize the same idea to suspend across asynchronous operations, not just
-loop iterations.
+\paragraph{Exceptions.} This paragraph goes beyond the slides. An exception
+transfers control to the nearest handler:
+\coderange{Python}{python/control.py}{exceptions}
+In big step, a command can now end in a store or raise a value; a sequence
+stops at the first raise, and \texttt{try} catches it. Exceptions, \texttt{break}
+and \texttt{return} are tamed jumps: their possible targets are known
+statically.
 
-\subsection{structured vs.\ unstructured control flow}
+\subsection{Sequencing}
 
-None of this is how early languages worked. Fortran and early BASIC control flow was built
-entirely out of \texttt{goto} plus labels; loops and conditionals were things a programmer
-assembled by hand out of jumps. Dijkstra's 1968 letter, ``Go To Statement Considered
-Harmful,'' argued that unrestricted jumps make it effectively impossible to reason locally
-about a program's state: at any given label, ``where did control come from, and what's true
-here'' depends on the entire set of jumps that might land there, a set that grows
-combinatorially with program size. Structured constructs (sequencing, \texttt{if},
-\texttt{while}) restrict control flow to a small set of shapes with exactly one entry and
-one exit --- which is precisely why the axiomatic semantics from the previous section works
-at all: the Hoare rule for \texttt{while} relies on there being exactly one way in and one
-way out of the loop. A \texttt{goto} into the middle of a loop body would break that rule
-outright.
+A sequence (\texttt{;}) controls the order of side effects: statements run in
+the order in which they are written. Statements inside delimiters
+(\texttt{\{ \dots{} \}}, \texttt{begin \dots{} end}) form a compound statement,
+which with its declarations is a block. A block may create a new environment
+where its variables exist, as the symbol tables of the previous block. A
+\texttt{static} local variable in C is the opposite case: it is created once
+and keeps its value between calls, so the same sequence of calls produces a
+different value each time:
+\coderange{C}{c/control.c}{static}
+Three calls with \texttt{'p'}, \texttt{'p'}, \texttt{'l'} produce \texttt{p1},
+\texttt{p2} and \texttt{l1}.
 
-Modern languages didn't eliminate non-local control flow, though, they domesticated it.
-Exceptions, \texttt{break}/\texttt{continue}, early \texttt{return}, and generators are all
-restricted, well-behaved escapes: each has a statically knowable set of possible targets
-(the nearest enclosing handler, the nearest enclosing loop, the caller), which is exactly
-the property arbitrary \texttt{goto} lacks. Continuations, seen this way, are the escape
-hatch of last resort: \texttt{call/cc} gives you the full unrestricted power Dijkstra warned
-about, plus a value to reason about, which is why almost no mainstream language exposes it
-directly --- but nearly every mainstream language builds specific, tamed continuations
-(exception handlers, generators, \texttt{async}/\texttt{await}) straight into its runtime.
+\subsection{Selection}
+
+\paragraph{if and else-if.} Selection follows one of several paths from a point
+of the program: \texttt{if \dots{} then \dots{} else \dots}, with \texttt{else if}
+(or \texttt{elif}) for more cases. Lisp's \texttt{cond} expresses multiple
+selection without nesting, like a \texttt{switch} on conditions. The lecture's
+example, in Common Lisp:
+\coderange{CommonLisp}{lisp/cond.lisp}{cond}
+The conditions are tested in order and the first true one wins: 354 gives
+\texttt{"cond4"}.
+
+\paragraph{Pattern matching.} Conditions can be evaluated indirectly by matching
+values against patterns. The lecture's Elixir \texttt{merge} has one case per
+shape of the two lists; in Rascal:
+\coderange{Rascal}{rascal/src/Merge.rsc}{merge}
+
+\paragraph{Jump code.} When a condition only decides a branch, its value does
+not have to be computed: the code can jump as soon as the result is known, as
+in short-circuit evaluation. For \texttt{if ((A > B) and (C > D)) or (E $\ne$ F)},
+Figure~\ref{fig:jump-code} shows the jumps: if \texttt{A > B} is false the
+\texttt{and} is false and the code goes to test \texttt{E $\ne$ F}; if both
+comparisons are true it jumps directly to the \texttt{then} block.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=1.3cm and 2.2cm, test/.style={draw, rounded corners=2pt, font=\small\ttfamily, minimum width=1.6cm, minimum height=7mm}, blk/.style={draw, font=\small, minimum width=2cm, minimum height=7mm}]
+  \node[test] (ab) {A > B};
+  \node[test, below=of ab] (cd) {C > D};
+  \node[test, right=of cd] (ef) {E != F};
+  \node[blk, below=of cd] (then) {then block};
+  \node[blk, right=of then] (else) {else block};
+  \draw[flecha] (ab) -- node[left, font=\footnotesize] {true} (cd);
+  \draw[flecha] (ab) -| node[above, pos=0.25, font=\footnotesize] {false} (ef);
+  \draw[flecha] (cd) -- node[left, font=\footnotesize] {true} (then);
+  \draw[flecha] (cd) -- node[above, font=\footnotesize] {false} (ef);
+  \draw[flecha] (ef) -- node[right, font=\footnotesize] {false} (else);
+  \draw[flecha] (ef) -- node[above, sloped, font=\footnotesize] {true} (then);
+\end{tikzpicture}
+\caption{Jump code for \texttt{if ((A > B) and (C > D)) or (E $\ne$ F)}.}
+\label{fig:jump-code}
+\end{figure}
+
+\subsection{Iteration}
+
+Iteration repeats a set of statements, either a given number of times
+(enumeration) or while a predicate holds.
+
+\paragraph{Enumeration-controlled loops.} A loop such as
+\texttt{loop i in range(1, 10) step 2} has an iteration variable, a first and
+a last value, and a step. The lecture asks four questions about them:
+\begin{enumerate}
+  \item Can \texttt{i}, \texttt{first} or \texttt{last} be modified inside the loop?
+    Most languages forbid changing the iteration variable, and evaluate the
+    bounds only once, at the beginning. They protect against ``threatening''
+    statements: assigning the loop variable, passing it by reference to a
+    subroutine, or reading it from a file.
+  \item What happens if \texttt{first} is larger than \texttt{last}? The loop must
+    not execute: the terminating condition is tested before the first
+    iteration (\texttt{if r1 > r2 then exit\_loop}). This works for a positive
+    step; a negative one needs an explicit form (\texttt{downTo}) so that the
+    compiler generates the comparison the other way around.
+  \item What is the value of \texttt{i} after the loop? After
+    \texttt{loop i := 'a' to 'z' do \dots{} end}, \texttt{print(i)} could print
+    something undefined, the value after the range (which for a character
+    loop may not even exist), or the last value of the range. Languages answer
+    differently, and many make the variable local to the loop to avoid the
+    question.
+  \item Can control jump into the loop from outside? Structured languages forbid
+    it.
+\end{enumerate}
+Figure~\ref{fig:enum-loop} shows the structure: the bounds are evaluated once,
+the test comes first, and the step follows the body.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=0.9cm, box/.style={draw, minimum width=3cm, minimum height=7mm, font=\small}, cond/.style={draw, diamond, aspect=2.2, font=\small, inner sep=1pt}]
+  \node[box] (bounds) {evaluate bounds};
+  \node[cond, below=of bounds] (test) {var in range?};
+  \node[box, below=of test] (body) {body};
+  \node[box, below=of body] (step) {step};
+  \node[box, right=1.8cm of test] (exit) {exit};
+  \draw[flecha] (bounds) -- (test);
+  \draw[flecha] (test) -- node[left, font=\footnotesize] {T} (body);
+  \draw[flecha] (body) -- (step);
+  \draw[flecha] (step.west) -- ++(-0.8,0) |- (test.west);
+  \draw[flecha] (test) -- node[above, font=\footnotesize] {F} (exit);
+\end{tikzpicture}
+\caption{An enumeration-controlled loop.}
+\label{fig:enum-loop}
+\end{figure}
+
+\paragraph{Logically controlled loops.} \texttt{loop predicate do loop\_body} has no
+explicit iteration variable and no required increment. The question is where
+the terminating condition is tested: normally at the beginning
+(\texttt{while}), but it can be at the end (\texttt{do-while}, which runs the
+body at least once) or in the middle (\texttt{loop \dots{} exit when \dots{} end}).
+
+\paragraph{Generators.} This paragraph goes beyond the slides. A generator
+produces the values of a loop one at a time and suspends between them:
+\coderange{Python}{python/control.py}{generator}
+
+\subsection{Recursion}
+
+Recursive and iterative programs are equivalent, up to the use of the stack.
+A call in tail position (the last thing the function does) needs no stack
+frame of its own, and the compiler can turn it into a jump:
+\coderange{C}{c/control.c}{gcd}
+Scheme requires implementations to do this, so a tail-recursive function runs
+in constant stack space:
+\coderange{Scheme}{scheme/control.scm}{gcd}
+A function that is not tail-recursive can be transformed into
+continuation-passing style: each call receives, as an extra argument, a
+function with the rest of the computation.
+\coderange{Scheme}{scheme/control.scm}{cps}
+In \texttt{fact-cps}, the multiplication that \texttt{fact} does after the
+recursive call moves into the continuation, and every call is a tail call.
+
+\subsection{Nondeterminism}
+
+\begin{definition}
+A \textbf{nondeterministic} abstraction is one in which the choice between
+alternatives (between control paths) is deliberately unspecified, so that
+different executions may make different choices.
+\end{definition}
+
+Concurrency usually introduces nondeterminism: the order in which statements
+of different threads run is not guaranteed. Dijkstra's guarded commands are
+the classic sequential example: among several guards that are true, any
+branch may be taken.
 
 \subsection{Exercises}
 
-\begin{itemize}
-  \item Give the full small-step derivation, using \textsc{Or-True}/\textsc{Or-False}, for
-  $\deref{x} = 0 \,||\, 10/\deref{x} > 1$ with $\sigma(x) = 0$. Which operand never gets
-  reduced, and why does that matter?
+\begin{exercise}
+Are these two programs the same?
+\begin{lstlisting}[language=C]
+j = index_fn(i);
+A[j] = A[j] + 1;
+\end{lstlisting}
+\begin{lstlisting}[language=C]
+A[index_fn(i)] = A[index_fn(i)] + 1;
+\end{lstlisting}
+\end{exercise}
 
-  \item Suppose you add a non-short-circuiting boolean \textbf{xor} to the grammar, one
-  that must evaluate \emph{both} operands no matter what. Write its single small-step rule
-  and explain in a sentence or two why \textbf{xor} cannot be given the two-rule treatment
-  that $\&\&$ and $||$ got above.
+\paragraph{Solution.} Not necessarily. The second calls \texttt{index\_fn} twice.
+If the function has a side effect, the two calls can return different indices,
+and the program increments one cell with the value of another; the order of
+the two calls is also unspecified.
+\coderange{C}{c/control.c}{index}
+The test uses an \texttt{index\_fn} that counts its calls.
 
-  \item Using \textsc{Throw}, \textsc{Seq-Exc}, and \textsc{Try-Catch}, give a full
-  derivation tree for
-  \[
-    \bigstep{\mathbf{try}\ (\seq{\assign{y}{1}}{\mathbf{throw}\ 99})\ \mathbf{catch}(x)\
-    \assign{y}{\deref{x}+1}}{\sigma_0}{\sigma_2}
-  \]
-  where $\sigma_0(y) = 0$. What is $\sigma_2(y)$?
+\begin{exercise}
+For \texttt{a = b + c; d = c + e + b}, in which order can the expressions be
+evaluated?
+\end{exercise}
 
-  \item Booleans need an exception outcome too, not just commands: write the missing
-  small-step rule for what happens to $\ift{B}{C_1}{C_2}$ when the guard $B$ itself raises
-  before ever reaching a truth value.
+\paragraph{Solution.} Addition is commutative and associative on integers, so a
+compiler may rewrite the second statement as \texttt{d = b + c + e} and reuse
+\texttt{b + c}: compute \texttt{b + c}, assign it to \texttt{a}, compute
+\texttt{a + e}, assign it to \texttt{d}. With floating point or side effects
+the rewrite is not safe.
 
-  \item Rewrite a function \texttt{sum-to(n)} that adds $1 + 2 + \cdots + n$ recursively
-  into continuation-passing style (mirror \texttt{fact-cps} above), then hand-unwind
-  \texttt{(sum-to-cps 3 (lambda (v) v))} step by step the way \texttt{fact-cps} was unwound
-  in the text.
+\begin{exercise}
+Draw the control flow diagram of a chain of \texttt{else if} that assigns the
+grades A to F according to the score (at least 90, 80, 70, 60).
+\end{exercise}
 
-  \item A colleague claims: ``a \texttt{return} inside a \texttt{try} block, when the
-  \texttt{try} also has a \texttt{finally}, is just an ordinary function return, no
-  non-local transfer involved.'' Give a short Java example showing this claim is false
-  (hint: what does a \texttt{return} inside \texttt{finally} do to a \texttt{return}
-  already pending from the \texttt{try}?), and explain in one or two sentences why this
-  belongs in this section's list of non-local control transfers.
-\end{itemize}
+\paragraph{Solution.} A chain of tests: $\ge 90$ goes to A, otherwise $\ge 80$ goes
+to B, and so on; the last \texttt{else} goes to F. All branches join before the
+final statement. In JavaScript:
+\coderange{JavaScript}{js/grades.js}{grades}
+With the score 78 the first two tests fail and the third assigns C.
+
+\begin{exercise}
+What does the Java \texttt{outerLoop} example print? And with \texttt{break
+outerLoop} instead of \texttt{continue outerLoop}?
+\end{exercise}
+
+\paragraph{Solution.} With \texttt{continue}: $(1,1)$, $(1,2)$, $(1,3)$, $(2,1)$,
+$(3,1)$, $(3,2)$, $(3,3)$. With \texttt{break} both loops end at $(2,2)$, so it
+prints $(1,1)$, $(1,2)$, $(1,3)$, $(2,1)$.

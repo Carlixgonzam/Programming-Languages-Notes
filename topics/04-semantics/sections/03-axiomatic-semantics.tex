@@ -1,141 +1,113 @@
 % !TeX root = ../main.tex
 \section{Axiomatic semantics}
-Axiomatic semantics takes a different approach from the other two styles: instead of describing how a program executes or what function it computes, it gives meaning to programs through \textbf{logical assertions} about their behavior. The central idea is to reason about what is true \emph{before} and \emph{after} a program runs.
+\label{sec:axiomatic}
+
+This section goes beyond the slides, which only name axiomatic semantics as
+the third flavor; the pre- and postconditions of dynamic analysis, in the
+semantic analysis lecture, are its starting point. Axiomatic semantics gives
+meaning to programs through logical assertions about what is true before and
+after they run.
 
 \subsection{Hoare triples}
-The basic unit is the \textbf{Hoare triple}:
+
+\begin{definition}
+A \textbf{Hoare triple} $\{P\}\ C\ \{Q\}$ says that if the precondition $P$ holds
+before $C$ runs and $C$ terminates, then the postcondition $Q$ holds after it.
+\end{definition}
+
+For example $\{x = 5\}\ x := x + 1\ \{x = 6\}$, and the triple of the semantic
+analysis lecture, $\{x \le 10\}\ \mathtt{while}\ x < 10\ \mathtt{do}\ x := x + 1\ \{x = 10\}$.
+
+\subsection{Rules}
+
+\begin{mathpar}
+\inferrule*[right=Assign]{ }{\{P[x := e]\}\ x := e\ \{P\}}
+\and
+\inferrule*[right=Seq]{\{P\}\ C_1\ \{R\} \\ \{R\}\ C_2\ \{Q\}}{\{P\}\ C_1 ; C_2\ \{Q\}}
+\and
+\inferrule*[right=If]{\{P \wedge b\}\ C_1\ \{Q\} \\ \{P \wedge \neg b\}\ C_2\ \{Q\}}{\{P\}\ \mathtt{if}\ b\ \mathtt{then}\ C_1\ \mathtt{else}\ C_2\ \{Q\}}
+\and
+\inferrule*[right=While]{\{I \wedge b\}\ C\ \{I\}}{\{I\}\ \mathtt{while}\ b\ \mathtt{do}\ C\ \{I \wedge \neg b\}}
+\and
+\inferrule*[right=Cons]{P \Rightarrow P' \\ \{P'\}\ C\ \{Q'\} \\ Q' \Rightarrow Q}{\{P\}\ C\ \{Q\}}
+\end{mathpar}
+The assignment rule works backward: to have $P$ after $x := e$, $P$ with $e$ in
+place of $x$ must hold before. In \textsc{While}, $I$ is the \textbf{loop
+invariant}: it holds before the loop, every iteration preserves it, and when
+the loop ends $I \wedge \neg b$ must give the postcondition. \textsc{Cons}
+strengthens preconditions and weakens postconditions to connect rules.
+
+\paragraph{Partial and total correctness.} $\{P\}\ C\ \{Q\}$ is partial
+correctness: it says nothing about termination. Total correctness, written
+$[P]\ C\ [Q]$, also requires $C$ to terminate, usually proved with a
+\textbf{variant}, a quantity bounded below that decreases at each iteration.
+
+\paragraph{Weakest preconditions.} Instead of guessing a precondition, the
+weakest one can be computed:
 \[
-  \{P\}\; C\; \{Q\}
+\begin{array}{l}
+\mathit{wp}(x := e, Q) = Q[x := e] \qquad
+\mathit{wp}(C_1 ; C_2, Q) = \mathit{wp}(C_1, \mathit{wp}(C_2, Q)) \\
+\mathit{wp}(\mathtt{if}\ b\ \mathtt{then}\ C_1\ \mathtt{else}\ C_2, Q) = (b \Rightarrow \mathit{wp}(C_1, Q)) \wedge (\neg b \Rightarrow \mathit{wp}(C_2, Q))
+\end{array}
 \]
-where $P$ is the \textbf{precondition}, $C$ is a command, and $Q$ is the \textbf{postcondition}. Read it as: ``if $P$ holds before running $C$, and $C$ terminates, then $Q$ holds afterward.''
+For loops there is no mechanical formula; an invariant is needed.
 
-For example:
+\subsection{Example: the factorial}
+
+The factorial of Section~\ref{sec:operational}, with $\mathit{fac}$ starting at 1
+and $l$ at $n$, has the invariant
 \[
-  \{x = 5\}\; x := x + 1\; \{x = 6\}
+I : \mathit{fac} \cdot l! = n! \wedge l \ge 0.
 \]
+Before the loop, $1 \cdot n! = n!$. An iteration with $l > 0$ multiplies
+$\mathit{fac}$ by $l$ and decrements $l$, and
+$(\mathit{fac} \cdot l) \cdot (l - 1)! = \mathit{fac} \cdot l!$, so $I$ still holds. When
+the loop ends, $l = 0$ and $I$ gives $\mathit{fac} = n!$. The variant is $l$.
+Figure~\ref{fig:invariant} places the assertions on the loop.
 
-\subsection{inference rules}
-The power of hoare logic comes from its \textbf{compositional rules}, one per language construct.
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[box/.style={draw, minimum height=7mm, font=\small, align=center}, cond/.style={draw, diamond, aspect=2.2, font=\small, inner sep=1pt}]
+  \node[box] (init) at (0,0) {$\mathit{fac} := 1;\ l := n$};
+  \node[cond] (test) at (0,-1.7) {$l > 0$};
+  \node[box] (body) at (0,-3.6) {$\mathit{fac} := \mathit{fac} * l;\ l := l - 1$};
+  \node[box] (end) at (4.6,-1.7) {$\mathit{fac} = n!$};
+  \draw[flecha] (init) -- (test);
+  \draw[flecha] (test) -- node[left, font=\footnotesize] {true} (body);
+  \draw[flecha] (body.west) -- ++(-1,0) |- (test.west);
+  \draw[flecha] (test) -- node[above, font=\footnotesize] {false} (end);
+  \node[font=\footnotesize, anchor=west] at (0.2,-0.8) {$I$};
+  \node[font=\footnotesize, anchor=west] at (0.2,-2.7) {$I \wedge l > 0$};
+  \node[font=\footnotesize, anchor=north] at (4.6,-2.2) {$I \wedge l = 0$};
+\end{tikzpicture}
+\caption{The invariant $I$ on the factorial loop.}
+\label{fig:invariant}
+\end{figure}
 
-\begin{itemize}
-  \item \textbf{Assignment:}
-  \[
-    \{P[x := e]\}\; x := e\; \{P\}
-  \]
-  Work backwards: to have $P$ after the assignment, you need $P$ with
-  $e$ substituted for $x$ before it.
-
-  \item \textbf{Sequence:}
-  \[
-    \frac{\{P\}\; C_1\; \{R\} \quad \{R\}\; C_2\; \{Q\}}
-         {\{P\}\; C_1;\, C_2\; \{Q\}}
-  \]
-  The postcondition of the first command becomes the precondition of
-  the second.
-
-  \item \textbf{Conditional:}
-  \[
-    \frac{\{P \wedge b\}\; C_1\; \{Q\} \quad \{P \wedge \neg b\}\;
-    C_2\; \{Q\}}
-         {\{P\}\; \texttt{if}\; b\; \texttt{then}\; C_1\;
-         \texttt{else}\; C_2\; \{Q\}}
-  \]
-  Each branch gets the precondition strengthened with the condition or
-  its negation.
-
-  \item \textbf{While:}
-  \[
-    \frac{\{I \wedge b\}\; C\; \{I\}}
-         {\{I\}\; \texttt{while}\; b\; \texttt{do}\; C\;
-         \{I \wedge \neg b\}}
-  \]
-  The loop \textbf{invariant} $I$ must hold before the loop, be
-  preserved by every iteration, and together with the negated condition
-  gives the postcondition when the loop exits.
-
-  \item \textbf{Consequence:}
-  \[
-    \frac{P \Rightarrow P' \quad \{P'\}\; C\; \{Q'\} \quad
-    Q' \Rightarrow Q}
-         {\{P\}\; C\; \{Q\}}
-  \]
-  Allows strengthening preconditions and weakening postconditions, essential for connecting rules together in a proof.
-\end{itemize}
-
-
-\subsection{loop invariants}
-Finding a good loop invariant is often the hardest part of a Hoare logic proof. A valid invariant $I$ must satisfy three conditions:
-\begin{enumerate}
-  \item $I$ holds \textbf{before} the loop begins.
-  \item If $I$ holds and the condition $b$ is true, then after one
-  iteration of the body, $I$ still holds.
-  \item When the loop exits ($b$ is false), $I \wedge \neg b$ implies
-  the desired postcondition.
-\end{enumerate}
-
-\subsection{partial vs.\ total correctness}
-There are two flavors of correctness:
-\begin{itemize}
-  \item \textbf{Partial correctness} $\{P\}\, C\, \{Q\}$: if $C$
-  terminates, then $Q$ holds. It says nothing about \emph{whether}
-  $C$ terminates.
-  \item \textbf{Total correctness} $[P]\, C\, [Q]$: $C$ is guaranteed
-  to terminate \emph{and} $Q$ holds afterward.
-\end{itemize}
-
-total correctness requires an additional argument, typically a \textbf{variant}, a quantity that strictly decreases with each iteration and is bounded below.
-
-\subsection{weakest preconditions}
-
-Rather than guessing a precondition, we can \emph{compute} the weakest one that makes a triple valid. The \textbf{weakest precondition} $\mathit{wp}(C, Q)$ is the least restrictive $P$ such that $\{P\}\, C\, \{Q\}$ holds.
-
-The key cases are:
-\begin{align*}
-  \mathit{wp}(x := e,\; Q) &= Q[x := e] \\
-  \mathit{wp}(C_1;\, C_2,\; Q) &= \mathit{wp}(C_1,\;
-  \mathit{wp}(C_2, Q)) \\
-  \mathit{wp}(\texttt{if}\; b\; \texttt{then}\; C_1\;
-  \texttt{else}\; C_2,\; Q)
-    &= (b \Rightarrow \mathit{wp}(C_1, Q))
-       \wedge (\neg b \Rightarrow \mathit{wp}(C_2, Q))
-\end{align*}
-For \texttt{while} loops, $\mathit{wp}$ cannot be computed
-mechanically in general, this is where loop invariants come back in.
-
-\subsection{Examples}
-
-\subsubsection{Factorial}
-
-Consider a program that computes $n!$ iteratively, storing the result
-in $r$. A suitable invariant is:
-\[
-  I \;:\; r \cdot i! = n! \;\wedge\; 0 \leq i \leq n
-\]
-Before the loop: $r = 1$, $i = n$, so $1 \cdot n! = n!$ — the
-invariant holds. Each iteration multiplies $r$ by $i$ and decrements
-$i$, preserving $r \cdot i! = n!$. When $i = 0$, we get $r = n!$.
-
-
-\subsubsection{Array Sum}
-
-For a program that sums the elements of an array $a[0..n-1]$ into
-variable $s$:
-\[
-  I \;:\; s = \sum_{k=0}^{i-1} a[k] \;\wedge\; 0 \leq i \leq n
-\]
-The invariant tracks a partial sum. When the loop exits with $i = n$,
-we have $s = \sum_{k=0}^{n-1} a[k]$, which is exactly the full sum.
+For a loop that adds $a[0..n-1]$ into $s$, the invariant is
+$s = \sum_{k=0}^{i-1} a[k] \wedge 0 \le i \le n$; at the end $i = n$ and $s$ is the full sum.
 
 \subsection{Exercises}
-\begin{itemize}
-  \item Prove $\{x = n\}\; y := x \times x\; \{y = n^2\}$ using the
-  assignment rule.
-  \item Find a loop invariant for a program that computes $2^n$ by
-  repeated doubling, and use it to prove the postcondition
-  $r = 2^n$.
-  \item Compute $\mathit{wp}(\assign{x}{\deref{x}+1}, \; x > 0)$.
-  \item Is $\{x > 0\}\; \whiledo{\deref{x} \neq 0}{\assign{x}{\deref{x}-1}}\;
-  \{x = 0\}$ a partial or total correctness statement? What variant would
-  you need to strengthen it to total correctness?
-\end{itemize}
 
+\begin{exercise}
+Prove $\{x = n\}\ y := x * x\ \{y = n^2\}$.
+\end{exercise}
+
+\paragraph{Solution.} By \textsc{Assign}, $\{x * x = n^2\}\ y := x * x\ \{y = n^2\}$.
+Since $x = n \Rightarrow x * x = n^2$, \textsc{Cons} gives the triple.
+
+\begin{exercise}
+Compute $\mathit{wp}(x := x + 1, x > 0)$.
+\end{exercise}
+
+\paragraph{Solution.} $(x > 0)[x := x + 1] = x + 1 > 0$, that is, $x \ge 0$ on integers.
+
+\begin{exercise}
+Is $\{x > 0\}\ \mathtt{while}\ x \ne 0\ \mathtt{do}\ x := x - 1\ \{x = 0\}$ partial or total
+correctness? Which variant proves termination?
+\end{exercise}
+
+\paragraph{Solution.} With invariant $x \ge 0$ it holds as partial correctness:
+at the end $x \ge 0 \wedge x = 0$. It also terminates: $x$ is a variant, bounded
+below by 0 and decreasing by one in each iteration.

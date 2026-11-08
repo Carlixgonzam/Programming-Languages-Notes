@@ -1,74 +1,294 @@
 % !TeX root = ../main.tex
 \section{Denotational semantics}
-While operational semantics describes \emph{how} a program executes step by step, denotational semantics asks a different question: \emph{what does a program mean?} The idea is to assign each program a mathematical object, its denotation, in a way that is compositional: the meaning of a compound expression is built entirely from the meanings of its parts.
+\label{sec:denotational}
 
-\subsection{interpretation functions}
-The central tool is the \textbf{interpretation function} $\llbracket \cdot \rrbracket$, which maps syntactic expressions to mathematical values. The double brackets are just notation; it's like a translation from syntax into math.
+Syntax describes the form of the strings of a language, and semantics gives
+meaning to its elements, usually following the grammar. Operational
+semantics describes the behavior of each element on a machine, through
+actions guided by the derivation. Denotational semantics instead defines a
+map from symbols and grammar rules to mathematical domains, and computes the
+value of an entity from its derivation.
 
-\subsection{the state domain}
-Programs do not compute in a vacuum, they read and write variables. We model this with a \textit{state}, a snapshot of memory at any point during execution:
+\begin{definition}
+Given a domain $D$, the \textbf{denotational semantics} of a language is a
+partial function $m : \Sigma^* \to D$ that gives each word of the language a
+value in $D$. The function is \textbf{compositional}: the meaning of a
+construct is computed from the meanings of its parts.
+\end{definition}
+
+For an imperative language the domain of a program is a function on
+memories: $m(\mathit{Exp}) : \mathit{Environment} \times \mathit{Store} \to \mathit{Store}$. The
+examples below are written as Scheme functions over abstract syntax trees
+written as S-expressions; each function is the semantic function $m$ of its
+language.
+
+\subsection{Booleans}
+
+The language of booleans has expressions such as
+$(x \mathbin{\&\&} \mathit{true}) \mathbin{||} (\mathit{not}\ y \mathbin{\&\&} \mathit{false})$.
+The lecture contrasts it with the Haskell type \texttt{data Bool = True | False},
+whose operations are defined by cases:
 \[
-  \Sigma = \mathit{Var} \to \mathit{Val}
+\begin{array}{ll}
+\mathit{False} \mathbin{\&\&} x = \mathit{False} & \mathit{True} \mathbin{\&\&} x = x \\
+\mathit{False} \mathbin{||} x = x & \mathit{True} \mathbin{||} x = \mathit{True} \\
+\mathit{not}\ \mathit{False} = \mathit{True} & \mathit{not}\ \mathit{True} = \mathit{False}
+\end{array}
 \]
-A state $\sigma \in \Sigma$ assigns a value to every variable. With this, we can give meaning to both expressions and commands.
+The expressions are syntax; \texttt{Bool} and its operations are the domain.
+The semantic function maps each expression to an element of the domain,
+given the values of the variables:
+\coderange{Scheme}{scheme/denotational.scm}{booleans}
 
-\subsection{meaning of expressions}
-An arithmetic or boolean expression takes a state and returns a value:\[
-  \llbracket e \rrbracket : \Sigma \to \mathit{Val}
-\]
-For example, the meaning of $x + 1$ in state $\sigma$ is just $\sigma(x) + 1$. There is no mutation here, expressions are pure functions over states.
+\subsection{Numbers and expressions}
 
-\subsection{meaning of commands}
-Commands are more interesting: they \emph{transform} states. A command takes an initial state and produces a final one:
+For $E ::= E + E \mid (0..9)^+$ the meaning is a natural number,
+$m : E \to \mathbb{N}$:
 \[
-  \llbracket C \rrbracket : \Sigma \to \Sigma_\bot
+m\llbracket 0 \rrbracket = 0,\ \dots,\ m\llbracket 9 \rrbracket = 9 \qquad
+m\llbracket N\, D \rrbracket = m\llbracket N \rrbracket * 10 + m\llbracket D \rrbracket \qquad
+m\llbracket E_1 + E_2 \rrbracket = m\llbracket E_1 \rrbracket +_{\mathbb{N}} m\llbracket E_2 \rrbracket
 \]
-The $\bot$ subscript is important. It accounts for \emph{non-termination}, a \texttt{while} loop may never finish, so the result is not always a
-state. $\Sigma_\bot = \Sigma \cup \{\bot\}$ adds a special element $\bot$ (``bottom'') to represent divergence.
+The $+$ inside the brackets is a symbol of the language; $+_{\mathbb{N}}$ is the
+addition of natural numbers. The rule for $N\,D$ reads a number digit by
+digit: $m\llbracket 123 \rrbracket = (1 * 10 + 2) * 10 + 3$.
+\coderange{Scheme}{scheme/denotational.scm}{numbers}
 
-\subsection{fixed points and iteration}
+\paragraph{Infix expressions.} For the grammar $E ::= E + T \mid T$,
+$T ::= T * F \mid F$, $F ::= \mathit{num} \mid (E)$, where only $\mathit{num}$ has a value
+($\mathit{num.val}$), there is one equation per rule (Table~\ref{tab:infix}).
+Figure~\ref{fig:denot-tree} shows the meaning of each node of $2 * (3 + 4)$.
 
-The \texttt{while} loop is the tricky case. We cannot define its meaning directly, since it may run for an unbounded number of steps. instead, we use \textbf{Kleene's fixed-point theorem}.
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l}
+  \toprule
+  Rule & Equation & Explanation \\
+  \midrule
+  $E ::= E + T$ & $m\llbracket E + T \rrbracket = m\llbracket E \rrbracket + m\llbracket T \rrbracket$ & sum of the subexpression and the term \\
+  $E ::= T$ & $m\llbracket E \rrbracket = m\llbracket T \rrbracket$ & the expression is its term \\
+  $T ::= T * F$ & $m\llbracket T * F \rrbracket = m\llbracket T \rrbracket \times m\llbracket F \rrbracket$ & product of the term and the factor \\
+  $T ::= F$ & $m\llbracket T \rrbracket = m\llbracket F \rrbracket$ & the term is its factor \\
+  $F ::= \mathit{num}$ & $m\llbracket \mathit{num} \rrbracket = \mathit{num.val}$ & the value of the number \\
+  $F ::= (E)$ & $m\llbracket (E) \rrbracket = m\llbracket E \rrbracket$ & parentheses keep the value \\
+  \bottomrule
+\end{tabular}
+\caption{Denotational equations for infix expressions.}
+\label{tab:infix}
+\end{table}
 
-The idea is to build the meaning of \texttt{while} $b$ \texttt{do} $C$ as the least fixed point of a functional $\Phi$:
+\begin{figure}[h]
+\centering
+\begin{forest}
+  for tree={font=\small, s sep=4mm, l sep=4mm, align=center},
+  [{$*$\\$m = 14$}
+    [{$2$\\$m = 2$}]
+    [{$(\ )$\\$m = 7$}
+      [{$+$\\$m = 7$} [{$3$\\$m = 3$}] [{$4$\\$m = 4$}]]
+    ]
+  ]
+\end{forest}
+\caption{The meaning of each node of $2 * (3 + 4)$.}
+\label{fig:denot-tree}
+\end{figure}
+
+\coderange{Scheme}{scheme/denotational.scm}{infix}
+
+\subsection{Other domains}
+
+The domain does not have to be numbers. The lecture gives several examples
+where the meaning of an expression is something else.
+
+\paragraph{Expression trees.} With variables $a$ to $z$, the meaning of an
+expression can be its tree, built with $\mathit{leafInt}(n)$, $\mathit{leafVar}(c)$ and
+$\mathit{tree}(\mathit{op}, t_1, t_2)$: $m\llbracket E + T \rrbracket = \mathit{tree}(`{+}', m\llbracket E \rrbracket, m\llbracket T \rrbracket)$,
+$m\llbracket \mathit{NUM} \rrbracket = \mathit{leafInt}(\mathit{NUM.val})$ and
+$m\llbracket \mathit{VAR} \rrbracket = \mathit{leafVar}(\mathit{VAR.val})$. This is the AST construction of
+the previous block, written as a semantic function.
+\coderange{Scheme}{scheme/denotational.scm}{trees}
+
+\paragraph{Derivatives with pairs.} The meaning of an expression can be a pair
+$\langle a, b \rangle$ where $a$ is its tree and $b$ the tree of its derivative with respect
+to $x$:
 \[
-  \Phi(f)(\sigma) =
-  \begin{cases}
-    f(\llbracket C \rrbracket(\sigma)) & \text{if } \llbracket b
-    \rrbracket(\sigma) = \mathit{true} \\
-    \sigma & \text{if } \llbracket b \rrbracket(\sigma) =
-    \mathit{false}
-  \end{cases}
+\begin{array}{ll}
+\partial\llbracket E + T \rrbracket = \langle \mathit{fst}(E) + \mathit{fst}(T),\ \mathit{snd}(E) + \mathit{snd}(T) \rangle & \text{sum rule} \\
+\partial\llbracket T * F \rrbracket = \langle \mathit{fst}(T) * \mathit{fst}(F),\ \mathit{snd}(T) * \mathit{fst}(F) + \mathit{fst}(T) * \mathit{snd}(F) \rangle & \text{product rule} \\
+\partial\llbracket P^n \rrbracket = \langle \mathit{fst}(P)^n,\ n * \mathit{fst}(P)^{n-1} * \mathit{snd}(P) \rangle & \text{power rule}
+\end{array}
 \]
-We approximate the meaning from below: $\Phi^0 = \bot$,
-$\Phi^1 = \Phi(\bot)$, $\Phi^2 = \Phi(\Phi(\bot))$, and so on. The least fixed point $\mathit{lfp}(\Phi) = \bigsqcup_{n \geq 0} \Phi^n$ captures \emph{all finite unrollings} of the loop, which is exactly what the loop computes.
+where $E$, $T$, $F$ and $P$ in the right side stand for their meanings. The slide
+writes the product rule with $\mathit{snd}(E)$ and $\mathit{fst}(E)$ in the second
+component; the operands are $T$ and $F$. It also writes $n * P^{n-1}$, where the
+base is the tree $\mathit{fst}(P)$.
+\coderange{Scheme}{scheme/denotational.scm}{derivative}
+The tests evaluate both trees of $x * x + 3 * x$ at $x = 2$ and get $f(2) = 10$
+and $f'(2) = 7$.
 
-\subsection{equivalence with operational semantics}
+\paragraph{Complex numbers.} A complex number has a rectangular form (real,
+imaginary) and a polar form (angle, magnitude). The meaning is a triple
+$(T, V_1, V_2)$ with $T = 1$ for rectangular and $T = 0$ for polar.
+Addition adds the parts in rectangular form,
+$E\llbracket E_1 + E_2 \rrbracket = (1, \mathit{real}(m\llbracket E_1 \rrbracket) + \mathit{real}(m\llbracket E_2 \rrbracket), \mathit{img}(m\llbracket E_1 \rrbracket) + \mathit{img}(m\llbracket E_2 \rrbracket))$,
+and multiplication adds angles and multiplies magnitudes in polar form. The
+functions $\mathit{real}$, $\mathit{img}$, $\mathit{ang}$ and $\mathit{mag}$ convert when the
+argument is in the other form.
+\coderange{Scheme}{scheme/denotational.scm}{complex}
 
-A natural question arises: do both styles of semantics agree? The answer is yes.
-
-\begin{theorem}[Equivalence]
-For all commands $C$, initial states $\sigma$, and final states
-$\sigma'$:
+\paragraph{S-expressions.} The S-expressions of Lisp, restricted to
+$S ::= (+\ L) \mid (*\ L) \mid \mathit{num}$, $L ::= S \mid L\, S$, have two domains:
+a number for $S$ and a list of numbers for $L$:
 \[
-  \langle C,\, \sigma \rangle \Downarrow \sigma'
-  \iff
-  \llbracket C \rrbracket(\sigma) = \sigma'
+\begin{array}{ll}
+m\llbracket S \to \mathit{num} \rrbracket = \mathit{num.val} &
+m\llbracket S \to (+\ L) \rrbracket = \mathit{apply}(+, m\llbracket L \rrbracket) \\
+m\llbracket S \to (*\ L) \rrbracket = \mathit{apply}(*, m\llbracket L \rrbracket) &
+m\llbracket L \to S \rrbracket = \mathit{insertEnd}((), m\llbracket S \rrbracket) \\
+m\llbracket L \to L\, S \rrbracket = \mathit{insertEnd}(m\llbracket L \rrbracket, m\llbracket S \rrbracket)
+\end{array}
 \]
-\end{theorem}
+The slide repeats $S \to (+\ L)$ in the rule for $*$.
+\coderange{Scheme}{scheme/denotational.scm}{sexp}
 
+\paragraph{Sets of digits.} For $S ::= \{\} \mid \{\mathit{Nums}\}$,
+$\mathit{Nums} ::= \mathit{num} \mid \mathit{Nums}, \mathit{num}$, the meaning of a set is a 10-tuple of
+booleans whose $i$-th element says whether $i$ is in the set. The empty set is
+a new tuple of $\mathit{false}$, and each number sets its position. Union,
+intersection and complement work position by position:
+$m\llbracket S_1 \cup S_2 \rrbracket_i = m\llbracket S_1 \rrbracket_i \mathbin{||} m\llbracket S_2 \rrbracket_i$,
+$m\llbracket S_1 \cap S_2 \rrbracket_i = m\llbracket S_1 \rrbracket_i \mathbin{\&\&} m\llbracket S_2 \rrbracket_i$,
+$m\llbracket S^c \rrbracket_i = \neg m\llbracket S \rrbracket_i$.
+\coderange{Scheme}{scheme/denotational.scm}{sets}
 
-operational semantics tells us \emph{how} the program runs, and denotational semantics tells us \emph{what} it computes, and they agree on every input/output pair. Neither one is more ``correct''; they are two lenses on the same truth.
+\subsection{Programs}
+
+\paragraph{Assignment sequences as memories.} For
+\begin{lstlisting}
+P  ::= begin As end
+As ::= As ; A | A
+A  ::= var := E
+E  ::= E + T | ...
+\end{lstlisting}
+the meaning of a program is the memory after executing it. $[\,]$ is the empty
+memory, $\mathit{Mem}[v/\mathit{var}]$ the memory after assigning $v$ to $\mathit{var}$, and
+$\mathit{Mem}[\mathit{var}]$ the value of $\mathit{var}$ (zero if undefined):
+\[
+\begin{array}{l}
+m\llbracket \mathtt{begin}\ As\ \mathtt{end} \rrbracket = \mathit{assign}\llbracket As \rrbracket\, [\,] \\
+\mathit{assign}\llbracket As ; A \rrbracket\, \mathit{Mem} = m\llbracket A \rrbracket\, (\mathit{assign}\llbracket As \rrbracket\, \mathit{Mem}) \\
+m\llbracket \mathit{var} := E \rrbracket\, \mathit{Mem} = \mathit{Mem}[m\llbracket E \rrbracket \mathit{Mem} / \mathit{var.val}]
+\end{array}
+\]
+Each assignment is a function from memories to memories, and a sequence is
+their composition.
+\coderange{Scheme}{scheme/denotational.scm}{assign}
+
+\paragraph{Translation as meaning.} With the same grammar, the meaning of a
+program can be its translation to code for a stack machine, with the
+instructions $\mathit{ASG}\ \mathit{var}$ (pop and assign), $\mathit{GET}\ \mathit{var}$ and
+$\mathit{PUSH}\ \mathit{num}$ (push), and $\mathit{PLUS}$ and $\mathit{TIMES}$ (pop two values,
+push the result). Code is built by appending instructions with
+$\mathit{code.add}$:
+\[
+\begin{array}{l}
+m\llbracket \mathtt{begin}\ As\ \mathtt{end} \rrbracket = \mathit{assign}\llbracket As \rrbracket\, \langle\rangle \\
+\mathit{assign}\llbracket As ; A \rrbracket\, \mathit{CODE} = m\llbracket A \rrbracket\, (\mathit{assign}\llbracket As \rrbracket\, \mathit{CODE}) \\
+m\llbracket \mathit{var} := E \rrbracket\, \mathit{CODE} = (m\llbracket E \rrbracket\, \mathit{CODE}).\mathit{add}(\mathit{ASG}, \mathit{var.val}) \\
+m\llbracket E + T \rrbracket\, \mathit{CODE} = (m\llbracket T \rrbracket\, (m\llbracket E \rrbracket\, \mathit{CODE})).\mathit{add}(\mathit{PLUS}) \\
+m\llbracket T * F \rrbracket\, \mathit{CODE} = (m\llbracket F \rrbracket\, (m\llbracket T \rrbracket\, \mathit{CODE})).\mathit{add}(\mathit{TIMES}) \\
+m\llbracket \mathit{var} \rrbracket\, \mathit{CODE} = \mathit{CODE}.\mathit{add}(\mathit{GET}, \mathit{var.val}) \qquad
+m\llbracket \mathit{num} \rrbracket\, \mathit{CODE} = \mathit{CODE}.\mathit{add}(\mathit{PUSH}, \mathit{num.val})
+\end{array}
+\]
+The slide writes the rule for $T * F$ with $m\llbracket E \rrbracket$ and
+$m\llbracket T \rrbracket$, copied from the rule for $E + T$, and passes
+$\mathit{CODE}_2$ to the function that produces $\mathit{CODE}_2$; the code of the left
+operand has to be the input of the code of the right one. Figure~\ref{fig:stack-code}
+shows the code for \texttt{y := x + 4} and the stack while it runs.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[cell/.style={draw, minimum width=10mm, minimum height=6mm, font=\small\ttfamily}]
+  \foreach \ins/\st [count=\k] in {{GET x}/{3}, {PUSH 4}/{4,3}, {PLUS}/{7}, {ASG y}/{}} {
+    \node[font=\small\ttfamily, anchor=west] at (\k*3-3,0.9) {\ins};
+    \foreach \v [count=\j] in \st { \node[cell] at (\k*3-2.4, -\j*0.6+0.3) {\v}; }
+  }
+  \node[font=\small, anchor=west] at (9.3,-0.3) {memory: $y = 7$};
+\end{tikzpicture}
+\caption{The code of \texttt{y := x + 4} with $x = 3$, and the stack after each instruction (top first).}
+\label{fig:stack-code}
+\end{figure}
+
+\coderange{Scheme}{scheme/denotational.scm}{compile}
+The test runs the code of a program on the machine and checks that it gives
+the same memory as the direct semantics.
+
+\subsection{Commands and fixed points}
+
+This subsection goes beyond the slides. For SIMP the domain of a command is
+a function from states to states, $\Sigma = \mathit{Var} \to \mathit{Val}$:
+\[
+\llbracket C \rrbracket : \Sigma \to \Sigma_\bot,
+\]
+where $\Sigma_\bot = \Sigma \cup \{\bot\}$ adds $\bot$ for programs that do not terminate.
+Assignment, sequence and conditional are direct:
+$\llbracket l := E \rrbracket\sigma = \sigma[l \mapsto \llbracket E \rrbracket\sigma]$,
+$\llbracket C_1 ; C_2 \rrbracket = \llbracket C_2 \rrbracket \circ \llbracket C_1 \rrbracket$. The loop
+$\mathtt{while}\ b\ \mathtt{do}\ C$ is the least fixed point of
+\[
+\Phi(f)(\sigma) =
+\begin{cases}
+f(\llbracket C \rrbracket\sigma) & \text{if } \llbracket b \rrbracket\sigma = \mathit{true} \\
+\sigma & \text{if } \llbracket b \rrbracket\sigma = \mathit{false}
+\end{cases}
+\]
+The approximations $\Phi^0 = \bot$, $\Phi^1 = \Phi(\bot)$, $\Phi^2 = \Phi(\Phi(\bot))$, \dots{}
+describe the loop for at most $0, 1, 2, \dots$ iterations, and their limit is
+its meaning. The two styles agree: for every command $C$ and states $\sigma$,
+$\sigma'$, $\langle C, \sigma \rangle \Downarrow \sigma'$ if and only if $\llbracket C \rrbracket\sigma = \sigma'$.
 
 \subsection{Exercises}
-\begin{itemize}
-  \item Compute $\llbracket x := x + 1;\, y := x \times 2 \rrbracket(\sigma)$
-  for $\sigma(x) = 3$.
-  \item Give the functional $\Phi$ for
-  $\whiledo{\deref{x} > 0}{\assign{x}{\deref{x}-1}}$ and compute
-  $\Phi^0, \Phi^1, \Phi^2$ applied to a state with $\sigma(x)=2$.
-  \item Explain why $\llbracket \whiledo{\mathbf{true}}{\mathbf{skip}}
-  \rrbracket(\sigma) = \bot$ for every $\sigma$, and relate this to the
-  operational semantics of the same program.
-\end{itemize}
 
+\begin{exercise}
+Give the denotational semantics of $E ::= E + E \mid (0..9)^+$ and compute
+$m\llbracket 12 + 30 \rrbracket$.
+\end{exercise}
+
+\paragraph{Solution.} The equations are the ones of this section. Then
+$m\llbracket 12 \rrbracket = 1 * 10 + 2 = 12$, $m\llbracket 30 \rrbracket = 30$ and
+$m\llbracket 12 + 30 \rrbracket = 12 +_{\mathbb{N}} 30 = 42$.
+
+\begin{exercise}
+Give the semantics of $S ::= (+\ L) \mid (*\ L) \mid \mathit{num}$ and compute
+$m\llbracket (+\ 1\ (*\ 2\ 3)\ 4) \rrbracket$.
+\end{exercise}
+
+\paragraph{Solution.} $m\llbracket L \rrbracket$ for $1\ (*\ 2\ 3)\ 4$ is the list $(1, 6, 4)$,
+because $m\llbracket (*\ 2\ 3) \rrbracket = \mathit{apply}(*, (2, 3)) = 6$. Then
+$\mathit{apply}(+, (1, 6, 4)) = 11$.
+
+\begin{exercise}
+Give the meaning of $\{1, 3\} \cup \{3, 4\}$ and of $\{\}^c$ as 10-tuples.
+\end{exercise}
+
+\paragraph{Solution.} $\{1, 3\} \cup \{3, 4\}$ has $\mathit{true}$ at positions 1, 3 and 4,
+and $\mathit{false}$ elsewhere. $\{\}^c$ is the tuple of ten $\mathit{true}$.
+
+\begin{exercise}
+Translate \texttt{begin x := 3; y := x + 4; x := x * y end} to stack code.
+\end{exercise}
+
+\paragraph{Solution.}
+\begin{lstlisting}
+PUSH 3, ASG x, GET x, PUSH 4, PLUS, ASG y, GET x, GET y, TIMES, ASG x
+\end{lstlisting}
+Running it leaves $x = 21$ and $y = 7$, the same memory as
+the semantics of assignment sequences.
+
+\begin{exercise}
+Compute $\llbracket x := x + 1 ; y := x * 2 \rrbracket\sigma$ for $\sigma(x) = 3$.
+\end{exercise}
+
+\paragraph{Solution.} The first assignment gives $\sigma_1 = \sigma[x \mapsto 4]$, and the
+second $\sigma_1[y \mapsto 8]$.

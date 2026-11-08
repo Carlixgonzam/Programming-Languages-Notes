@@ -3,7 +3,8 @@
 \usepackage{stmaryrd}          % for \llbracket and \rrbracket
 \usepackage[english]{babel}
 \usepackage{geometry}
-\usepackage{tcolorbox}
+\usepackage{lmodern}
+\usepackage{microtype}
 \usepackage{booktabs}
 \usepackage{array}
 \geometry{margin=1in}
@@ -34,9 +35,9 @@ Se analiza la función:
 \subsection*{Paso 1: Identificación de variables}
 
 \begin{itemize}
-    \item $x$: tipo desconocido $\Rightarrow T$
-    \item $l$: lista de elementos del mismo tipo que $x$
-          $\Rightarrow T\ \mathbf{list}$
+    \item $x$ tiene un tipo desconocido, que llamamos $T$.
+    \item $l$ es una lista de elementos del mismo tipo que $x$, es decir,
+          $T\ \mathbf{list}$.
 \end{itemize}
 
 \subsection*{Paso 2: Análisis de operaciones}
@@ -44,19 +45,19 @@ Se analiza la función:
 \begin{itemize}
     \item \texttt{(null? l)} requiere $l : T\ \mathbf{list}$ y devuelve
           $\mathbf{bool}$
-    \item \texttt{(car l)} devuelve el primer elemento $\Rightarrow T$
-    \item \texttt{(cdr l)} devuelve la cola $\Rightarrow T\ \mathbf{list}$
-    \item \texttt{equal?(car(l), x)} requiere ambos del mismo tipo
-          $\Rightarrow$ ambos $T$, confirmando $x : T$
+    \item \texttt{(car l)} devuelve el primer elemento, de tipo $T$.
+    \item \texttt{(cdr l)} devuelve la cola, de tipo $T\ \mathbf{list}$.
+    \item \texttt{equal?(car(l), x)} requiere que ambos tengan el mismo tipo,
+          así que los dos son $T$, lo que confirma $x : T$.
 \end{itemize}
 
 \subsection*{Paso 3: Tipo de retorno}
 
 La función retorna:
 \begin{itemize}
-    \item $0$ en el caso base $\Rightarrow \mathbf{int}$
-    \item $(+ \; 1 \; (\text{count} \ldots))$ en el caso recursivo
-          $\Rightarrow \mathbf{int}$
+    \item $0$ en el caso base, de tipo $\mathbf{int}$;
+    \item $(+ \; 1 \; (\text{count} \ldots))$ en el caso recursivo, también
+          $\mathbf{int}$.
 \end{itemize}
 
 Ambas ramas coinciden: el tipo de retorno es $\mathbf{int}$.
@@ -64,15 +65,13 @@ Ambas ramas coinciden: el tipo de retorno es $\mathbf{int}$.
 \subsection*{Resultado final}
 
 \[
-  \boxed{count : T \rightarrow T\ \mathbf{list} \rightarrow \mathbf{int}}
+  count : T \rightarrow T\ \mathbf{list} \rightarrow \mathbf{int}
 \]
 
-\begin{tcolorbox}
-  \textbf{Patrón clave:} funciones recursivas sobre listas suelen tener
+\paragraph{Patrón.} Las funciones recursivas sobre listas suelen tener
   tipo $T \to T\ \mathbf{list} \to \alpha$.
   El tipo es \emph{polimórfico} en $T$: funciona para listas de enteros,
   strings, etc.
-\end{tcolorbox}
 
 
 \section{Ejercicio 2: Semántica Operacional}
@@ -83,7 +82,7 @@ Se desea definir la semántica de la instrucción:
   \mathbf{repeat}\ E\ \mathbf{times}\ C
 \]
 
-\subsection*{Idea clave}
+\subsection*{Planteamiento}
 
 \begin{itemize}
     \item La expresión $E$ se evalúa \textbf{una sola vez} al inicio.
@@ -91,10 +90,10 @@ Se desea definir la semántica de la instrucción:
           cada ejecución de $C$.
     \item Introducimos una forma auxiliar
           $\mathbf{repeat\text{-}n}\ k\ \mathbf{times}\ C$
-          donde $k \in \mathbb{N}$ ya es un valor entero (no una expresión).
+          donde $k \in \mathbb{Z}$ ya es un valor entero (no una expresión).
 \end{itemize}
 
-% ── Big-step rules ────────────────────────────────────────────────────────────
+% Reglas de big step
 \subsection*{Regla de entrada (evalúa $E$ una sola vez)}
 
 \[
@@ -110,15 +109,20 @@ Se desea definir la semántica de la instrucción:
   \quad \textsc{[Repeat-Eval]}
 \]
 
-\subsection*{Caso base ($k = 0$)}
+\subsection*{Caso base ($k \le 0$)}
 
 \[
-  \frac{\phantom{X}}{
-    \langle \mathbf{repeat\text{-}n}\ 0\ \mathbf{times}\ C,\,
+  \frac{k \le 0}{
+    \langle \mathbf{repeat\text{-}n}\ k\ \mathbf{times}\ C,\,
             \sigma \rangle \Downarrow \sigma
   }
-  \quad \textsc{[Repeat-Zero]}
+  \quad \textsc{[Repeat-Fin]}
 \]
+
+El caso base usa $k \le 0$ y no $k = 0$. Si $E$ da un número negativo y solo
+existe el caso $k = 0$, ninguna regla aplica y la configuración queda
+bloqueada. Con $k \le 0$, \texttt{repeat -3 times C} no hace nada, como un
+\texttt{for} cuyo rango está vacío.
 
 \subsection*{Caso recursivo ($k > 0$)}
 
@@ -138,14 +142,12 @@ Se desea definir la semántica de la instrucción:
   \quad \textsc{[Repeat-Step]}
 \]
 
-\begin{tcolorbox}
-  \textbf{Corrección importante:} en la regla \textsc{Repeat-Step},
+\paragraph{Corrección.} En la regla \textsc{Repeat-Step},
   \emph{no} se vuelve a evaluar $E$.
   Solo se trabaja con el contador entero $k$ y se resta $1$.
   Re-evaluar $E$ en cada iteración violaría la especificación del enunciado.\\[4pt]
   \textbf{Intuición:} equivalente a un \texttt{for}-loop donde el límite
   superior se fija antes de entrar al ciclo.
-\end{tcolorbox}
 
 
 \section{Ejercicio 3: Traducción Infix a Postfix}
@@ -209,11 +211,9 @@ $3 + (4 * 5)$:
     &= \texttt{"3 4 5 * +"}
 \end{align*}
 
-\begin{tcolorbox}
-  \textbf{Regla clave:} izquierdo $\frown$ derecho $\frown$ operador.
+\paragraph{Regla.} Izquierdo $\frown$ derecho $\frown$ operador.
   La precedencia la maneja el \emph{parser} al construir el AST;
   la función $\mathcal{P}$ solo recorre el árbol resultante.
-\end{tcolorbox}
 
 
 \section{Ejercicio 4: Alcance Estático vs.\ Dinámico}
@@ -243,9 +243,7 @@ El único $x$ visible en su contexto de definición es el $x$ global,
 cuyo valor es $2$ (asignado por \texttt{main} antes de llamar a
 \texttt{proc2}).
 
-\[
-  \Rightarrow \texttt{print} \text{ imprime } \textbf{x=2}
-\]
+Por eso el \texttt{print} imprime \texttt{x=2}.
 
 \subsection*{Alcance dinámico}
 
@@ -262,15 +260,11 @@ En tiempo de ejecución, la pila al momento del \texttt{print} es:
 El enlace más reciente de $x$ en la pila es el de \texttt{proc2},
 con valor $3$.
 
-\[
-  \Rightarrow \texttt{print} \text{ imprime } \textbf{x=3}
-\]
+Por eso el \texttt{print} imprime \texttt{x=3}.
 
-\begin{tcolorbox}
-  \textbf{Regla mental:}\\
+\paragraph{Regla mental.}
   Estático $=$ dónde se \emph{define} (contexto léxico)\\
   Dinámico $=$ desde dónde se \emph{llama} (pila en tiempo de ejecución)
-\end{tcolorbox}
 
 
 \section{Ejercicio 5: Paso de Parámetros}
@@ -309,7 +303,7 @@ con valor $3$.
 
 \begin{center}
 \renewcommand{\arraystretch}{1.4}
-\begin{tabular}{clll}
+\begin{tabular}{c l p{0.36\textwidth} p{0.2\textwidth}}
   \toprule
   Línea & Sentencia & Efecto & Estado tras ejecutar \\
   \midrule
@@ -317,17 +311,17 @@ con valor $3$.
       $x$ es alias de $i$; $i \leftarrow 0{+}1 = 1$ &
       $i=1,\; z_{\text{local}}=0$ \\
   9 & \texttt{y := y+1} &
-      $y = \mathtt{a[i]}$; $i=1$ ahora $\Rightarrow y = a[1] = 10$ &
+      $y = \mathtt{a[i]}$ con $i=1$, así que $y = a[1] = 10$ &
       $a[1] \leftarrow 11$ \\
   10 & \texttt{z := z+2} &
       copia local $z_{\text{local}} \leftarrow 0{+}2 = 2$ &
       $z_{\text{local}}=2$, $i=1$ \\
   11 & \texttt{y := y+1} &
-      $y = \mathtt{a[i]}$; $i=1$ todavía $\Rightarrow y = a[1] = 11$ &
+      $y = \mathtt{a[i]}$ con $i=1$ todavía, así que $y = a[1] = 11$ &
       $a[1] \leftarrow 12$ \\
   \midrule
   \multicolumn{2}{l}{\textbf{Retorno (VR copia-out)}} &
-      $z_{\text{local}} = 2 \;\Rightarrow\; i \leftarrow 2$ &
+      $z_{\text{local}} = 2$, y se copia: $i \leftarrow 2$ &
       $i = 2$ \\
   \bottomrule
 \end{tabular}
@@ -337,12 +331,10 @@ con valor $3$.
 
 
 \[
-  \boxed{i = 2, \qquad a = \{0,\; 12,\; 20,\; 40\}}
+  i = 2, \qquad a = \{0,\; 12,\; 20,\; 40\}
 \]
 
-\begin{tcolorbox}
-  \textbf{Tres interacciones críticas:}
-  \begin{enumerate}
+\paragraph{Tres interacciones críticas.} \begin{enumerate}
     \item \textbf{ref cambia el índice de name.}
           La línea 8 incrementa $i$ de 0 a 1 vía \texttt{ref}.
           Las líneas 9 y 11 usan $y = a[i]$ con $i=1$, accediendo a
@@ -354,197 +346,5 @@ con valor $3$.
           \texttt{ref} dejó $i=1$, pero la copia-out de VR escribe
           $z_{\text{local}}=2$ sobre $i$, resultando en $i=2$.
   \end{enumerate}
-\end{tcolorbox}
-
-\subsection{Worked Examples}
-
-The following examples are designed to address two common sources of
-confusion: the difference between big-step and small-step style, and
-how to extend the semantics with new constructs. Each example is worked
-out in full.
-
-% ---------------------------------------------------------------
-\subsubsection{Example 1: Big-step vs.\ Small-step on the Same Program}
-% ---------------------------------------------------------------
-
-Consider the following SIMP program with initial state
-$\sigma = \{x \mapsto 3,\; y \mapsto 0\}$:
-
-\begin{verbatim}
-y := !x + 1 ;
-x := !y * 2
-\end{verbatim}
-
-\paragraph{Big-step derivation.}
-Big-step semantics derives the \emph{final} state in one tree. We write
-$\langle C, \sigma \rangle \Downarrow \sigma'$ to mean ``command $C$
-in state $\sigma$ terminates in state $\sigma'$''.
-
-The key insight: in big-step style you build a \textbf{derivation tree} the root is the whole program, the leaves are axioms. Work
-\emph{top-down} by applying the sequence rule, then fill in each
-sub-derivation.
-
-\[
-\dfrac{
-  \dfrac{
-    \langle !x + 1,\;\sigma \rangle \Downarrow 4
-  }{
-    \langle y := !x + 1,\;\sigma \rangle \Downarrow \sigma_1
-  }
-  \qquad
-  \dfrac{
-    \langle !y * 2,\;\sigma_1 \rangle \Downarrow 8
-  }{
-    \langle x := !y * 2,\;\sigma_1 \rangle \Downarrow \sigma_2
-  }
-}{
-  \langle y := !x + 1\;;\; x := !y * 2,\;\sigma \rangle
-  \Downarrow \sigma_2
-}
-\]
-
-where $\sigma_1 = \sigma[y \mapsto 4]$ and
-$\sigma_2 = \sigma_1[x \mapsto 8]$.
-
-Final state: $\sigma_2 = \{x \mapsto 8,\; y \mapsto 4\}$.
-
-\paragraph{Small-step derivation.}
-Small-step semantics reduces the program \emph{one step at a time}.
-We write $\langle C, \sigma \rangle \to \langle C', \sigma' \rangle$
-(or $\langle C, \sigma \rangle \to \langle \mathbf{skip}, \sigma'
-\rangle$ at the last step).
-
-The key insight: in small-step style you write a \textbf{linear
-sequence} of configurations. At each step, apply exactly one rule to
-the leftmost reducible sub-expression.
-
-\begin{align*}
-&\langle\; y := !x + 1\;;\; x := !y * 2,\;\sigma \rangle \\
-\to\;&\langle\; y := 3 + 1\;;\; x := !y * 2,\;\sigma \rangle
-  &&\text{(dereference $!x$)} \\
-\to\;&\langle\; y := 4\;;\; x := !y * 2,\;\sigma \rangle
-  &&\text{(arithmetic)} \\
-\to\;&\langle\; \mathbf{skip}\;;\; x := !y * 2,\;\sigma_1 \rangle
-  &&\text{(assign, $\sigma_1 = \sigma[y\mapsto 4]$)} \\
-\to\;&\langle\; x := !y * 2,\;\sigma_1 \rangle
-  &&\text{(skip-seq)} \\
-\to\;&\langle\; x := 4 * 2,\;\sigma_1 \rangle
-  &&\text{(dereference $!y$)} \\
-\to\;&\langle\; x := 8,\;\sigma_1 \rangle
-  &&\text{(arithmetic)} \\
-\to\;&\langle\; \mathbf{skip},\;\sigma_2 \rangle
-  &&\text{(assign, $\sigma_2 = \sigma_1[x\mapsto 8]$)}
-\end{align*}
-
-Both styles reach the same final state
-$\{x \mapsto 8,\; y \mapsto 4\}$.
-
-\paragraph{When to use each.}
-\begin{itemize}
-  \item Use \textbf{big-step} when you only care about the final result
-  and want a compact derivation.
-  \item Use \textbf{small-step} when you need to reason about
-  intermediate states, non-termination, or concurrency.
-  \item Never mix styles in the same derivation.
-\end{itemize}
-
-\subsubsection{Example 2: Extending SIMP with \texttt{for}}
-
-We extend SIMP with the construct \texttt{for} $E_1$ \texttt{to} $E_2$
-\texttt{do} $C$, which evaluates $E_1$ and $E_2$ \emph{once} at the
-start and executes $C$ for each integer $i$ with $n_1 \leq i \leq n_2$
-(does nothing if $n_1 > n_2$).
-
-\paragraph{Step 1 Define the rules}
-
-The standard strategy is to \emph{desugar} the new construct into
-existing ones once the bounds are known. We need three rules.
-
-\medskip
-\noindent\textbf{Evaluate the bounds} (two expression-reduction steps,
-small-step):
-\[
-  \frac{
-    \langle E_1, \sigma \rangle \to \langle E_1', \sigma \rangle
-  }{
-    \langle \texttt{for}\; E_1\;\texttt{to}\; E_2\;\texttt{do}\; C,\;
-    \sigma \rangle \;\to\;
-    \langle \texttt{for}\; E_1'\;\texttt{to}\; E_2\;\texttt{do}\; C,\;
-    \sigma \rangle
-  }
-\]
-\[
-  \frac{
-    \langle E_2, \sigma \rangle \to \langle E_2', \sigma \rangle
-  }{
-    \langle \texttt{for}\; n_1\;\texttt{to}\; E_2\;\texttt{do}\; C,\;
-    \sigma \rangle \;\to\;
-    \langle \texttt{for}\; n_1\;\texttt{to}\; E_2'\;\texttt{do}\; C,\;
-    \sigma \rangle
-  }
-\]
-
-\noindent\textbf{Base case} bounds are values, loop is empty
-($n_1 > n_2$):
-\[
-  \frac{n_1 > n_2}{
-    \langle \texttt{for}\; n_1\;\texttt{to}\; n_2\;\texttt{do}\; C,\;
-    \sigma \rangle \;\to\;
-    \langle \mathbf{skip},\; \sigma \rangle
-  }
-\]
-
-\noindent\textbf{Inductive case} unfold one iteration ($n_1 \leq
-n_2$):
-\[
-  \frac{n_1 \leq n_2}{
-    \langle \texttt{for}\; n_1\;\texttt{to}\; n_2\;\texttt{do}\; C,\;
-    \sigma \rangle \;\to\;
-    \langle C\;;\;\texttt{for}\; (n_1{+}1)\;\texttt{to}\; n_2\;
-    \texttt{do}\; C,\; \sigma \rangle
-  }
-\]
-
-\paragraph{Step 2 Trace through an example.}
-
-Use state $\sigma = \{x \mapsto 0,\; n_1 \mapsto 1,\; n_2 \mapsto 3\}$
-and program \texttt{for} $!n_1$ \texttt{to} $!n_2$ \texttt{do}
-$x := !x + 1$.
-
-\begin{align*}
-&\langle \texttt{for}\;!n_1\;\texttt{to}\;!n_2\;\texttt{do}\;
-  x{:=}!x{+}1,\;\sigma \rangle \\
-\to\;&\langle \texttt{for}\;1\;\texttt{to}\;!n_2\;\texttt{do}\;
-  x{:=}!x{+}1,\;\sigma \rangle
-  &&\text{(deref $!n_1$)}\\
-\to\;&\langle \texttt{for}\;1\;\texttt{to}\;3\;\texttt{do}\;
-  x{:=}!x{+}1,\;\sigma \rangle
-  &&\text{(deref $!n_2$)}\\
-\to\;&\langle x{:=}!x{+}1\;;\;\texttt{for}\;2\;\texttt{to}\;3\;
-  \texttt{do}\;x{:=}!x{+}1,\;\sigma \rangle
-  &&\text{(unfold, $1 \leq 3$)}\\
-\to\;&\langle \mathbf{skip}\;;\;\texttt{for}\;2\;\texttt{to}\;3\;
-  \texttt{do}\;x{:=}!x{+}1,\;\sigma_1 \rangle
-  &&\text{(assign, $\sigma_1 = \sigma[x\mapsto 1]$)}\\
-\to\;&\langle \texttt{for}\;2\;\texttt{to}\;3\;\texttt{do}\;
-  x{:=}!x{+}1,\;\sigma_1 \rangle
-  &&\text{(skip-seq)}\\
-  &\quad\vdots \\
-\to\;&\langle \mathbf{skip},\;\sigma_3 \rangle
-  &&\text{(base case, $4 > 3$, $\sigma_3 = \sigma[x \mapsto 3]$)}
-\end{align*}
-
-\paragraph{Common mistakes to avoid.}
-\begin{itemize}
-  \item \textbf{Evaluating the bounds repeatedly.} The bounds $n_1$ and
-  $n_2$ must be fully reduced to values \emph{before} unfolding begins.
-  If you unfold first, you may re-evaluate a side-effectful expression
-  on every iteration.
-  \item \textbf{Forgetting the base case.} Without the $n_1 > n_2$
-  rule, the derivation never terminates for empty ranges.
-  \item \textbf{Mixing big-step and small-step notation.} In big-step,
-  the \texttt{for} rules look different, each premise is a full
-  $\Downarrow$ judgment, not a single $\to$ step.
-\end{itemize}
 
 \end{document}
